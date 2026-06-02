@@ -23,7 +23,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
       <StartSessionDialog open={dialog === "start"} onOpenChange={(open) => setDialog(open ? "start" : null)} simulator={selected} />
       <AddTimeDialog open={dialog === "addTime"} onOpenChange={(open) => setDialog(open ? "addTime" : null)} simulator={selected} />
       <PaymentDialog open={dialog === "payment"} onOpenChange={(open) => setDialog(open ? "payment" : null)} simulator={selected} />
-      <StopSessionDialog open={dialog === "stop"} onOpenChange={(open) => setDialog(open ? "stop" : null)} simulator={selected} />
+      <StopSessionDialog open={dialog === "stop"} onOpenChange={(open) => setDialog(open ? "stop" : null)} simulator={selected} onTakePayment={() => setDialog("payment")} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { FiMinus, FiPlus, FiTrash2 } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,9 +11,15 @@ import { useDashboardStore } from "@/components/providers/dashboard-store";
 
 export function OrderPanel() {
   const { order, updateQty, clearOrder, payOrder, simulators } = useDashboardStore();
+  const [attachTarget, setAttachTarget] = useState("general");
+  const [paymentMethod, setPaymentMethod] = useState("Karta");
   const total = order.reduce((sum, item) => sum + item.price * item.qty, 0);
   const active = simulators.filter((item) => ["busy", "ending_soon", "unpaid"].includes(item.status));
-  const attachId = active[0]?.id;
+  const attachId = active.some((item) => item.id === attachTarget) ? attachTarget : undefined;
+
+  function submitPayment() {
+    payOrder(attachId);
+  }
 
   return (
     <Card className="h-full">
@@ -36,9 +43,19 @@ export function OrderPanel() {
           <div className="flex justify-between"><span className="text-slate-400">Discount</span><b>{money(0)}</b></div>
           <div className="flex justify-between text-lg"><span>Total</span><b className="text-sky-200">{money(total)}</b></div>
         </div>
-        <Select defaultValue="general"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="general">General sale</SelectItem>{active.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} session</SelectItem>)}<SelectItem value="user">Registered user</SelectItem></SelectContent></Select>
-        <Select defaultValue="Karta"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["Naqd", "Karta", "QR", "Balans", "Aralash"].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select>
-        <div className="grid grid-cols-3 gap-2"><Button variant="secondary">Save</Button><Button onClick={() => payOrder(attachId)}>Pay</Button><Button variant="destructive" onClick={clearOrder}>Clear</Button></div>
+        <Select value={attachTarget} onValueChange={setAttachTarget}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="general">General sale</SelectItem>
+            {active.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} session</SelectItem>)}
+            <SelectItem value="user">Registered user</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>{["Naqd", "Karta", "QR", "Balans", "Aralash"].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
+        </Select>
+        <div className="grid grid-cols-3 gap-2"><Button variant="secondary">Save</Button><Button onClick={submitPayment} disabled={!order.length}>Pay</Button><Button variant="destructive" onClick={clearOrder} disabled={!order.length}>Clear</Button></div>
       </CardContent>
     </Card>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { FiClock, FiCreditCard, FiLock, FiPause, FiPlay, FiPower, FiRepeat, FiTool, FiUser } from "react-icons/fi";
+import { FiClock, FiCreditCard, FiLock, FiPlay, FiPower, FiTool } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
@@ -45,14 +45,11 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
         <div className="mt-5 grid grid-cols-2 gap-2">
           <RoleGuard action="start"><Button disabled={!free && simulator.status !== "reserved"} onClick={() => onAction("start")}><FiPlay /> Start</Button></RoleGuard>
           <RoleGuard action="addTime"><Button variant="secondary" disabled={!busy} onClick={() => onAction("addTime")}><FiClock /> Add time</Button></RoleGuard>
-          <Button variant="outline" disabled={!busy}><FiPause /> Pause</Button>
           <RoleGuard action="payment"><Button variant="success" disabled={free} onClick={() => onAction("payment")}><FiCreditCard /> Payment</Button></RoleGuard>
-          <Button variant="outline" disabled={!busy}><FiRepeat /> Transfer</Button>
           <RoleGuard action="stop"><Button variant="destructive" disabled={!busy} onClick={() => onAction("stop")}><FiPower /> Stop</Button></RoleGuard>
           <RoleGuard action="lock"><Button variant="secondary" onClick={() => toggleLock(simulator.id)}><FiLock /> Lock / Unlock</Button></RoleGuard>
           <RoleGuard action="maintenance"><Button variant="warning" onClick={() => setMaintenance(simulator.id, simulator.status !== "maintenance")}><FiTool /> Maintenance</Button></RoleGuard>
         </div>
-        <Button className="mt-3 w-full" variant="ghost"><FiUser /> View history</Button>
       </SheetContent>
     </Sheet>
   );

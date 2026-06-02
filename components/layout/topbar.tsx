@@ -31,50 +31,58 @@ export function Topbar({ onAction }: { onAction: (action: "start" | "addTime" | 
   ];
 
   return (
-    <header className="flex h-16 shrink-0 items-center gap-3 border-b border-slate-800 bg-[#151c31]/95 px-4">
-      <div className="min-w-[170px]">
-        <div className="text-sm font-semibold text-white">B2 Game Club</div>
-        <div className="text-xs text-slate-400">Main Arena</div>
+    <header className="sticky top-0 z-30 flex min-h-16 shrink-0 flex-wrap items-center gap-2 border-b border-slate-800 bg-[#151c31]/95 px-3 py-2 sm:gap-3 sm:px-4 lg:flex-nowrap lg:py-0">
+      <div className="order-1 min-w-0 flex-1 lg:flex-none">
+        <div className="truncate text-sm font-semibold text-white">B2 Game Club</div>
+        <div className="truncate text-xs text-slate-400">Main Arena</div>
       </div>
-      <Badge variant="success">Smena ochiq</Badge>
-      <div className="hidden items-center gap-2 xl:flex">
-        <Badge>{money(revenue)}</Badge>
-        <Badge variant="success">{active} active</Badge>
-        <Badge variant="muted">{free} free</Badge>
-        <Badge variant="warning">{reserved} bron</Badge>
+
+      <div className="order-2 flex shrink-0 items-center gap-2 lg:order-none">
+        <Badge variant="success" className="whitespace-nowrap">Smena ochiq</Badge>
       </div>
-      <div className="relative ml-auto w-72">
-        <FiSearch className="absolute left-3 top-3 text-slate-500" />
+
+      <div className="order-5 flex w-full items-center gap-2 overflow-x-auto pb-1 sm:order-3 sm:w-auto sm:max-w-[calc(100vw-7rem)] sm:pb-0 lg:order-none lg:max-w-none">
+        <Badge className="shrink-0 whitespace-nowrap">{money(revenue)}</Badge>
+        <Badge variant="success" className="shrink-0 whitespace-nowrap">{active} active</Badge>
+        <Badge variant="muted" className="shrink-0 whitespace-nowrap">{free} free</Badge>
+        <Badge variant="warning" className="shrink-0 whitespace-nowrap">{reserved} bron</Badge>
+      </div>
+
+      <div className="relative order-4 w-full min-w-0 sm:order-4 sm:flex-1 lg:order-none lg:ml-auto lg:max-w-sm 2xl:max-w-md">
+        <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
         <Input className="h-9 pl-9" placeholder="Search simulator, customer, order..." />
       </div>
-      <TooltipProvider>
-        <div className="flex gap-1">
-          {quickActions.map((action) => {
-            const Icon = action.icon;
-            return (
-              <Tooltip key={action.key}>
-                <TooltipTrigger asChild>
-                  <Button size="icon" variant={action.key === "stop" ? "destructive" : "secondary"} disabled={!action.enabled} onClick={action.click}><Icon /></Button>
-                </TooltipTrigger>
-                <TooltipContent>{action.label}</TooltipContent>
-              </Tooltip>
-            );
-          })}
-        </div>
-      </TooltipProvider>
-      <Button size="icon" variant="ghost"><FiMoon /><span className="sr-only"><FiSun /></span></Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button className="rounded-full outline-none ring-sky-400 focus:ring-2">
-            <Avatar><AvatarFallback>{data?.user?.name?.slice(0, 2).toUpperCase() ?? "U"}</AvatarFallback></Avatar>
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuLabel>{data?.user?.name} - {data?.user?.role}</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/login" })}><FiLogOut /> Logout</DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+
+      <div className="order-3 ml-auto flex min-w-0 shrink-0 items-center gap-2 lg:order-none lg:ml-0">
+        <TooltipProvider>
+          <div className="flex max-w-[calc(100vw-7rem)] gap-1 overflow-x-auto sm:max-w-none">
+            {quickActions.map((action) => {
+              const Icon = action.icon;
+              return (
+                <Tooltip key={action.key}>
+                  <TooltipTrigger asChild>
+                    <Button className="shrink-0" size="icon" variant={action.key === "stop" ? "destructive" : "secondary"} disabled={!action.enabled} onClick={action.click}><Icon /></Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{action.label}</TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </div>
+        </TooltipProvider>
+        <Button className="shrink-0" size="icon" variant="ghost"><FiMoon /><span className="sr-only"><FiSun /></span></Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="shrink-0 rounded-full outline-none ring-sky-400 focus:ring-2">
+              <Avatar><AvatarFallback>{data?.user?.name?.slice(0, 2).toUpperCase() ?? "U"}</AvatarFallback></Avatar>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel>{data?.user?.name} - {data?.user?.role}</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/login" })}><FiLogOut /> Logout</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </header>
   );
 }

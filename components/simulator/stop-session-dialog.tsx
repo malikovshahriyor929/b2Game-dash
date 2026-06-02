@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { money } from "@/lib/format";
-import { tariffs } from "@/lib/mock-data";
+import { products, tariffs } from "@/lib/mock-data";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { Simulator } from "@/types/simulator";
 
@@ -12,10 +12,11 @@ function Row({ label, value, danger }: { label: string; value: React.ReactNode; 
   return <div className="flex items-center justify-between border-b border-slate-800 py-2 text-sm"><span className="text-slate-400">{label}</span><span className={danger ? "font-bold text-red-300" : "font-semibold text-slate-100"}>{value}</span></div>;
 }
 
-export function StopSessionDialog({ open, onOpenChange, simulator }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator }) {
+export function StopSessionDialog({ open, onOpenChange, simulator, onTakePayment }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator; onTakePayment?: () => void }) {
   const { stopSession } = useDashboardStore();
   const tariff = tariffs.find((item) => item.name === simulator?.tariff);
-  const shop = (simulator?.orderItems.length ?? 0) * 12000;
+  const shopItems = simulator?.orderItems.flatMap((item) => item.split(",").map((name) => name.trim()).filter(Boolean)) ?? [];
+  const shop = shopItems.reduce((sum, name) => sum + (products.find((product) => product.name === name)?.price ?? 0), 0);
   const total = (tariff?.price ?? 0) + shop;
   const paid = simulator?.paidAmount ?? 0;
   const debt = Math.max(total - paid, 0);
@@ -24,6 +25,11 @@ export function StopSessionDialog({ open, onOpenChange, simulator }: { open: boo
     if (!simulator) return;
     stopSession(simulator.id, override);
     onOpenChange(false);
+  }
+
+  function takePayment() {
+    onOpenChange(false);
+    onTakePayment?.();
   }
 
   return (
@@ -47,7 +53,7 @@ export function StopSessionDialog({ open, onOpenChange, simulator }: { open: boo
         {debt > 0 ? <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">Unpaid amount exists. Take payment before final stop, or use admin override.</div> : null}
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-          {debt > 0 ? <Button variant="warning">Take payment</Button> : null}
+          {debt > 0 ? <Button variant="warning" onClick={takePayment}>Take payment</Button> : null}
           <Button variant={debt > 0 ? "destructive" : "default"} onClick={() => submit(debt > 0)}>{debt > 0 ? "Admin override stop" : "Stop session"}</Button>
         </DialogFooter>
       </DialogContent>

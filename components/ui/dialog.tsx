@@ -14,7 +14,7 @@ export const DialogOverlay = ({ className, ...props }: React.ComponentPropsWitho
 export const DialogContent = ({ className, children, ...props }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>) => (
   <DialogPortal>
     <DialogOverlay />
-    <DialogPrimitive.Content className={cn("fixed left-1/2 top-1/2 z-50 grid w-[min(92vw,680px)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl border border-slate-700 bg-slate-900 p-5 text-slate-100 shadow-2xl", className)} {...props}>
+    <DialogPrimitive.Content className={cn("fixed left-1/2 top-1/2 z-50 grid w-[min(92vw,680px)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl border border-slate-700 bg-slate-900 p-5 text-slate-100 shadow-2xl outline-none", className)} {...props}>
       {children}
       <DialogPrimitive.Close className="absolute right-4 top-4 rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100">
         <IoClose />
