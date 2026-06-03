@@ -14,7 +14,7 @@ export function OrderPanel() {
   const [attachTarget, setAttachTarget] = useState("general");
   const [paymentMethod, setPaymentMethod] = useState("Karta");
   const total = order.reduce((sum, item) => sum + item.price * item.qty, 0);
-  const active = simulators.filter((item) => ["busy", "ending_soon", "unpaid"].includes(item.status));
+  const active = simulators.filter((item) => ["busy", "unpaid"].includes(item.status));
   const attachId = active.some((item) => item.id === attachTarget) ? attachTarget : undefined;
 
   function submitPayment() {
@@ -55,7 +55,7 @@ export function OrderPanel() {
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>{["Naqd", "Karta", "QR", "Balans", "Aralash"].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
         </Select>
-        <div className="grid grid-cols-3 gap-2"><Button variant="secondary">Save</Button><Button onClick={submitPayment} disabled={!order.length}>Pay</Button><Button variant="destructive" onClick={clearOrder} disabled={!order.length}>Clear</Button></div>
+        <div className="grid gap-2 sm:grid-cols-3"><Button variant="secondary">Save</Button><Button onClick={submitPayment} disabled={!order.length}>Pay</Button><Button variant="destructive" onClick={clearOrder} disabled={!order.length}>Clear</Button></div>
       </CardContent>
     </Card>
   );

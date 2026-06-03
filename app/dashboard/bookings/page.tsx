@@ -6,7 +6,7 @@ export default function BookingsPage() {
   return (
     <div>
       <PageHeader title="Bronlar" description="Reservations with conflict warning and reserved simulator visibility." />
-      <div className="grid grid-cols-[380px_minmax(0,1fr)] gap-4"><BookingForm /><BookingTable /></div>
+      <div className="grid gap-4"><BookingForm /><BookingTable /></div>
     </div>
   );
 }

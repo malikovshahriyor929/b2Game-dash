@@ -12,28 +12,30 @@ export const authOptions: NextAuthOptions = {
     CredentialsProvider({
       name: "Mock credentials",
       credentials: {
-        phone: { label: "Phone", type: "text" },
+        email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
       authorize(credentials) {
-        const user = mockUsers.find((item) => item.phone === credentials?.phone && item.password === credentials?.password);
+        const user = mockUsers.find((item) => item.email === credentials?.email && item.password === credentials?.password);
         if (!user) return null;
-        return { id: user.id, name: user.name, phone: user.phone, role: user.role };
+        return { id: user.id, name: user.name, email: user.email, role: user.role, branchIds: user.branchIds };
       },
     }),
   ],
   callbacks: {
     jwt({ token, user }) {
       if (user) {
-        token.phone = user.phone;
+        token.email = user.email;
         token.role = user.role;
+        token.branchIds = user.branchIds;
       }
       return token;
     },
     session({ session, token }) {
       session.user.id = token.sub ?? "";
-      session.user.phone = token.phone;
+      session.user.email = token.email;
       session.user.role = token.role;
+      session.user.branchIds = token.branchIds;
       return session;
     },
   },

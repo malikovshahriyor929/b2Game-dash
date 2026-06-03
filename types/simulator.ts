@@ -1,12 +1,41 @@
-export type SimulatorType = "Racing" | "VR" | "PS5 / Console" | "Xbox / Console" | "VIP Room";
-export type SimulatorStatus = "free" | "busy" | "reserved" | "ending_soon" | "unpaid" | "offline" | "maintenance" | "locked" | "paused";
+export type SimulatorZone = "Main" | "VIP";
+export type SimulatorType = SimulatorZone;
+export type SimulatorStatus = "ready_to_play" | "busy" | "reserved" | "unpaid" | "broken" | "repair_requested" | "repair_approved" | "fixing" | "fixed_waiting_confirmation" | "offline" | "locked";
 export type PaymentStatus = "paid" | "unpaid" | "partial";
+export type RepairErrorType = "game_error" | "device_error" | "network_error" | "payment_error" | "hardware_error" | "other";
+export type RepairPriority = "low" | "medium" | "high" | "critical";
+export type RepairApprovalStatus = "pending" | "approved" | "rejected" | "more_details_requested" | "fixing" | "fixed_waiting_confirmation" | "confirmed_fixed";
+
+export type RepairRequest = {
+  id: string;
+  simulatorId: string;
+  simulatorName: string;
+  branchId: string;
+  branchName: string;
+  requestedBy: string;
+  requestedAt: string;
+  title: string;
+  description: string;
+  errorType: RepairErrorType;
+  priority: RepairPriority;
+  note?: string;
+  status: RepairApprovalStatus;
+  affectedRevenue: number;
+  approvedAt?: string;
+  fixingStartedAt?: string;
+  fixedAt?: string;
+  confirmedAt?: string;
+  rejectedAt?: string;
+  resolutionNote?: string;
+};
 
 export type Simulator = {
   id: string;
   name: string;
   type: SimulatorType;
-  zone: string;
+  zone: SimulatorZone;
+  branchId: string;
+  branchName: string;
   status: SimulatorStatus;
   deviceId: string;
   ipAddress: string;
@@ -18,4 +47,5 @@ export type Simulator = {
   paidAmount: number;
   paymentStatus: PaymentStatus;
   orderItems: string[];
+  repairRequestId?: string;
 };

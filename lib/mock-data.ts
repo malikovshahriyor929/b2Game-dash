@@ -1,75 +1,136 @@
 import { Booking } from "@/types/booking";
 import { LogEntry } from "@/types/log";
 import { Product } from "@/types/product";
-import { Simulator } from "@/types/simulator";
-import { MockUser } from "@/types/user";
+import { RepairRequest, Simulator } from "@/types/simulator";
+import { Branch, MockUser } from "@/types/user";
+
+export const branches: Branch[] = [
+  { id: "b2-main-arena", name: "B2 Main Arena" },
+  { id: "b2-yunusabad", name: "B2 Yunusabad" },
+  { id: "b2-chilonzor", name: "B2 Chilonzor" },
+  { id: "b2-sergeli", name: "B2 Sergeli" },
+  { id: "b2-samarqand", name: "B2 Samarqand" },
+];
 
 export const mockUsers: MockUser[] = [
-  { id: "u-admin", name: "admin", phone: "900000001", role: "Admin", password: "admin123" },
-  { id: "u-cashier", name: "test_kassir", phone: "900000002", role: "Cashier", password: "cashier123" },
-  { id: "u-operator", name: "operator", phone: "900000003", role: "Operator", password: "operator123" },
-  { id: "u-tech", name: "technician", phone: "900000004", role: "Technician", password: "tech123" },
+  { id: "u-super-admin", name: "Super Admin", email: "superadmin@b2game.uz", role: "super_admin", branchIds: ["all"], password: "superadmin123" },
+  { id: "u-admin", name: "Admin", email: "admin@b2game.uz", role: "admin", branchIds: ["b2-main-arena"], password: "admin123" },
 ];
 
 export const tariffs = [
-  { id: "t1", name: "Racing 30 min", type: "Time-based", price: 30000 },
-  { id: "t2", name: "Racing 60 min", type: "Time-based", price: 50000 },
-  { id: "t3", name: "VR 30 min", type: "VIP", price: 45000 },
-  { id: "t4", name: "PS5 60 min", type: "Time-based", price: 40000 },
-  { id: "t5", name: "VIP Room 1 hour", type: "VIP", price: 100000 },
-  { id: "t6", name: "Racing 2+1", type: "Package", price: 100000 },
-  { id: "t7", name: "Birthday Pack", type: "Birthday", price: 350000 },
-  { id: "t8", name: "Night Pack", type: "Night", price: 200000 },
+  { id: "t1", name: "Main 30 min", type: "Time-based", price: 30000 },
+  { id: "t2", name: "Main 60 min", type: "Time-based", price: 50000 },
+  { id: "t3", name: "VIP 30 min", type: "VIP", price: 60000 },
+  { id: "t4", name: "VIP 60 min", type: "VIP", price: 100000 },
+  { id: "t5", name: "Main 2+1", type: "Package", price: 100000 },
+  { id: "t6", name: "Birthday Pack", type: "Birthday", price: 350000 },
+  { id: "t7", name: "Night Pack", type: "Night", price: 200000 },
 ];
 
-export const initialSimulators: Simulator[] = [
-  { id: "race-01", name: "RACE-01", type: "Racing", zone: "Main Racing Zone", status: "busy", deviceId: "B2-RC-001", ipAddress: "192.168.10.21", currentUser: "Aziz", phone: "998901112233", tariff: "Racing 60 min", startedAt: "14:20", remainingMinutes: 38, paidAmount: 50000, paymentStatus: "paid", orderItems: ["Coca-Cola 0.5"] },
-  { id: "race-02", name: "RACE-02", type: "Racing", zone: "Main Racing Zone", status: "ending_soon", deviceId: "B2-RC-002", ipAddress: "192.168.10.22", currentUser: "Sardor", tariff: "Racing 30 min", startedAt: "15:05", remainingMinutes: 7, paidAmount: 30000, paymentStatus: "paid", orderItems: [] },
-  { id: "race-03", name: "RACE-03", type: "Racing", zone: "Main Racing Zone", status: "free", deviceId: "B2-RC-003", ipAddress: "192.168.10.23", remainingMinutes: 0, paidAmount: 0, paymentStatus: "paid", orderItems: [] },
-  { id: "race-04", name: "RACE-04", type: "Racing", zone: "Main Racing Zone", status: "reserved", deviceId: "B2-RC-004", ipAddress: "192.168.10.24", currentUser: "Bekzod", remainingMinutes: 0, paidAmount: 20000, paymentStatus: "partial", orderItems: [] },
-  { id: "race-05", name: "RACE-05", type: "Racing", zone: "Main Racing Zone", status: "maintenance", deviceId: "B2-RC-005", ipAddress: "192.168.10.25", remainingMinutes: 0, paidAmount: 0, paymentStatus: "paid", orderItems: [] },
-  { id: "vr-01", name: "VR-01", type: "VR", zone: "VR Zone", status: "busy", deviceId: "B2-VR-001", ipAddress: "192.168.10.31", currentUser: "Madina", tariff: "VR 30 min", startedAt: "15:10", remainingMinutes: 22, paidAmount: 0, paymentStatus: "unpaid", orderItems: ["Energy Drink"] },
-  { id: "vr-02", name: "VR-02", type: "VR", zone: "VR Zone", status: "free", deviceId: "B2-VR-002", ipAddress: "192.168.10.32", remainingMinutes: 0, paidAmount: 0, paymentStatus: "paid", orderItems: [] },
-  { id: "ps5-01", name: "PS5-01", type: "PS5 / Console", zone: "Console Zone", status: "busy", deviceId: "B2-PS-001", ipAddress: "192.168.10.41", currentUser: "Jasur", tariff: "PS5 60 min", startedAt: "14:55", remainingMinutes: 41, paidAmount: 40000, paymentStatus: "paid", orderItems: ["Chips"] },
-  { id: "ps5-02", name: "PS5-02", type: "PS5 / Console", zone: "Console Zone", status: "free", deviceId: "B2-PS-002", ipAddress: "192.168.10.42", remainingMinutes: 0, paidAmount: 0, paymentStatus: "paid", orderItems: [] },
-  { id: "ps5-03", name: "PS5-03", type: "PS5 / Console", zone: "Console Zone", status: "locked", deviceId: "B2-PS-003", ipAddress: "192.168.10.43", remainingMinutes: 0, paidAmount: 0, paymentStatus: "paid", orderItems: [] },
-  { id: "xbox-01", name: "XBOX-01", type: "Xbox / Console", zone: "Console Zone", status: "offline", deviceId: "B2-XB-001", ipAddress: "192.168.10.51", remainingMinutes: 0, paidAmount: 0, paymentStatus: "paid", orderItems: [] },
-  { id: "vip-01", name: "VIP-01", type: "VIP Room", zone: "VIP Zone", status: "busy", deviceId: "B2-VIP-001", ipAddress: "192.168.10.61", currentUser: "Dilshod", tariff: "VIP Room 1 hour", startedAt: "14:30", remainingMinutes: 58, paidAmount: 100000, paymentStatus: "paid", orderItems: ["Burger", "Water 0.5"] },
-  { id: "vip-02", name: "VIP-02", type: "VIP Room", zone: "VIP Zone", status: "unpaid", deviceId: "B2-VIP-002", ipAddress: "192.168.10.62", currentUser: "Kamron", tariff: "VIP Room 1 hour", startedAt: "13:50", remainingMinutes: 0, paidAmount: 0, paymentStatus: "unpaid", orderItems: [] },
-  { id: "vip-03", name: "VIP-03", type: "VIP Room", zone: "VIP Zone", status: "free", deviceId: "B2-VIP-003", ipAddress: "192.168.10.63", remainingMinutes: 0, paidAmount: 0, paymentStatus: "paid", orderItems: [] },
+const branchOctet: Record<string, number> = {
+  "b2-main-arena": 10,
+  "b2-yunusabad": 20,
+  "b2-chilonzor": 30,
+  "b2-sergeli": 40,
+  "b2-samarqand": 50,
+};
+
+const mainArenaRepairId = "repair-main-arena-main-05";
+
+function simulatorStatus(branchIndex: number, number: number, zone: "Main" | "VIP") {
+  if (branchIndex === 0 && zone === "Main" && number === 1) return "busy" as const;
+  if (branchIndex === 0 && zone === "Main" && number === 2) return "reserved" as const;
+  if (branchIndex === 0 && zone === "Main" && number === 3) return "unpaid" as const;
+  if (branchIndex === 0 && zone === "Main" && number === 5) return "repair_requested" as const;
+  if (branchIndex === 1 && zone === "VIP" && number === 2) return "fixing" as const;
+  if (branchIndex === 2 && zone === "Main" && number === 8) return "broken" as const;
+  if (branchIndex === 3 && zone === "Main" && number === 12) return "offline" as const;
+  if (branchIndex === 4 && zone === "VIP" && number === 4) return "locked" as const;
+  return "ready_to_play" as const;
+}
+
+function createSimulator(branch: Branch, branchIndex: number, zone: "Main" | "VIP", number: number): Simulator {
+  const name = `${zone === "Main" ? "MAIN" : "VIP"}-${String(number).padStart(2, "0")}`;
+  const status = simulatorStatus(branchIndex, number, zone);
+  const isActive = ["busy", "unpaid"].includes(status);
+
+  return {
+    id: `${branch.id}-${name.toLowerCase()}`,
+    name,
+    type: zone,
+    zone,
+    branchId: branch.id,
+    branchName: branch.name,
+    status,
+    deviceId: `B2-${branchIndex + 1}-${zone === "Main" ? "M" : "V"}-${String(number).padStart(2, "0")}`,
+    ipAddress: `192.168.${branchOctet[branch.id]}.${zone === "Main" ? number + 10 : number + 80}`,
+    currentUser: isActive ? (number === 1 ? "Aziz" : "Kamron") : status === "reserved" ? "Bekzod" : undefined,
+    phone: isActive ? "998901112233" : undefined,
+    tariff: zone === "VIP" ? "VIP 60 min" : "Main 60 min",
+    startedAt: isActive ? "14:20" : undefined,
+    remainingMinutes: status === "busy" ? 38 : 0,
+    paidAmount: status === "busy" ? 50000 : status === "reserved" ? 20000 : 0,
+    paymentStatus: status === "unpaid" ? "unpaid" : status === "reserved" ? "partial" : "paid",
+    orderItems: status === "busy" ? ["Coca-Cola 0.5"] : [],
+    repairRequestId: branch.id === "b2-main-arena" && zone === "Main" && number === 5 ? mainArenaRepairId : undefined,
+  };
+}
+
+export const initialSimulators: Simulator[] = branches.flatMap((branch, branchIndex) => [
+  ...Array.from({ length: 16 }, (_, index) => createSimulator(branch, branchIndex, "Main", index + 1)),
+  ...Array.from({ length: 4 }, (_, index) => createSimulator(branch, branchIndex, "VIP", index + 1)),
+]);
+
+export const initialRepairRequests: RepairRequest[] = [
+  {
+    id: mainArenaRepairId,
+    simulatorId: "b2-main-arena-main-05",
+    simulatorName: "MAIN-05",
+    branchId: "b2-main-arena",
+    branchName: "B2 Main Arena",
+    requestedBy: "Admin",
+    requestedAt: "2026-06-03 10:15",
+    title: "Wheel calibration error",
+    description: "Main simulator does not start the game session because the wheel calibration fails on launch.",
+    errorType: "device_error",
+    priority: "high",
+    note: "Customer session was moved to MAIN-06.",
+    status: "pending",
+    affectedRevenue: 50000,
+  },
 ];
 
 export const products: Product[] = [
-  { id: "p1", name: "Coca-Cola 0.5", price: 9000, stock: 72, category: "Ichimliklar", icon: "🥤" },
-  { id: "p2", name: "Water 0.5", price: 5000, stock: 90, category: "Ichimliklar", icon: "💧" },
-  { id: "p3", name: "Burger", price: 25000, stock: 18, category: "Fast food", icon: "🍔" },
-  { id: "p4", name: "Energy Drink", price: 15000, stock: 44, category: "Energy drink", icon: "⚡" },
-  { id: "p5", name: "Chips", price: 12000, stock: 31, category: "Snack", icon: "▣" },
-  { id: "p6", name: "Racing 60 min", price: 50000, stock: 999, category: "Paketlar", icon: "🏁" },
-  { id: "p7", name: "Racing 2+1 Paket", price: 100000, stock: 999, category: "Paketlar", icon: "🎮" },
-  { id: "p8", name: "VR 30 min", price: 45000, stock: 999, category: "Paketlar", icon: "◉" },
-  { id: "p9", name: "VIP Room 1 hour", price: 100000, stock: 999, category: "Paketlar", icon: "◆" },
+  { id: "p1", name: "Coca-Cola 0.5", qrCode: "B2-QR-0001", price: 9000, stock: 72, category: "Ichimliklar", icon: "CC", imageUrl: "https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&w=700&q=80" },
+  { id: "p2", name: "Water 0.5", qrCode: "B2-QR-0002", price: 5000, stock: 90, category: "Ichimliklar", icon: "W", imageUrl: "https://images.unsplash.com/photo-1559839914-17aae19cec71?auto=format&fit=crop&w=700&q=80" },
+  { id: "p3", name: "Burger", qrCode: "B2-QR-0003", price: 25000, stock: 18, category: "Fast food", icon: "BG", imageUrl: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=700&q=80" },
+  { id: "p4", name: "Energy Drink", qrCode: "B2-QR-0004", price: 15000, stock: 44, category: "Energy drink", icon: "ED", imageUrl: "https://images.unsplash.com/photo-1622543925917-763c34d1a86e?auto=format&fit=crop&w=700&q=80" },
+  { id: "p5", name: "Chips", qrCode: "B2-QR-0005", price: 12000, stock: 31, category: "Snack", icon: "CH", imageUrl: "https://images.unsplash.com/photo-1566478989037-eec170784d0b?auto=format&fit=crop&w=700&q=80" },
+  { id: "p6", name: "Main 60 min", qrCode: "B2-QR-0006", price: 50000, stock: 999, category: "Paketlar", icon: "M", imageUrl: "https://images.unsplash.com/photo-1605901309584-818e25960a8f?auto=format&fit=crop&w=700&q=80" },
+  { id: "p7", name: "Main 2+1 Paket", qrCode: "B2-QR-0007", price: 100000, stock: 999, category: "Paketlar", icon: "M2", imageUrl: "https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=700&q=80" },
+  { id: "p8", name: "VIP 30 min", qrCode: "B2-QR-0008", price: 60000, stock: 999, category: "Paketlar", icon: "V3", imageUrl: "https://images.unsplash.com/photo-1593508512255-86ab42a8e620?auto=format&fit=crop&w=700&q=80" },
+  { id: "p9", name: "VIP 60 min", qrCode: "B2-QR-0009", price: 100000, stock: 999, category: "Paketlar", icon: "V6", imageUrl: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=700&q=80" },
 ];
 
 export const bookings: Booking[] = [
-  { id: "b1", customerName: "Bekzod", phone: "998901234567", simulatorType: "Racing", simulatorId: "race-04", date: "2026-06-01", startTime: "16:00", endTime: "17:00", tariff: "Racing 60 min", prepayment: 20000, note: "Two players", status: "Confirmed" },
-  { id: "b2", customerName: "Nilufar", phone: "998939998877", simulatorType: "VIP Room", simulatorId: "vip-03", date: "2026-06-01", startTime: "18:30", endTime: "20:00", tariff: "VIP Room 1 hour", prepayment: 50000, note: "Birthday setup", status: "Pending" },
+  { id: "b1", customerName: "Bekzod", phone: "998901234567", simulatorType: "Main", simulatorId: "b2-main-arena-main-02", date: "2026-06-03", startTime: "16:00", endTime: "17:00", tariff: "Main 60 min", prepayment: 20000, note: "Two players", status: "Confirmed" },
+  { id: "b2", customerName: "Nilufar", phone: "998939998877", simulatorType: "VIP", simulatorId: "b2-main-arena-vip-03", date: "2026-06-03", startTime: "18:30", endTime: "20:00", tariff: "VIP 60 min", prepayment: 50000, note: "Birthday setup", status: "Pending" },
 ];
 
 export const customers = [
-  { name: "Aziz", phone: "998901112233", balance: 120000, bonus: 7000, lastVisit: "2026-06-01", totalSpent: 2350000, sessions: 38, status: "Active" },
+  { name: "Aziz", phone: "998901112233", balance: 120000, bonus: 7000, lastVisit: "2026-06-03", totalSpent: 2350000, sessions: 38, status: "Active" },
   { name: "Madina", phone: "998935557788", balance: 45000, bonus: 3000, lastVisit: "2026-06-01", totalSpent: 840000, sessions: 13, status: "Active" },
   { name: "Kamron", phone: "998977771111", balance: 0, bonus: 0, lastVisit: "2026-05-29", totalSpent: 320000, sessions: 6, status: "Debt" },
 ];
 
 export const initialLogs: LogEntry[] = [
-  { id: "l1", time: "15:03", operator: "admin", action: "started session on RACE-01", simulator: "RACE-01" },
-  { id: "l2", time: "15:11", operator: "test_kassir", action: "received 50 000 by card", simulator: "RACE-02", paymentMethod: "Karta" },
-  { id: "l3", time: "15:18", operator: "technician", action: "moved RACE-05 to maintenance", simulator: "RACE-05" },
+  { id: "l1", time: "15:03", operator: "Admin", action: "started session on MAIN-01", simulator: "MAIN-01" },
+  { id: "l2", time: "15:11", operator: "Admin", action: "received 50 000 by card", simulator: "MAIN-03", paymentMethod: "Karta" },
+  { id: "l3", time: "15:18", operator: "Admin", action: "requested fix for MAIN-05", simulator: "MAIN-05" },
 ];
 
 export const supportMessages = [
   { from: "Support", text: "Assalomu alaykum, B2 Game Club support online.", time: "14:01", own: false },
-  { from: "Operator", text: "VR-01 controller battery warning chiqyapti.", time: "14:03", own: true },
-  { from: "Support Bot", text: "Ticket #B2-204 created and assigned to technician.", time: "14:04", own: false },
+  { from: "Admin", text: "MAIN-05 wheel calibration error chiqyapti.", time: "14:03", own: true },
+  { from: "Support Bot", text: "Repair request #B2-204 Super Admin ko'rib chiqishi uchun yaratildi.", time: "14:04", own: false },
 ];

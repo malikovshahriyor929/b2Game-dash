@@ -11,14 +11,21 @@ import { DashboardStoreProvider, useDashboardStore } from "@/components/provider
 
 function ShellInner({ children }: { children: React.ReactNode }) {
   const [dialog, setDialog] = useState<"start" | "addTime" | "payment" | "stop" | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const { selected } = useDashboardStore();
 
   return (
-    <div className="flex h-screen bg-[#070b15] text-slate-100">
-      <Sidebar />
+    <div className="flex h-dvh overflow-hidden bg-[#070b15] text-slate-100">
+      <Sidebar
+        collapsed={sidebarCollapsed}
+        mobileOpen={mobileSidebarOpen}
+        onCloseMobile={() => setMobileSidebarOpen(false)}
+        onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
+      />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar onAction={setDialog} />
-        <main className="min-h-0 flex-1 overflow-auto p-4 thin-scrollbar">{children}</main>
+        <Topbar onAction={setDialog} onOpenSidebar={() => setMobileSidebarOpen(true)} />
+        <main className="min-h-0 flex-1 overflow-auto p-3 thin-scrollbar sm:p-4 lg:p-5">{children}</main>
       </div>
       <StartSessionDialog open={dialog === "start"} onOpenChange={(open) => setDialog(open ? "start" : null)} simulator={selected} />
       <AddTimeDialog open={dialog === "addTime"} onOpenChange={(open) => setDialog(open ? "addTime" : null)} simulator={selected} />

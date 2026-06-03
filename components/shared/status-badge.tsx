@@ -2,27 +2,31 @@ import { Badge } from "@/components/ui/badge";
 import { SimulatorStatus } from "@/types/simulator";
 
 const variants: Record<SimulatorStatus, "default" | "success" | "warning" | "destructive" | "muted" | "vip"> = {
-  free: "muted",
+  ready_to_play: "muted",
   busy: "success",
   reserved: "warning",
-  ending_soon: "warning",
   unpaid: "destructive",
+  broken: "destructive",
+  repair_requested: "warning",
+  repair_approved: "vip",
+  fixing: "vip",
+  fixed_waiting_confirmation: "warning",
   offline: "muted",
-  maintenance: "vip",
   locked: "muted",
-  paused: "warning",
 };
 
 const labels: Record<SimulatorStatus, string> = {
-  free: "Bo'sh",
+  ready_to_play: "Ready",
   busy: "Band",
   reserved: "Bron",
-  ending_soon: "Tugayapti",
   unpaid: "Qarz",
+  broken: "Broken",
+  repair_requested: "Fix requested",
+  repair_approved: "Approved",
+  fixing: "Fixing",
+  fixed_waiting_confirmation: "Waiting confirm",
   offline: "Offline",
-  maintenance: "Servis",
   locked: "Qulflangan",
-  paused: "Pauza",
 };
 
 export function StatusBadge({ status }: { status: SimulatorStatus }) {

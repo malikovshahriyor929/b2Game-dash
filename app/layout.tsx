@@ -4,7 +4,7 @@ import { SessionProvider } from "@/components/providers/session-provider";
 
 export const metadata: Metadata = {
   title: "B2 Game Club",
-  description: "Operator dashboard for B2 Game Club",
+  description: "Admin dashboard for B2 Game Club",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

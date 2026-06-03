@@ -9,16 +9,16 @@ import { useDashboardStore } from "@/components/providers/dashboard-store";
 
 export default function DashboardPage() {
   const { revenue, simulators } = useDashboardStore();
-  const activeCount = simulators.filter((s) => ["busy", "ending_soon", "unpaid"].includes(s.status)).length;
-  const freeCount = simulators.filter((s) => s.status === "free").length;
+  const activeCount = simulators.filter((s) => ["busy", "unpaid"].includes(s.status)).length;
+  const freeCount = simulators.filter((s) => s.status === "ready_to_play").length;
 
   return (
     <div>
-      <PageHeader title="Operator dashboard" description="Real-time simulator control, shift counters, and club floor map." badge="Desktop-first control room" />
+      <PageHeader title="B2 dashboard" description="Branch-scoped simulator control, revenue, shop sales, and repair monitoring." badge="Admin control room" />
       <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <ReportCard label="Today revenue" value={revenue} icon={FiCreditCard} />
         <ReportCard label="Active sessions" value={activeCount} icon={FiActivity} format="number" />
-        <ReportCard label="Free simulators" value={freeCount} icon={FiMonitor} format="number" />
+        <ReportCard label="Ready simulators" value={freeCount} icon={FiMonitor} format="number" />
         <ReportCard label="Shop sales" value={128000} icon={FiShoppingBag} />
       </div>
       <div className="mb-4"><RevenueChart /></div>

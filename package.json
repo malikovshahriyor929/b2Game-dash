@@ -1,7 +1,7 @@
 {
   "name": "b2game",
   "version": "1.0.0",
-  "description": "B2 Game Club operator dashboard demo",
+  "description": "B2 Game Club admin dashboard demo",
   "private": true,
   "scripts": {
     "dev": "next dev",

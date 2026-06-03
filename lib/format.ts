@@ -1,5 +1,5 @@
 export function money(value: number) {
-  return new Intl.NumberFormat("uz-UZ").format(value) + " so'm";
+  return `${Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ")} so'm`;
 }
 
 export function minutes(value: number) {
