@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
-import { bookings as bookingSeed, branches, initialLogs, initialRepairRequests, initialSimulators, products } from "@/lib/mock-data";
+import { bookings as bookingSeed, branches, initialLogs, initialRepairRequests, initialRevenueEvents, initialSimulators, products } from "@/lib/mock-data";
 import { Booking } from "@/types/booking";
 import { LogEntry } from "@/types/log";
 import { OrderItem, Product } from "@/types/product";
@@ -11,6 +11,7 @@ import { RepairErrorType, RepairPriority, RepairRequest, Simulator } from "@/typ
 type StartPayload = { customerName: string; phone: string; tariff: string; duration: number; amount: number; paymentStatus: "paid" | "unpaid" | "partial" };
 type PeriodFilter = "today" | "yesterday" | "week" | "month" | "year" | "custom";
 type RepairPayload = { title: string; description: string; errorType: RepairErrorType; priority: RepairPriority; note?: string };
+type RevenueEvent = { id: string; time: string; amount: number; source: string; branchId?: string };
 
 type DashboardStore = {
   simulators: Simulator[];
@@ -19,6 +20,7 @@ type DashboardStore = {
   selected?: Simulator;
   setSelectedId: (id: string | null) => void;
   revenue: number;
+  revenueEvents: RevenueEvent[];
   logs: LogEntry[];
   repairRequests: RepairRequest[];
   products: Product[];
@@ -67,6 +69,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
   const [allSimulators, setAllSimulators] = useState(initialSimulators);
   const [selectedId, setSelectedId] = useState<string | null>(initialSimulators[0]?.id ?? null);
   const [logs, setLogs] = useState(initialLogs);
+  const [revenueEvents, setRevenueEvents] = useState<RevenueEvent[]>(initialRevenueEvents);
   const [repairRequests, setRepairRequests] = useState(initialRepairRequests);
   const [revenue, setRevenue] = useState(390000);
   const [order, setOrder] = useState<OrderItem[]>([]);
@@ -95,6 +98,12 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     setLogs((items) => [{ id: crypto.randomUUID(), time: now(), operator, action, simulator, paymentMethod }, ...items]);
   }
 
+  function recordRevenue(amount: number, source: string, branchId?: string) {
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    setRevenue((current) => current + amount);
+    setRevenueEvents((items) => [{ id: crypto.randomUUID(), time: now(), amount, source, branchId }, ...items]);
+  }
+
   function patchSimulator(id: string, patch: Partial<Simulator>) {
     setAllSimulators((items) => items.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   }
@@ -117,6 +126,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     selected: allSimulators.find((item) => item.id === selectedId && visibleBranchIds.includes(item.branchId)),
     setSelectedId,
     revenue,
+    revenueEvents: revenueEvents.filter((event) => !event.branchId || visibleBranchIds.includes(event.branchId)),
     logs,
     repairRequests: scopedRepairRequests,
     products: inventory,
@@ -140,21 +150,21 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         paidAmount: payload.paymentStatus === "paid" ? payload.amount : 0,
         paymentStatus: payload.paymentStatus,
       });
-      if (payload.paymentStatus === "paid") setRevenue((current) => current + payload.amount);
+      if (payload.paymentStatus === "paid") recordRevenue(payload.amount, `session started ${simulator.name}`, simulator.branchId);
       appendLog(`started session on ${simulator.name}`, simulator.name);
     },
     addTime(id, minutes, amount, method) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator) return;
       patchSimulator(id, { remainingMinutes: simulator.remainingMinutes + minutes, paidAmount: simulator.paidAmount + amount, paymentStatus: "paid", status: "busy" });
-      setRevenue((current) => current + amount);
+      recordRevenue(amount, `added time ${simulator.name}`, simulator.branchId);
       appendLog(`added ${minutes} min to ${simulator.name}`, simulator.name, method);
     },
     pay(id, amount, method) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator) return;
       patchSimulator(id, { paidAmount: simulator.paidAmount + amount, paymentStatus: "paid", status: simulator.status === "unpaid" ? "busy" : simulator.status });
-      setRevenue((current) => current + amount);
+      recordRevenue(amount, `session payment ${simulator.name}`, simulator.branchId);
       appendLog(`received ${amount.toLocaleString("uz-UZ")} by ${method}`, simulator.name, method);
     },
     stopSession(id, override) {
@@ -304,7 +314,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     },
     recordCashierTransaction(action, amount, method) {
       if (!Number.isFinite(amount) || amount <= 0) return;
-      setRevenue((current) => current + amount);
+      recordRevenue(amount, action);
       appendLog(`${action} ${amount.toLocaleString("uz-UZ")}`, undefined, method);
     },
     updateQty(id, qty) {
@@ -316,16 +326,16 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     payOrder(attachTo) {
       const total = order.reduce((sum, item) => sum + item.price * item.qty, 0);
       if (!total) return;
-      setRevenue((current) => current + total);
+      const simulator = attachTo ? allSimulators.find((item) => item.id === attachTo) : undefined;
+      recordRevenue(total, "shop order", simulator?.branchId);
       if (attachTo) {
         const names = order.map((item) => item.name).join(", ");
-        const simulator = allSimulators.find((item) => item.id === attachTo);
         patchSimulator(attachTo, { orderItems: [...(simulator?.orderItems ?? []), names] });
       }
       appendLog(`paid shop order ${total.toLocaleString("uz-UZ")}`, attachTo);
       setOrder([]);
     },
-  }), [allSimulators, bookings, effectiveBranchId, inventory, logs, order, operator, period, repairRequests, revenue, role, scopedRepairRequests, selectedId, simulators, visibleBranchIds]);
+  }), [allSimulators, bookings, effectiveBranchId, inventory, logs, order, operator, period, repairRequests, revenue, revenueEvents, role, scopedRepairRequests, selectedId, simulators, visibleBranchIds]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

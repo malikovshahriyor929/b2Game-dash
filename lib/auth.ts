@@ -1,14 +1,12 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import { authSecret } from "@/lib/auth-env";
 import { mockUsers } from "@/lib/mock-data";
+import type { Role } from "@/types/user";
 
-const vercelUrl = process.env.VERCEL_URL;
-
-if (!process.env.NEXTAUTH_URL && vercelUrl) {
-  process.env.NEXTAUTH_URL = vercelUrl.startsWith("http") ? vercelUrl : `https://${vercelUrl}`;
+function isRole(value: unknown): value is Role {
+  return value === "admin" || value === "super_admin";
 }
-
-export const authSecret = process.env.NEXTAUTH_SECRET ?? process.env.AUTH_SECRET ?? "b2-game-club-demo-secret";
 
 export const authOptions: NextAuthOptions = {
   secret: authSecret,
@@ -22,7 +20,9 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       authorize(credentials) {
-        const user = mockUsers.find((item) => item.email === credentials?.email && item.password === credentials?.password);
+        const email = credentials?.email?.trim().toLowerCase();
+        const password = credentials?.password ?? "";
+        const user = mockUsers.find((item) => item.email.toLowerCase() === email && item.password === password);
         if (!user) return null;
         return { id: user.id, name: user.name, email: user.email, role: user.role, branchIds: user.branchIds };
       },
@@ -31,6 +31,8 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     jwt({ token, user }) {
       if (user) {
+        token.sub = user.id;
+        token.name = user.name;
         token.email = user.email;
         token.role = user.role;
         token.branchIds = user.branchIds;
@@ -39,9 +41,10 @@ export const authOptions: NextAuthOptions = {
     },
     session({ session, token }) {
       session.user.id = token.sub ?? "";
-      session.user.email = token.email;
-      session.user.role = token.role;
-      session.user.branchIds = token.branchIds;
+      session.user.name = token.name ?? "";
+      session.user.email = token.email ?? "";
+      session.user.role = isRole(token.role) ? token.role : "admin";
+      session.user.branchIds = Array.isArray(token.branchIds) ? token.branchIds : [];
       return session;
     },
   },

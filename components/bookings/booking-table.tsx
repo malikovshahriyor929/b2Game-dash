@@ -1,6 +1,6 @@
 "use client";
 
-import { FiCheckCircle, FiTrash2, FiXCircle } from "react-icons/fi";
+import { FiCheckCircle, FiEdit2, FiTrash2, FiXCircle } from "react-icons/fi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -21,7 +21,7 @@ function formatUzPhone(value: string) {
   return digits.startsWith("998") ? `+998 ${parts.join(" ")}` : value;
 }
 
-export function BookingTable() {
+export function BookingTable({ onEdit }: { onEdit?: (booking: Booking) => void }) {
   const { bookings, allSimulators, updateBooking, deleteBooking } = useDashboardStore();
 
   function patchStatus(booking: Booking, status: Booking["status"]) {
@@ -56,6 +56,7 @@ export function BookingTable() {
               <TableCell><Badge variant={badgeVariant(item.status)}>{item.status}</Badge></TableCell>
               <TableCell>
                 <div className="flex justify-end gap-2">
+                  <Button size="icon" variant="secondary" onClick={() => onEdit?.(item)} aria-label="Edit booking"><FiEdit2 /></Button>
                   <Button size="icon" variant="success" disabled={item.status === "Arrived"} onClick={() => patchStatus(item, "Arrived")} aria-label="Mark arrived"><FiCheckCircle /></Button>
                   <Button size="icon" variant="warning" disabled={item.status === "Cancelled"} onClick={() => patchStatus(item, "Cancelled")} aria-label="Cancel booking"><FiXCircle /></Button>
                   <Button size="icon" variant="destructive" onClick={() => deleteBooking(item.id)} aria-label="Delete booking"><FiTrash2 /></Button>

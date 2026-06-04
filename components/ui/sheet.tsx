@@ -10,7 +10,7 @@ export const SheetClose = DialogPrimitive.Close;
 export const SheetContent = ({ className, children, ...props }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>) => (
   <DialogPrimitive.Portal>
     <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/55" />
-    <DialogPrimitive.Content className={cn("fixed right-0 top-0 z-50 h-full w-[420px] max-w-[94vw] border-l border-slate-700 bg-slate-950 p-5 text-slate-100 shadow-2xl", className)} {...props}>
+    <DialogPrimitive.Content className={cn("fixed right-0 top-0 z-50 h-dvh w-[420px] max-w-[94vw] overflow-y-auto overscroll-contain border-l border-slate-700 bg-slate-950 p-5 text-slate-100 shadow-2xl thin-scrollbar", className)} {...props}>
       {children}
       <DialogPrimitive.Close className="absolute right-4 top-4 rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100">
         <IoClose />

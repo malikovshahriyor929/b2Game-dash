@@ -24,8 +24,13 @@ function formatNumber(value: string) {
   return value.replace(/\D/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 }
 
+function normalizeScanCode(value: string) {
+  return value.replace(/[\r\n\t]/g, "").trim();
+}
+
 export function CashierTabs() {
   const { products, addProduct, addProductByQr, createProduct, updateProduct, deleteProduct, recordCashierTransaction, simulators, pay } = useDashboardStore();
+  const [activeTab, setActiveTab] = useState("shop");
   const [category, setCategory] = useState("Barchasi");
   const [query, setQuery] = useState("");
   const [scanCode, setScanCode] = useState("");
@@ -53,29 +58,46 @@ export function CashierTabs() {
   const changeAmount = Math.max(Number(returnForm.receivedAmount || 0) - Number(returnForm.saleAmount || 0), 0);
 
   const scanProduct = useCallback((code = scanCode) => {
-    const product = addProductByQr(code);
+    const normalizedCode = normalizeScanCode(code);
+    if (!normalizedCode) {
+      qrInputRef.current?.focus();
+      return;
+    }
+
+    const existingProduct = products.find((item) => item.qrCode.toLowerCase() === normalizedCode.toLowerCase() || item.id.toLowerCase() === normalizedCode.toLowerCase());
+    if (existingProduct && existingProduct.stock <= 0) {
+      setScanMessage(`${existingProduct.name} stock tugagan. QR: ${existingProduct.qrCode}`);
+      setScanCode("");
+      qrInputRef.current?.focus();
+      return;
+    }
+
+    const product = addProductByQr(normalizedCode);
     if (product) {
       setScanMessage(`${product.name} orderga qo'shildi (${product.qrCode}).`);
       setScanCode("");
       qrInputRef.current?.focus();
       return;
     }
-    setScanMessage(`QR topilmadi: ${code.trim() || "-"}. Yangi mahsulot sifatida qo'shishingiz mumkin.`);
-    qrInputRef.current?.focus();
-  }, [addProductByQr, scanCode]);
+    setScanMessage(`QR topilmadi: ${normalizedCode}. Mahsulot ma'lumotlarini kiriting va saqlang.`);
+    setScanCode(normalizedCode);
+    setEditingProductId(null);
+    setNewProduct((item) => ({ ...item, qrCode: normalizedCode, name: "", price: "", stock: "", icon: "PR" }));
+    setProductModalOpen(true);
+  }, [addProductByQr, products, scanCode]);
 
   useEffect(() => {
-    qrInputRef.current?.focus();
-  }, []);
+    if (activeTab === "shop" && !productModalOpen) qrInputRef.current?.focus();
+  }, [activeTab, productModalOpen]);
 
   useEffect(() => {
-    if (!scannerMode || productModalOpen) return;
+    if (!scannerMode || productModalOpen || activeTab !== "shop") return;
 
     function resetBufferSoon() {
       if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
       scanTimerRef.current = setTimeout(() => {
         scanBufferRef.current = "";
-      }, 180);
+      }, 600);
     }
 
     function onKeyDown(event: KeyboardEvent) {
@@ -86,8 +108,8 @@ export function CashierTabs() {
 
       if (isTypingField && !isQrInput) return;
 
-      if (event.key === "Enter") {
-        const code = isQrInput ? scanCode : scanBufferRef.current;
+      if (event.key === "Enter" || event.key === "Tab") {
+        const code = isQrInput ? (target as HTMLInputElement).value : scanBufferRef.current;
         if (code.trim()) {
           event.preventDefault();
           scanProduct(code);
@@ -107,7 +129,7 @@ export function CashierTabs() {
       window.removeEventListener("keydown", onKeyDown);
       if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
     };
-  }, [scanCode, scanProduct, scannerMode, productModalOpen]);
+  }, [activeTab, scanProduct, scannerMode, productModalOpen]);
 
   function resetProductForm() {
     setNewProduct({ name: "", qrCode: "", price: "", stock: "", category: "Ichimliklar", icon: "PR", imageUrl: "" });
@@ -220,52 +242,57 @@ export function CashierTabs() {
   }
 
   return (
-    <div className="grid gap-4 xl:h-[calc(100vh-176px)] xl:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0">
-        <Tabs defaultValue="shop">
-          <TabsList className="w-full gap-1 rounded-2xl p-1 sm:w-fit">
-            <TabsTrigger className="h-10 px-4 text-sm" value="shop">Do'kon</TabsTrigger>
-            <TabsTrigger className="h-10 px-4 text-sm" value="balance">Balans</TabsTrigger>
-            <TabsTrigger className="h-10 px-4 text-sm" value="return">Qaytim</TabsTrigger>
-            <TabsTrigger className="h-10 px-4 text-sm" value="post">Post-pay</TabsTrigger>
-            <TabsTrigger className="h-10 px-4 text-sm" value="session">Sessiya</TabsTrigger>
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="w-full gap-1 rounded-xl p-1 sm:w-fit">
+            <TabsTrigger className="h-9 px-3 text-sm" value="shop">Do'kon</TabsTrigger>
+            <TabsTrigger className="h-9 px-3 text-sm" value="balance">Balans</TabsTrigger>
+            <TabsTrigger className="h-9 px-3 text-sm" value="return">Qaytim</TabsTrigger>
+            <TabsTrigger className="h-9 px-3 text-sm" value="post">Post-pay</TabsTrigger>
+            <TabsTrigger className="h-9 px-3 text-sm" value="session">Sessiya</TabsTrigger>
           </TabsList>
           <TabsContent value="shop">
-            <Card className="mb-3 space-y-3 p-3">
+            <Card className="mb-3 border-slate-800/80 bg-slate-950/40 p-3 shadow-none">
               <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
                 <div className="relative">
                   <RiQrScan2Line className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                   <Input
                     ref={qrInputRef}
-                    className="pl-9"
+                    className="h-10 rounded-lg pl-9"
                     value={scanCode}
                     onChange={(event) => setScanCode(event.target.value)}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter") scanProduct();
+                      if (event.key === "Enter" || event.key === "Tab") {
+                        event.preventDefault();
+                        scanProduct(event.currentTarget.value);
+                      }
                     }}
                     placeholder="QR scanner input: masalan B2-QR-0001"
                     autoComplete="off"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-2 sm:flex">
-                  <Button onClick={() => scanProduct()} disabled={!scanCode.trim()}><RiQrScan2Line /> Scan</Button>
-                  <Button variant="secondary" onClick={startCreateProduct}><FiPlusCircle /> New product</Button>
+                  <Button className="h-10 rounded-lg px-4" onClick={() => scanProduct()} disabled={!scanCode.trim()}><RiQrScan2Line /> Scan</Button>
+                  <Button className="h-10 rounded-lg px-4" variant="secondary" onClick={startCreateProduct}><FiPlusCircle /> New product</Button>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button size="sm" variant={scannerMode ? "success" : "secondary"} onClick={() => {
+              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+                <Button className="h-8 rounded-lg px-3 text-xs" size="sm" variant={scannerMode ? "success" : "secondary"} onClick={() => {
                   setScannerMode((value) => !value);
                   qrInputRef.current?.focus();
                 }}>
                   <RiQrScan2Line /> Scanner mode {scannerMode ? "ON" : "OFF"}
                 </Button>
-                <span className="text-xs text-slate-500">USB scanner ishlashi uchun kod + Enter yuboradi. Qo'lda ham QR kodni yozib Enter bosing.</span>
+                <span className="truncate text-xs text-slate-500">USB scanner: kod + Enter. Qo'lda ham QR kodni yozib Enter bosing.</span>
               </div>
-              <div className="text-xs font-semibold text-slate-400">{scanMessage}</div>
+              <div className="mt-2 text-xs font-semibold text-slate-400">{scanMessage}</div>
             </Card>
-            <div className="mb-3 flex gap-2 overflow-auto pb-1 thin-scrollbar">{cats.map((item) => <button key={item} onClick={() => setCategory(item)} className={`rounded-xl px-3 py-2 text-sm font-semibold ${category === item ? "bg-sky-500 text-slate-950" : "bg-slate-800 text-slate-300"}`}>{item}</button>)}</div>
-            <Input className="mb-3 max-w-md" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search product or QR..." />
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3">
+            <div className="mb-3 flex items-center gap-2 overflow-auto rounded-xl border border-slate-800 bg-slate-950/50 p-1 thin-scrollbar">
+              {cats.map((item) => <button key={item} onClick={() => setCategory(item)} className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${category === item ? "bg-sky-500 text-slate-950" : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"}`}>{item}</button>)}
+            </div>
+            <Input className="mb-3 h-9 max-w-md rounded-lg" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search product or QR..." />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {visible.map((item) => <ProductCard key={item.id} product={item} onAdd={() => addProduct(item)} onEdit={() => startEditProduct(item)} onDelete={() => removeProduct(item)} />)}
             </div>
           </TabsContent>

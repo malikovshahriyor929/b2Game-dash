@@ -22,11 +22,11 @@ export function OrderPanel() {
   }
 
   return (
-    <Card className="h-full">
+    <Card className="flex flex-col overflow-hidden xl:sticky xl:top-0 xl:h-[calc(100dvh-112px)] xl:max-h-[calc(100dvh-112px)]">
       <CardHeader><CardTitle>Current order</CardTitle></CardHeader>
-      <CardContent className="flex h-[calc(100%-72px)] flex-col gap-3">
-        <div className="min-h-0 flex-1 space-y-2 overflow-auto thin-scrollbar">
-          {order.length === 0 ? <div className="rounded-xl border border-dashed border-slate-700 p-8 text-center text-sm text-slate-500">Order empty</div> : null}
+      <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
+        <div className="min-h-[132px] flex-1 space-y-2 overflow-auto thin-scrollbar">
+          {order.length === 0 ? <div className="flex min-h-[112px] items-center justify-center rounded-xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-500">Order empty</div> : null}
           {order.map((item) => (
             <div key={item.id} className="rounded-xl bg-slate-950/70 p-3">
               <div className="flex justify-between gap-2"><div className="font-semibold">{item.name}</div><button onClick={() => updateQty(item.id, 0)}><FiTrash2 className="text-red-300" /></button></div>

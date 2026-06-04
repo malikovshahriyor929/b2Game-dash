@@ -129,6 +129,21 @@ export const initialLogs: LogEntry[] = [
   { id: "l3", time: "15:18", operator: "Admin", action: "requested fix for MAIN-05", simulator: "MAIN-05" },
 ];
 
+export const initialRevenueEvents = [
+  { id: "r1", time: "09:20", amount: 18000, source: "shop sale", branchId: "b2-main-arena" },
+  { id: "r2", time: "10:10", amount: 15000, source: "shop sale", branchId: "b2-main-arena" },
+  { id: "r3", time: "11:05", amount: 22000, source: "shop sale", branchId: "b2-main-arena" },
+  { id: "r4", time: "12:30", amount: 30000, source: "session payment", branchId: "b2-main-arena" },
+  { id: "r5", time: "13:15", amount: 24000, source: "shop sale", branchId: "b2-main-arena" },
+  { id: "r6", time: "14:25", amount: 38000, source: "session payment", branchId: "b2-main-arena" },
+  { id: "r7", time: "15:11", amount: 50000, source: "session payment", branchId: "b2-main-arena" },
+  { id: "r8", time: "16:05", amount: 42000, source: "balance top-up", branchId: "b2-main-arena" },
+  { id: "r9", time: "17:40", amount: 32000, source: "shop sale", branchId: "b2-main-arena" },
+  { id: "r10", time: "18:10", amount: 48000, source: "session payment", branchId: "b2-main-arena" },
+  { id: "r11", time: "19:35", amount: 43000, source: "shop sale", branchId: "b2-main-arena" },
+  { id: "r12", time: "20:05", amount: 50000, source: "session payment", branchId: "b2-main-arena" },
+];
+
 export const supportMessages = [
   { from: "Support", text: "Assalomu alaykum, B2 Game Club support online.", time: "14:01", own: false },
   { from: "Admin", text: "MAIN-05 wheel calibration error chiqyapti.", time: "14:03", own: true },

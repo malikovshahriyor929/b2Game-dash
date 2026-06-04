@@ -44,7 +44,7 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent>
+        <SheetContent className="w-[min(94vw,620px)] pb-8">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-3">{simulator.name}<StatusBadge status={simulator.status} /></SheetTitle>
           <SheetDescription>{simulator.branchName} - {simulator.zone} - {simulator.deviceId}</SheetDescription>

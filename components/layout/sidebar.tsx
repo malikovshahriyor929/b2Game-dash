@@ -56,7 +56,6 @@ export function Sidebar({ collapsed, mobileOpen, onCloseMobile, onToggleCollapse
           <Avatar className="shrink-0"><AvatarFallback>{data?.user?.name?.slice(0, 2).toUpperCase() ?? "OP"}</AvatarFallback></Avatar>
           <div className={cn("min-w-0 flex-1", collapsed && "md:hidden")}>
             <div className="truncate text-sm font-semibold text-white">{data?.user?.name ?? "operator"}</div>
-            <div className="truncate text-xs text-slate-400">{data?.user?.email}</div>
             <Badge variant="muted" className="mt-2 max-w-full truncate">{role}</Badge>
           </div>
         </div>

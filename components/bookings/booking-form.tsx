@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { FiCalendar, FiChevronLeft, FiChevronRight, FiPlus } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -108,33 +107,48 @@ function minutes(value: string) {
   return hour * 60 + minute;
 }
 
-function hasConflict(bookings: Booking[], form: BookingFormState) {
+function hasConflict(bookings: Booking[], form: BookingFormState, editingId?: string) {
   if (!form.simulatorId || !form.date || !form.startTime || !form.endTime) return false;
   const start = minutes(form.startTime);
   const end = minutes(form.endTime);
   if (end <= start) return true;
-  return bookings.some((booking) => booking.status !== "Cancelled" && booking.simulatorId === form.simulatorId && booking.date === form.date && start < minutes(booking.endTime) && end > minutes(booking.startTime));
+  return bookings.some((booking) => booking.id !== editingId && booking.status !== "Cancelled" && booking.simulatorId === form.simulatorId && booking.date === form.date && start < minutes(booking.endTime) && end > minutes(booking.startTime));
 }
 
-export function BookingForm() {
-  const { addBooking, bookings, simulators } = useDashboardStore();
-  const [form, setForm] = useState<BookingFormState>(emptyForm);
+export function BookingForm({ booking, onSaved }: { booking?: Booking | null; onSaved?: () => void }) {
+  const { addBooking, bookings, simulators, updateBooking } = useDashboardStore();
+  const [form, setForm] = useState<BookingFormState>(() => booking ? {
+    customerName: booking.customerName,
+    phone: booking.phone,
+    simulatorType: booking.simulatorType,
+    simulatorId: booking.simulatorId,
+    date: booking.date,
+    startTime: booking.startTime,
+    endTime: booking.endTime,
+    tariff: booking.tariff,
+    prepayment: booking.prepayment,
+    note: booking.note,
+  } : emptyForm);
   const simulatorsByType = useMemo(() => simulators.filter((item) => item.zone === form.simulatorType), [form.simulatorType, simulators]);
-  const conflict = hasConflict(bookings, form);
+  const conflict = hasConflict(bookings, form, booking?.id);
   const selectedTariff = tariffs.find((item) => item.name === form.tariff);
   const phoneValid = normalizeUzPhone(form.phone).length === 12;
+  const submitLabel = booking ? "Save booking" : "Create booking";
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!form.customerName.trim() || !phoneValid || !form.simulatorId || conflict) return;
-    addBooking({ ...form, id: crypto.randomUUID(), phone: normalizeUzPhone(form.phone), status: "Confirmed" });
-    setForm(emptyForm);
+    const payload = { ...form, phone: normalizeUzPhone(form.phone) };
+    if (booking) {
+      updateBooking({ ...payload, id: booking.id, status: booking.status });
+    } else {
+      addBooking({ ...payload, id: crypto.randomUUID(), status: "Confirmed" });
+      setForm(emptyForm);
+    }
+    onSaved?.();
   }
 
   return (
-    <Card>
-      <CardHeader><CardTitle>New booking</CardTitle></CardHeader>
-      <CardContent>
         <form onSubmit={submit} className="grid gap-3 lg:grid-cols-2">
           <div className="space-y-2"><Label>Customer name</Label><Input value={form.customerName} onChange={(event) => setForm((item) => ({ ...item, customerName: event.target.value }))} placeholder="Mijoz ismi" /></div>
           <div className="space-y-2">
@@ -159,9 +173,7 @@ export function BookingForm() {
           <div className={`rounded-xl border p-3 text-sm lg:col-span-2 ${conflict ? "border-red-500/40 bg-red-500/10 text-red-200" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"}`}>
             {conflict ? "Conflict: tanlangan simulator shu vaqtda band yoki vaqt oralig'i noto'g'ri." : `Conflict yo'q. ${selectedTariff ? `Tariff: ${money(selectedTariff.price)}.` : ""}`}
           </div>
-          <Button className="lg:col-span-2" type="submit" disabled={!form.customerName.trim() || !phoneValid || !form.simulatorId || conflict}><FiPlus /> Create booking</Button>
+          <Button className="lg:col-span-2" type="submit" disabled={!form.customerName.trim() || !phoneValid || !form.simulatorId || conflict}><FiPlus /> {submitLabel}</Button>
         </form>
-      </CardContent>
-    </Card>
   );
 }

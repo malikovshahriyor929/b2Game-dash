@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { signOut, useSession } from "next-auth/react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { StartSessionDialog } from "@/components/simulator/start-session-dialog";
@@ -36,6 +37,18 @@ function ShellInner({ children }: { children: React.ReactNode }) {
 }
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
+  const { status } = useSession();
+
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      void signOut({ callbackUrl: "/login" });
+    }
+  }, [status]);
+
+  if (status === "loading" || status === "unauthenticated") {
+    return <main className="flex h-dvh items-center justify-center bg-[#070b15] text-sm font-semibold text-slate-400">Session tekshirilmoqda...</main>;
+  }
+
   return (
     <DashboardStoreProvider>
       <ShellInner>{children}</ShellInner>
