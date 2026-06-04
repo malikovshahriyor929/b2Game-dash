@@ -16,6 +16,10 @@ function Field({ label, value }: { label: string; value?: React.ReactNode }) {
   return <div className="rounded-xl bg-slate-900/70 p-3"><div className="text-xs text-slate-500">{label}</div><div className="mt-1 text-sm font-semibold text-slate-100">{value ?? "-"}</div></div>;
 }
 
+function simulatorKind(simulator: Simulator) {
+  return simulator.zone === "Standard" ? "Logitech (Standard)" : "Moza (VIP)";
+}
+
 export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator; onAction: (action: "start" | "addTime" | "payment" | "stop") => void }) {
   const { approveRepair, askRepairDetails, confirmFixed, rejectFix, rejectRepair, repairRequests, startFixing, markFixed, toggleLock } = useDashboardStore();
   const { data } = useSession();
@@ -47,11 +51,11 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
         <SheetContent className="w-[min(94vw,620px)] pb-8">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-3">{simulator.name}<StatusBadge status={simulator.status} /></SheetTitle>
-          <SheetDescription>{simulator.branchName} - {simulator.zone} - {simulator.deviceId}</SheetDescription>
+          <SheetDescription>{simulator.branchName} - {simulatorKind(simulator)} - {simulator.deviceId}</SheetDescription>
         </SheetHeader>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Branch" value={simulator.branchName} />
-          <Field label="Zone" value={simulator.zone} />
+          <Field label="Type" value={simulatorKind(simulator)} />
           <Field label="Current user" value={simulator.currentUser ?? "No session"} />
           <Field label="Tariff" value={simulator.tariff ?? "Not selected"} />
           <Field label="Started" value={simulator.startedAt ?? "-"} />

@@ -21,19 +21,23 @@ const statusClass = {
   locked: "border-slate-600 bg-slate-900/40 opacity-70",
 };
 
+function simulatorKind(simulator: Simulator) {
+  return simulator.zone === "Standard" ? "Logitech" : "Moza VIP";
+}
+
 export function SimulatorCard({ simulator, selected, onClick, compact = false }: { simulator: Simulator; selected: boolean; onClick: () => void; compact?: boolean }) {
   return (
     <Card onClick={onClick} className={cn("relative cursor-pointer transition hover:-translate-y-0.5 hover:border-sky-400/70", compact ? "min-h-[112px] p-2.5" : "min-h-[132px] p-3", statusClass[simulator.status], selected && "border-sky-300 shadow-glow")}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="truncate text-xs font-semibold uppercase text-slate-500">{compact ? simulator.zone : `${simulator.branchName} - ${simulator.zone}`}</div>
+          <div className="truncate text-xs font-semibold uppercase text-slate-500">{compact ? simulatorKind(simulator) : `${simulator.branchName} - ${simulatorKind(simulator)}`}</div>
           <div className={cn("font-black text-white", compact ? "text-base" : "text-lg")}>{simulator.name}</div>
         </div>
         <StatusBadge status={simulator.status} />
       </div>
       <div className={cn("space-y-1.5 text-xs text-slate-300", compact ? "mt-3" : "mt-4")}>
         <div className="flex items-center gap-2"><FiUser className="text-slate-500" /> {simulator.currentUser ?? "Guest ready"}</div>
-        <div className="flex items-center gap-2"><FiClock className="text-slate-500" /> {simulator.remainingMinutes ? minutes(simulator.remainingMinutes) : simulator.zone}</div>
+        <div className="flex items-center gap-2"><FiClock className="text-slate-500" /> {simulator.remainingMinutes ? minutes(simulator.remainingMinutes) : simulatorKind(simulator)}</div>
         <div className="flex items-center gap-2"><FiDollarSign className={simulator.paymentStatus === "unpaid" ? "text-red-300" : "text-slate-500"} /> {simulator.paymentStatus}</div>
       </div>
     </Card>

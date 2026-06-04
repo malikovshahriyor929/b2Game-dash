@@ -67,7 +67,7 @@ export default function TariffsPage() {
           <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Tariff name</Label>
-              <Input value={form.name} onChange={(event) => setForm((item) => ({ ...item, name: event.target.value }))} placeholder="Main 90 min" />
+              <Input value={form.name} onChange={(event) => setForm((item) => ({ ...item, name: event.target.value }))} placeholder="Logitech 90 min" />
             </div>
             <div className="space-y-2">
               <Label>Type</Label>

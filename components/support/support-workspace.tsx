@@ -36,8 +36,8 @@ type Message = {
 const initialTickets: Ticket[] = [
   {
     id: "B2-204",
-    title: "MAIN-05 wheel calibration",
-    simulator: "MAIN-05",
+    title: "LOGITECH-05 wheel calibration",
+    simulator: "LOGITECH-05",
     priority: "High",
     status: "Open",
     description: "Wheel calibration error, session moved to another simulator.",
@@ -59,7 +59,7 @@ function statusVariant(status: TicketStatus) {
 export function SupportWorkspace() {
   const [tickets, setTickets] = useState<Ticket[]>(initialTickets);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(initialTickets[0]?.id ?? null);
-  const [messages, setMessages] = useState<Message[]>(supportMessages.map((item) => ({ ...item, ticketId: item.text.includes("MAIN-05") || item.text.includes("#B2-204") ? "B2-204" : undefined })));
+  const [messages, setMessages] = useState<Message[]>(supportMessages.map((item) => ({ ...item, ticketId: item.text.includes("LOGITECH-05") || item.text.includes("#B2-204") ? "B2-204" : undefined })));
   const [text, setText] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ title: "", simulator: "", priority: "High" as TicketPriority, status: "Open" as TicketStatus, description: "" });
@@ -179,7 +179,7 @@ export function SupportWorkspace() {
           </DialogHeader>
           <form onSubmit={createTicket} className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2"><Label>Title</Label><Input value={form.title} onChange={(event) => setForm((item) => ({ ...item, title: event.target.value }))} /></div>
-            <div className="space-y-2"><Label>Simulator</Label><Input value={form.simulator} onChange={(event) => setForm((item) => ({ ...item, simulator: event.target.value }))} placeholder="MAIN-01" /></div>
+            <div className="space-y-2"><Label>Simulator</Label><Input value={form.simulator} onChange={(event) => setForm((item) => ({ ...item, simulator: event.target.value }))} placeholder="LOGITECH-01" /></div>
             <div className="space-y-2"><Label>Priority</Label><Select value={form.priority} onValueChange={(value) => setForm((item) => ({ ...item, priority: value as TicketPriority }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["Low", "Medium", "High", "Critical"].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label>Status</Label><Select value={form.status} onValueChange={(value) => setForm((item) => ({ ...item, status: value as TicketStatus }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["Open", "In progress", "Waiting", "Solved", "Closed"].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2 sm:col-span-2"><Label>Description</Label><Input value={form.description} onChange={(event) => setForm((item) => ({ ...item, description: event.target.value }))} /></div>

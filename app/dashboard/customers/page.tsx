@@ -440,7 +440,7 @@ export default function CustomersPage() {
               </div>
               <div className="grid gap-3 md:grid-cols-3">
                 <Card className="p-4"><div className="font-bold text-white">Profile</div><div className="mt-2 text-sm text-slate-400">Last visit: {selectedCustomer.lastVisit}<br />Status: {selectedCustomer.status}<br />Note: {selectedCustomer.note || "-"}</div></Card>
-                <Card className="p-4"><div className="font-bold text-white">Session history</div><div className="mt-2 text-sm text-slate-400">MAIN-01 - 60 min<br />VIP-02 - 30 min<br />MAIN-04 - 90 min</div></Card>
+                <Card className="p-4"><div className="font-bold text-white">Session history</div><div className="mt-2 text-sm text-slate-400">LOGITECH-01 - 60 min<br />MOZA-02 - 30 min<br />LOGITECH-04 - 90 min</div></Card>
                 <Card className="p-4"><div className="font-bold text-white">Shop purchases</div><div className="mt-2 text-sm text-slate-400">Coca-Cola 0.5<br />Energy Drink<br />Chips</div></Card>
               </div>
               <div className="flex justify-end gap-2">

@@ -1,4 +1,4 @@
-export type SimulatorZone = "Main" | "VIP";
+export type SimulatorZone = "Standard" | "VIP";
 export type SimulatorType = SimulatorZone;
 export type SimulatorStatus = "ready_to_play" | "busy" | "reserved" | "unpaid" | "broken" | "repair_requested" | "repair_approved" | "fixing" | "fixed_waiting_confirmation" | "offline" | "locked";
 export type PaymentStatus = "paid" | "unpaid" | "partial";

@@ -33,7 +33,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator }: { open: bo
   const [customerType, setCustomerType] = useState<(typeof customerTypes)[number]>("Guest");
   const [customerName, setCustomerName] = useState("Guest");
   const [phone, setPhone] = useState("");
-  const [tariff, setTariff] = useState("Racing 60 min");
+  const [tariff, setTariff] = useState("Logitech 60 min");
   const [duration, setDuration] = useState("60");
   const [paymentStatus, setPaymentStatus] = useState<"paid" | "unpaid" | "partial">("paid");
   const [paymentMethod, setPaymentMethod] = useState<(typeof paymentMethods)[number]>("Karta");
@@ -51,7 +51,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator }: { open: bo
     setCustomerType("Guest");
     setCustomerName("Guest");
     setPhone("");
-    setTariff("Racing 60 min");
+    setTariff(simulator?.zone === "VIP" ? "Moza VIP 60 min" : "Logitech 60 min");
     setDuration("60");
     setPaymentStatus("paid");
     setPaymentMethod("Karta");

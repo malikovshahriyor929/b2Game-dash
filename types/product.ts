@@ -10,3 +10,21 @@ export type Product = {
 };
 
 export type OrderItem = Product & { qty: number };
+
+export type BarSale = {
+  id: string;
+  date: string;
+  time: string;
+  operator: string;
+  items: {
+    productId: string;
+    name: string;
+    qty: number;
+    price: number;
+  }[];
+  totalAmount: number;
+  paymentMethod: string;
+  branchId: string;
+  shiftId?: string;
+};
+

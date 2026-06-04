@@ -17,12 +17,12 @@ type BookingFormState = Omit<Booking, "id" | "status">;
 const emptyForm: BookingFormState = {
   customerName: "",
   phone: "",
-  simulatorType: "Main",
+  simulatorType: "Standard",
   simulatorId: "",
   date: "2026-06-03",
   startTime: "16:00",
   endTime: "17:00",
-  tariff: "Main 60 min",
+  tariff: "Logitech 60 min",
   prepayment: 0,
   note: "",
 };
@@ -162,7 +162,7 @@ export function BookingForm({ booking, onSaved }: { booking?: Booking | null; on
             </div>
             <div className="text-xs text-slate-500">Ko'rinishi: {form.phone ? formatUzPhone(form.phone) : "+998 XX XXX XX XX"}</div>
           </div>
-          <div className="space-y-2"><Label>Simulator type</Label><Select value={form.simulatorType} onValueChange={(simulatorType) => setForm((item) => ({ ...item, simulatorType, simulatorId: "" }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Main">Main</SelectItem><SelectItem value="VIP">VIP</SelectItem></SelectContent></Select></div>
+          <div className="space-y-2"><Label>Simulator type</Label><Select value={form.simulatorType} onValueChange={(simulatorType) => setForm((item) => ({ ...item, simulatorType, simulatorId: "" }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Standard">Logitech (Standard)</SelectItem><SelectItem value="VIP">Moza (VIP)</SelectItem></SelectContent></Select></div>
           <div className="space-y-2"><Label>Exact simulator</Label><Select value={form.simulatorId} onValueChange={(simulatorId) => setForm((item) => ({ ...item, simulatorId }))}><SelectTrigger><SelectValue placeholder="Simulator tanlang" /></SelectTrigger><SelectContent>{simulatorsByType.map((simulator) => <SelectItem key={simulator.id} value={simulator.id}>{simulator.branchName} - {simulator.name}</SelectItem>)}</SelectContent></Select></div>
           <div className="space-y-2"><Label>Date</Label><DatePicker value={form.date} onChange={(date) => setForm((item) => ({ ...item, date }))} /></div>
           <div className="space-y-2"><Label>Start time</Label><Input type="time" value={form.startTime} onChange={(event) => setForm((item) => ({ ...item, startTime: event.target.value }))} /></div>

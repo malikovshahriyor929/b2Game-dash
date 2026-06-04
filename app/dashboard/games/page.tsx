@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PageHeader } from "@/components/shared/page-header";
 
 type GameStatus = "installed" | "ready" | "updating" | "disabled";
-type GameZone = "Main" | "VIP" | "Both";
+type GameZone = "Standard" | "VIP" | "Both";
 
 type Game = {
   id: string;
@@ -25,17 +25,17 @@ type Game = {
 };
 
 const initialGames: Game[] = [
-  { id: "g1", name: "Gran Turismo 7", zone: "Main", status: "ready", version: "1.54", imageUrl: "https://images.unsplash.com/photo-1542282088-fe8426682b8f?auto=format&fit=crop&w=900&q=80" },
-  { id: "g2", name: "Forza Motorsport", zone: "Main", status: "ready", version: "2026.1", imageUrl: "https://images.unsplash.com/photo-1503736334956-4c8f8e92946d?auto=format&fit=crop&w=900&q=80" },
+  { id: "g1", name: "Gran Turismo 7", zone: "Standard", status: "ready", version: "1.54", imageUrl: "https://images.unsplash.com/photo-1542282088-fe8426682b8f?auto=format&fit=crop&w=900&q=80" },
+  { id: "g2", name: "Forza Motorsport", zone: "Standard", status: "ready", version: "2026.1", imageUrl: "https://images.unsplash.com/photo-1503736334956-4c8f8e92946d?auto=format&fit=crop&w=900&q=80" },
   { id: "g3", name: "Beat Saber", zone: "VIP", status: "installed", version: "1.39", imageUrl: "https://images.unsplash.com/photo-1593508512255-86ab42a8e620?auto=format&fit=crop&w=900&q=80" },
   { id: "g4", name: "EA FC 26", zone: "Both", status: "ready", version: "26.0", imageUrl: "https://images.unsplash.com/photo-1605901309584-818e25960a8f?auto=format&fit=crop&w=900&q=80" },
   { id: "g5", name: "Mortal Kombat", zone: "VIP", status: "ready", version: "1.2", imageUrl: "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=900&q=80" },
   { id: "g6", name: "Tekken 8", zone: "VIP", status: "ready", version: "1.10", imageUrl: "https://images.unsplash.com/photo-1560253023-3ec5d502959f?auto=format&fit=crop&w=900&q=80" },
-  { id: "g7", name: "F1 Arcade Pack", zone: "Main", status: "installed", version: "3.4", imageUrl: "https://images.unsplash.com/photo-1517524008697-84bbe3c3fd98?auto=format&fit=crop&w=900&q=80" },
-  { id: "g8", name: "Assetto Corsa", zone: "Main", status: "updating", version: "2.1", imageUrl: "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?auto=format&fit=crop&w=900&q=80" },
+  { id: "g7", name: "F1 Arcade Pack", zone: "Standard", status: "installed", version: "3.4", imageUrl: "https://images.unsplash.com/photo-1517524008697-84bbe3c3fd98?auto=format&fit=crop&w=900&q=80" },
+  { id: "g8", name: "Assetto Corsa", zone: "Standard", status: "updating", version: "2.1", imageUrl: "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?auto=format&fit=crop&w=900&q=80" },
 ];
 
-const emptyForm = { name: "", zone: "Main" as GameZone, status: "ready" as GameStatus, version: "", imageUrl: "" };
+const emptyForm = { name: "", zone: "Standard" as GameZone, status: "ready" as GameStatus, version: "", imageUrl: "" };
 
 const statusLabels: Record<GameStatus, string> = {
   installed: "O'rnatilgan",
@@ -166,7 +166,7 @@ export default function GamesPage() {
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Barcha zonalar</SelectItem>
-              <SelectItem value="Main">Main</SelectItem>
+              <SelectItem value="Standard">Standard</SelectItem>
               <SelectItem value="VIP">VIP</SelectItem>
               <SelectItem value="Both">Both only</SelectItem>
             </SelectContent>
@@ -250,7 +250,7 @@ export default function GamesPage() {
                 <Label>Zona</Label>
                 <Select value={form.zone} onValueChange={(value) => setForm((item) => ({ ...item, zone: value as GameZone }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{["Main", "VIP", "Both"].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
+                  <SelectContent>{["Standard", "VIP", "Both"].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">

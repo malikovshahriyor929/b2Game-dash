@@ -1,15 +1,13 @@
 import { Booking } from "@/types/booking";
-import { LogEntry } from "@/types/log";
-import { Product } from "@/types/product";
+import { LogEntry, LockUnlockEntry } from "@/types/log";
+import { Product, BarSale } from "@/types/product";
 import { RepairRequest, Simulator } from "@/types/simulator";
 import { Branch, MockUser } from "@/types/user";
+import { CashTransaction, Shift } from "@/types/report";
+
 
 export const branches: Branch[] = [
   { id: "b2-main-arena", name: "B2 Main Arena" },
-  { id: "b2-yunusabad", name: "B2 Yunusabad" },
-  { id: "b2-chilonzor", name: "B2 Chilonzor" },
-  { id: "b2-sergeli", name: "B2 Sergeli" },
-  { id: "b2-samarqand", name: "B2 Samarqand" },
 ];
 
 export const mockUsers: MockUser[] = [
@@ -18,83 +16,72 @@ export const mockUsers: MockUser[] = [
 ];
 
 export const tariffs = [
-  { id: "t1", name: "Main 30 min", type: "Time-based", price: 30000 },
-  { id: "t2", name: "Main 60 min", type: "Time-based", price: 50000 },
-  { id: "t3", name: "VIP 30 min", type: "VIP", price: 60000 },
-  { id: "t4", name: "VIP 60 min", type: "VIP", price: 100000 },
-  { id: "t5", name: "Main 2+1", type: "Package", price: 100000 },
+  { id: "t1", name: "Logitech 30 min", type: "Standard", price: 30000 },
+  { id: "t2", name: "Logitech 60 min", type: "Standard", price: 50000 },
+  { id: "t3", name: "Moza VIP 30 min", type: "VIP", price: 60000 },
+  { id: "t4", name: "Moza VIP 60 min", type: "VIP", price: 100000 },
+  { id: "t5", name: "Logitech 2+1", type: "Package", price: 100000 },
   { id: "t6", name: "Birthday Pack", type: "Birthday", price: 350000 },
   { id: "t7", name: "Night Pack", type: "Night", price: 200000 },
 ];
 
-const branchOctet: Record<string, number> = {
-  "b2-main-arena": 10,
-  "b2-yunusabad": 20,
-  "b2-chilonzor": 30,
-  "b2-sergeli": 40,
-  "b2-samarqand": 50,
-};
+const mainArenaRepairId = "repair-logitech-05";
 
-const mainArenaRepairId = "repair-main-arena-main-05";
-
-function simulatorStatus(branchIndex: number, number: number, zone: "Main" | "VIP") {
-  if (branchIndex === 0 && zone === "Main" && number === 1) return "busy" as const;
-  if (branchIndex === 0 && zone === "Main" && number === 2) return "reserved" as const;
-  if (branchIndex === 0 && zone === "Main" && number === 3) return "unpaid" as const;
-  if (branchIndex === 0 && zone === "Main" && number === 5) return "repair_requested" as const;
-  if (branchIndex === 1 && zone === "VIP" && number === 2) return "fixing" as const;
-  if (branchIndex === 2 && zone === "Main" && number === 8) return "broken" as const;
-  if (branchIndex === 3 && zone === "Main" && number === 12) return "offline" as const;
-  if (branchIndex === 4 && zone === "VIP" && number === 4) return "locked" as const;
+function simulatorStatus(number: number, zone: "Standard" | "VIP") {
+  if (zone === "Standard" && number === 1) return "busy" as const;
+  if (zone === "Standard" && number === 2) return "reserved" as const;
+  if (zone === "Standard" && number === 3) return "unpaid" as const;
+  if (zone === "Standard" && number === 5) return "repair_requested" as const;
   return "ready_to_play" as const;
 }
 
-function createSimulator(branch: Branch, branchIndex: number, zone: "Main" | "VIP", number: number): Simulator {
-  const name = `${zone === "Main" ? "MAIN" : "VIP"}-${String(number).padStart(2, "0")}`;
-  const status = simulatorStatus(branchIndex, number, zone);
+function createSimulator(branch: Branch, zone: "Standard" | "VIP", number: number): Simulator {
+  const prefix = zone === "Standard" ? "LOGITECH" : "MOZA";
+  const name = `${prefix}-${String(number).padStart(2, "0")}`;
+  const status = simulatorStatus(number, zone);
   const isActive = ["busy", "unpaid"].includes(status);
 
   return {
-    id: `${branch.id}-${name.toLowerCase()}`,
+    id: `${branch.id}-${prefix.toLowerCase()}-${String(number).padStart(2, "0")}`,
     name,
     type: zone,
     zone,
     branchId: branch.id,
     branchName: branch.name,
     status,
-    deviceId: `B2-${branchIndex + 1}-${zone === "Main" ? "M" : "V"}-${String(number).padStart(2, "0")}`,
-    ipAddress: `192.168.${branchOctet[branch.id]}.${zone === "Main" ? number + 10 : number + 80}`,
+    deviceId: `B2-${zone === "Standard" ? "LOG" : "MOZA"}-${String(number).padStart(2, "0")}`,
+    ipAddress: `192.168.10.${zone === "Standard" ? number + 10 : number + 80}`,
     currentUser: isActive ? (number === 1 ? "Aziz" : "Kamron") : status === "reserved" ? "Bekzod" : undefined,
     phone: isActive ? "998901112233" : undefined,
-    tariff: zone === "VIP" ? "VIP 60 min" : "Main 60 min",
+    tariff: zone === "VIP" ? "Moza VIP 60 min" : "Logitech 60 min",
     startedAt: isActive ? "14:20" : undefined,
     remainingMinutes: status === "busy" ? 38 : 0,
     paidAmount: status === "busy" ? 50000 : status === "reserved" ? 20000 : 0,
     paymentStatus: status === "unpaid" ? "unpaid" : status === "reserved" ? "partial" : "paid",
     orderItems: status === "busy" ? ["Coca-Cola 0.5"] : [],
-    repairRequestId: branch.id === "b2-main-arena" && zone === "Main" && number === 5 ? mainArenaRepairId : undefined,
+    repairRequestId: zone === "Standard" && number === 5 ? mainArenaRepairId : undefined,
   };
 }
 
-export const initialSimulators: Simulator[] = branches.flatMap((branch, branchIndex) => [
-  ...Array.from({ length: 16 }, (_, index) => createSimulator(branch, branchIndex, "Main", index + 1)),
-  ...Array.from({ length: 4 }, (_, index) => createSimulator(branch, branchIndex, "VIP", index + 1)),
-]);
+export const initialSimulators: Simulator[] = [
+  ...Array.from({ length: 16 }, (_, index) => createSimulator(branches[0], "Standard", index + 1)),
+  ...Array.from({ length: 4 }, (_, index) => createSimulator(branches[0], "VIP", index + 1)),
+];
 
 export const initialRepairRequests: RepairRequest[] = [
   {
     id: mainArenaRepairId,
-    simulatorId: "b2-main-arena-main-05",
-    simulatorName: "MAIN-05",
+    simulatorId: "b2-main-arena-logitech-05",
+    simulatorName: "LOGITECH-05",
     branchId: "b2-main-arena",
     branchName: "B2 Main Arena",
     requestedBy: "Admin",
     requestedAt: "2026-06-03 10:15",
     title: "Wheel calibration error",
-    description: "Main simulator does not start the game session because the wheel calibration fails on launch.",
+    description: "Logitech Standard simulator does not start the game session because the wheel calibration fails on launch.",
     errorType: "device_error",
     priority: "high",
-    note: "Customer session was moved to MAIN-06.",
+    note: "Customer session was moved to LOGITECH-06.",
     status: "pending",
     affectedRevenue: 50000,
   },
@@ -106,15 +93,15 @@ export const products: Product[] = [
   { id: "p3", name: "Burger", qrCode: "B2-QR-0003", price: 25000, stock: 18, category: "Fast food", icon: "BG", imageUrl: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=700&q=80" },
   { id: "p4", name: "Energy Drink", qrCode: "B2-QR-0004", price: 15000, stock: 44, category: "Energy drink", icon: "ED", imageUrl: "https://images.unsplash.com/photo-1622543925917-763c34d1a86e?auto=format&fit=crop&w=700&q=80" },
   { id: "p5", name: "Chips", qrCode: "B2-QR-0005", price: 12000, stock: 31, category: "Snack", icon: "CH", imageUrl: "https://images.unsplash.com/photo-1566478989037-eec170784d0b?auto=format&fit=crop&w=700&q=80" },
-  { id: "p6", name: "Main 60 min", qrCode: "B2-QR-0006", price: 50000, stock: 999, category: "Paketlar", icon: "M", imageUrl: "https://images.unsplash.com/photo-1605901309584-818e25960a8f?auto=format&fit=crop&w=700&q=80" },
-  { id: "p7", name: "Main 2+1 Paket", qrCode: "B2-QR-0007", price: 100000, stock: 999, category: "Paketlar", icon: "M2", imageUrl: "https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=700&q=80" },
-  { id: "p8", name: "VIP 30 min", qrCode: "B2-QR-0008", price: 60000, stock: 999, category: "Paketlar", icon: "V3", imageUrl: "https://images.unsplash.com/photo-1593508512255-86ab42a8e620?auto=format&fit=crop&w=700&q=80" },
-  { id: "p9", name: "VIP 60 min", qrCode: "B2-QR-0009", price: 100000, stock: 999, category: "Paketlar", icon: "V6", imageUrl: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=700&q=80" },
+  { id: "p6", name: "Logitech 60 min", qrCode: "B2-QR-0006", price: 50000, stock: 999, category: "Paketlar", icon: "L6", imageUrl: "https://images.unsplash.com/photo-1605901309584-818e25960a8f?auto=format&fit=crop&w=700&q=80" },
+  { id: "p7", name: "Logitech 2+1 Paket", qrCode: "B2-QR-0007", price: 100000, stock: 999, category: "Paketlar", icon: "L2", imageUrl: "https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=700&q=80" },
+  { id: "p8", name: "Moza VIP 30 min", qrCode: "B2-QR-0008", price: 60000, stock: 999, category: "Paketlar", icon: "V3", imageUrl: "https://images.unsplash.com/photo-1593508512255-86ab42a8e620?auto=format&fit=crop&w=700&q=80" },
+  { id: "p9", name: "Moza VIP 60 min", qrCode: "B2-QR-0009", price: 100000, stock: 999, category: "Paketlar", icon: "V6", imageUrl: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=700&q=80" },
 ];
 
 export const bookings: Booking[] = [
-  { id: "b1", customerName: "Bekzod", phone: "998901234567", simulatorType: "Main", simulatorId: "b2-main-arena-main-02", date: "2026-06-03", startTime: "16:00", endTime: "17:00", tariff: "Main 60 min", prepayment: 20000, note: "Two players", status: "Confirmed" },
-  { id: "b2", customerName: "Nilufar", phone: "998939998877", simulatorType: "VIP", simulatorId: "b2-main-arena-vip-03", date: "2026-06-03", startTime: "18:30", endTime: "20:00", tariff: "VIP 60 min", prepayment: 50000, note: "Birthday setup", status: "Pending" },
+  { id: "b1", customerName: "Bekzod", phone: "998901234567", simulatorType: "Standard", simulatorId: "b2-main-arena-logitech-02", date: "2026-06-03", startTime: "16:00", endTime: "17:00", tariff: "Logitech 60 min", prepayment: 20000, note: "Two players", status: "Confirmed" },
+  { id: "b2", customerName: "Nilufar", phone: "998939998877", simulatorType: "VIP", simulatorId: "b2-main-arena-moza-03", date: "2026-06-03", startTime: "18:30", endTime: "20:00", tariff: "Moza VIP 60 min", prepayment: 50000, note: "Birthday setup", status: "Pending" },
 ];
 
 export const customers = [
@@ -124,9 +111,9 @@ export const customers = [
 ];
 
 export const initialLogs: LogEntry[] = [
-  { id: "l1", time: "15:03", operator: "Admin", action: "started session on MAIN-01", simulator: "MAIN-01" },
-  { id: "l2", time: "15:11", operator: "Admin", action: "received 50 000 by card", simulator: "MAIN-03", paymentMethod: "Karta" },
-  { id: "l3", time: "15:18", operator: "Admin", action: "requested fix for MAIN-05", simulator: "MAIN-05" },
+  { id: "l1", time: "15:03", operator: "Admin", action: "started session on LOGITECH-01", simulator: "LOGITECH-01" },
+  { id: "l2", time: "15:11", operator: "Admin", action: "received 50 000 by card", simulator: "LOGITECH-03", paymentMethod: "Karta" },
+  { id: "l3", time: "15:18", operator: "Admin", action: "requested fix for LOGITECH-05", simulator: "LOGITECH-05" },
 ];
 
 export const initialRevenueEvents = [
@@ -146,6 +133,289 @@ export const initialRevenueEvents = [
 
 export const supportMessages = [
   { from: "Support", text: "Assalomu alaykum, B2 Game Club support online.", time: "14:01", own: false },
-  { from: "Admin", text: "MAIN-05 wheel calibration error chiqyapti.", time: "14:03", own: true },
+  { from: "Admin", text: "LOGITECH-05 wheel calibration error chiqyapti.", time: "14:03", own: true },
   { from: "Support Bot", text: "Repair request #B2-204 Super Admin ko'rib chiqishi uchun yaratildi.", time: "14:04", own: false },
 ];
+
+export const initialShifts: Shift[] = [
+  // July 2nd Shifts
+  {
+    id: "s-jul2-day",
+    operator: "Admin",
+    date: "2026-07-02",
+    shiftType: "Kunduzgi (09:00 - 18:00)",
+    status: "closed",
+    openTime: "09:00",
+    closeTime: "18:00",
+    startingCash: 150000,
+    expectedCash: 385000,
+    actualCash: 385000,
+    discrepancy: 0,
+    cardRevenue: 420000,
+    qrRevenue: 90000,
+    totalIncome: 120000, // custom prixod
+    totalExpense: 45000, // custom rasxod
+    notes: "Everything went smoothly."
+  },
+  {
+    id: "s-jul2-night",
+    operator: "Admin",
+    date: "2026-07-02",
+    shiftType: "Tungi (18:01 - 09:00)",
+    status: "closed",
+    openTime: "18:01",
+    closeTime: "09:00",
+    startingCash: 385000,
+    expectedCash: 620000,
+    actualCash: 615000,
+    discrepancy: -5000,
+    cardRevenue: 310000,
+    qrRevenue: 60000,
+    totalIncome: 80000,
+    totalExpense: 110000,
+    notes: "Discrepancy due to minor cash refund issue."
+  },
+  // July 3rd Shifts
+  {
+    id: "s-jul3-day",
+    operator: "Admin",
+    date: "2026-07-03",
+    shiftType: "Kunduzgi (09:00 - 18:00)",
+    status: "closed",
+    openTime: "09:00",
+    closeTime: "18:00",
+    startingCash: 615000,
+    expectedCash: 950000,
+    actualCash: 950000,
+    discrepancy: 0,
+    cardRevenue: 510000,
+    qrRevenue: 120000,
+    totalIncome: 200000,
+    totalExpense: 85000,
+    notes: "High simulator traffic."
+  },
+  // Today's Shift (June 4th)
+  {
+    id: "s-jun4-day",
+    operator: "Admin",
+    date: "2026-06-04",
+    shiftType: "Kunduzgi (09:00 - 18:00)",
+    status: "open",
+    openTime: "09:00",
+    startingCash: 200000,
+    cardRevenue: 210000,
+    qrRevenue: 90000,
+    totalIncome: 120000,
+    totalExpense: 25000
+  }
+];
+
+export const initialLockUnlockLogs: LockUnlockEntry[] = [
+  { id: "lu1", time: "09:15", date: "2026-07-02", operator: "Admin", simulator: "LOGITECH-01", action: "unlock" },
+  { id: "lu2", time: "11:30", date: "2026-07-02", operator: "Admin", simulator: "LOGITECH-03", action: "lock" },
+  { id: "lu3", time: "14:45", date: "2026-07-02", operator: "Admin", simulator: "MOZA-02", action: "lock" },
+  { id: "lu4", time: "18:20", date: "2026-07-02", operator: "Admin", simulator: "LOGITECH-02", action: "unlock" },
+  
+  { id: "lu5", time: "10:05", date: "2026-07-03", operator: "Admin", simulator: "LOGITECH-08", action: "lock" },
+  { id: "lu6", time: "12:15", date: "2026-07-03", operator: "Admin", simulator: "LOGITECH-08", action: "unlock" },
+  { id: "lu7", time: "15:40", date: "2026-07-03", operator: "Admin", simulator: "MOZA-04", action: "lock" },
+
+  { id: "lu8", time: "09:30", date: "2026-06-04", operator: "Admin", simulator: "LOGITECH-01", action: "lock" },
+  { id: "lu9", time: "11:15", date: "2026-06-04", operator: "Admin", simulator: "LOGITECH-01", action: "unlock" }
+];
+
+export const initialBarSales: BarSale[] = [
+  // July 2nd sales
+  {
+    id: "bs1",
+    date: "2026-07-02",
+    time: "10:30",
+    operator: "Admin",
+    items: [
+      { productId: "p1", name: "Coca-Cola 0.5", qty: 2, price: 9000 },
+      { productId: "p5", name: "Chips", qty: 1, price: 12000 }
+    ],
+    totalAmount: 30000,
+    paymentMethod: "Naqd",
+    branchId: "b2-main-arena",
+    shiftId: "s-jul2-day"
+  },
+  {
+    id: "bs2",
+    date: "2026-07-02",
+    time: "14:15",
+    operator: "Admin",
+    items: [
+      { productId: "p3", name: "Burger", qty: 2, price: 25000 },
+      { productId: "p4", name: "Energy Drink", qty: 2, price: 15000 }
+    ],
+    totalAmount: 80000,
+    paymentMethod: "Karta",
+    branchId: "b2-main-arena",
+    shiftId: "s-jul2-day"
+  },
+  {
+    id: "bs3",
+    date: "2026-07-02",
+    time: "20:45",
+    operator: "Admin",
+    items: [
+      { productId: "p1", name: "Coca-Cola 0.5", qty: 3, price: 9000 },
+      { productId: "p5", name: "Chips", qty: 2, price: 12000 }
+    ],
+    totalAmount: 51000,
+    paymentMethod: "QR",
+    branchId: "b2-main-arena",
+    shiftId: "s-jul2-night"
+  },
+
+  // July 3rd sales
+  {
+    id: "bs4",
+    date: "2026-07-03",
+    time: "11:00",
+    operator: "Admin",
+    items: [
+      { productId: "p3", name: "Burger", qty: 3, price: 25000 },
+      { productId: "p1", name: "Coca-Cola 0.5", qty: 3, price: 9000 }
+    ],
+    totalAmount: 102000,
+    paymentMethod: "Karta",
+    branchId: "b2-main-arena",
+    shiftId: "s-jul3-day"
+  },
+  {
+    id: "bs5",
+    date: "2026-07-03",
+    time: "16:20",
+    operator: "Admin",
+    items: [
+      { productId: "p5", name: "Chips", qty: 4, price: 12000 }
+    ],
+    totalAmount: 48000,
+    paymentMethod: "Naqd",
+    branchId: "b2-main-arena",
+    shiftId: "s-jul3-day"
+  },
+
+  // June 4th (Today) sales
+  {
+    id: "bs6",
+    date: "2026-06-04",
+    time: "10:10",
+    operator: "Admin",
+    items: [
+      { productId: "p1", name: "Coca-Cola 0.5", qty: 1, price: 9000 },
+      { productId: "p2", name: "Water 0.5", qty: 1, price: 5000 }
+    ],
+    totalAmount: 14000,
+    paymentMethod: "Karta",
+    branchId: "b2-main-arena",
+    shiftId: "s-jun4-day"
+  }
+];
+
+export const initialCashTransactions: CashTransaction[] = [
+  // July 2nd Cash Transactions
+  {
+    id: "ct1",
+    type: "income",
+    amount: 120000,
+    source: "PlayStation turnir homiylik to'lovi",
+    operator: "Admin",
+    date: "2026-07-02",
+    time: "10:00",
+    paymentMethod: "Naqd",
+    branchId: "b2-main-arena",
+    shiftId: "s-jul2-day"
+  },
+  {
+    id: "ct2",
+    type: "expense",
+    amount: 45000,
+    source: "Simulator uchun yangi HDMI kabel xaridi",
+    operator: "Admin",
+    date: "2026-07-02",
+    time: "15:30",
+    paymentMethod: "Naqd",
+    branchId: "b2-main-arena",
+    shiftId: "s-jul2-day"
+  },
+  {
+    id: "ct3",
+    type: "income",
+    amount: 80000,
+    source: "Mijozdan kech qolganlik uchun jarima to'lovi",
+    operator: "Admin",
+    date: "2026-07-02",
+    time: "22:15",
+    paymentMethod: "Naqd",
+    branchId: "b2-main-arena",
+    shiftId: "s-jul2-night"
+  },
+  {
+    id: "ct4",
+    type: "expense",
+    amount: 110000,
+    source: "Tungi smena ovqat xarajatlari",
+    operator: "Admin",
+    date: "2026-07-02",
+    time: "23:45",
+    paymentMethod: "Naqd",
+    branchId: "b2-main-arena",
+    shiftId: "s-jul2-night"
+  },
+
+  // July 3rd Cash Transactions
+  {
+    id: "ct5",
+    type: "income",
+    amount: 200000,
+    source: "VIP xonani bron qilish depoziti",
+    operator: "Admin",
+    date: "2026-07-03",
+    time: "11:45",
+    paymentMethod: "Naqd",
+    branchId: "b2-main-arena",
+    shiftId: "s-jul3-day"
+  },
+  {
+    id: "ct6",
+    type: "expense",
+    amount: 85000,
+    source: "Kantselyariya va qog'oz sotib olindi",
+    operator: "Admin",
+    date: "2026-07-03",
+    time: "14:20",
+    paymentMethod: "Naqd",
+    branchId: "b2-main-arena",
+    shiftId: "s-jul3-day"
+  },
+
+  // June 4th (Today) Cash Transactions
+  {
+    id: "ct7",
+    type: "income",
+    amount: 120000,
+    source: "Balans to'ldirish (Qo'shimcha bonus xizmat)",
+    operator: "Admin",
+    date: "2026-06-04",
+    time: "09:30",
+    paymentMethod: "Karta",
+    branchId: "b2-main-arena",
+    shiftId: "s-jun4-day"
+  },
+  {
+    id: "ct8",
+    type: "expense",
+    amount: 25000,
+    source: "Ofis tozalash vositalari",
+    operator: "Admin",
+    date: "2026-06-04",
+    time: "11:00",
+    paymentMethod: "Naqd",
+    branchId: "b2-main-arena",
+    shiftId: "s-jun4-day"
+  }
+];
+

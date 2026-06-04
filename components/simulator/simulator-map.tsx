@@ -16,7 +16,7 @@ import { minutes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Simulator, SimulatorStatus } from "@/types/simulator";
 
-const filters = ["All", "Main", "VIP", "Ready", "Busy", "Reserved", "Unpaid", "Broken", "Repair", "Offline", "Locked"];
+const filters = ["All", "Standard", "VIP", "Ready", "Busy", "Reserved", "Unpaid", "Broken", "Repair", "Offline", "Locked"];
 const mapColumns = 16;
 const mapRows = 9;
 
@@ -57,12 +57,12 @@ const statusLabels: Record<SimulatorStatus, string> = {
 };
 
 function mapTypeLabel(simulator: Simulator) {
-  return simulator.zone.toUpperCase();
+  return simulator.zone === "Standard" ? "LOGITECH" : "MOZA VIP";
 }
 
 function Tile({ simulator, selected, onClick }: { simulator: Simulator; selected: boolean; onClick: () => void }) {
   const number = Number(simulator.name.split("-")[1] ?? 1);
-  const position: MapPosition = simulator.zone === "Main"
+  const position: MapPosition = simulator.zone === "Standard"
     ? { col: ((number - 1) % 8) + 1, row: Math.floor((number - 1) / 8) + 1 }
     : { col: 12 + number, row: 1 };
 
@@ -165,7 +165,8 @@ export function SimulatorMap() {
         <>
           <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/75 p-3">
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <Badge>Main</Badge>
+              <Badge>Logitech Standard</Badge>
+              <Badge variant="vip">Moza VIP</Badge>
               <Badge variant="success">{simulators.filter((item) => ["busy", "unpaid"].includes(item.status)).length} band</Badge>
               <Badge variant="muted">{simulators.filter((item) => item.status === "ready_to_play").length} ready</Badge>
               <Badge variant="warning">{simulators.filter((item) => item.status === "reserved").length} bron</Badge>
