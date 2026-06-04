@@ -2,7 +2,13 @@ import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { mockUsers } from "@/lib/mock-data";
 
-export const authSecret = process.env.NEXTAUTH_SECRET ?? "b2-game-club-demo-secret";
+const vercelUrl = process.env.VERCEL_URL;
+
+if (!process.env.NEXTAUTH_URL && vercelUrl) {
+  process.env.NEXTAUTH_URL = vercelUrl.startsWith("http") ? vercelUrl : `https://${vercelUrl}`;
+}
+
+export const authSecret = process.env.NEXTAUTH_SECRET ?? process.env.AUTH_SECRET ?? "b2-game-club-demo-secret";
 
 export const authOptions: NextAuthOptions = {
   secret: authSecret,
