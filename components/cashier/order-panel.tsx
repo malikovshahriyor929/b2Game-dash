@@ -18,7 +18,7 @@ export function OrderPanel() {
   const attachId = active.some((item) => item.id === attachTarget) ? attachTarget : undefined;
 
   function submitPayment() {
-    payOrder(attachId);
+    payOrder(attachId, paymentMethod);
   }
 
   return (

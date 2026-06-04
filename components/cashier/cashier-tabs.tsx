@@ -29,7 +29,7 @@ function normalizeScanCode(value: string) {
 }
 
 export function CashierTabs() {
-  const { products, addProduct, addProductByQr, createProduct, updateProduct, deleteProduct, recordCashierTransaction, simulators, pay } = useDashboardStore();
+  const { products, addProduct, addProductByQr, createProduct, updateProduct, deleteProduct, recordCashierTransaction, simulators, pay, addCashTransaction } = useDashboardStore();
   const [activeTab, setActiveTab] = useState("shop");
   const [category, setCategory] = useState("Barchasi");
   const [query, setQuery] = useState("");
@@ -43,6 +43,7 @@ export function CashierTabs() {
   const [returnForm, setReturnForm] = useState({ saleAmount: "", receivedAmount: "", method: "Naqd" });
   const [postPayForm, setPostPayForm] = useState({ simulatorId: "", amount: "", method: "Karta" });
   const [sessionPayForm, setSessionPayForm] = useState({ simulatorId: "", amount: "", method: "Karta" });
+  const [txForm, setTxForm] = useState({ type: "income" as "income" | "expense", amount: "", source: "", method: "Naqd" });
   const [cashierMessage, setCashierMessage] = useState("");
   const qrInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -251,6 +252,7 @@ export function CashierTabs() {
             <TabsTrigger className="h-9 px-3 text-sm" value="return">Qaytim</TabsTrigger>
             <TabsTrigger className="h-9 px-3 text-sm" value="post">Post-pay</TabsTrigger>
             <TabsTrigger className="h-9 px-3 text-sm" value="session">Sessiya</TabsTrigger>
+            <TabsTrigger className="h-9 px-3 text-sm" value="tx">Prixod / Rasxod</TabsTrigger>
           </TabsList>
           <TabsContent value="shop">
             <Card className="mb-3 border-slate-800/80 bg-slate-950/40 p-3 shadow-none">
@@ -372,6 +374,47 @@ export function CashierTabs() {
                 <div className="space-y-2"><Label>Amount</Label><Input inputMode="numeric" value={formatNumber(sessionPayForm.amount)} onChange={(event) => setSessionPayForm((item) => ({ ...item, amount: event.target.value.replace(/\D/g, "") }))} placeholder="50 000" /></div>
                 <div className="space-y-2"><Label>Payment</Label><Select value={sessionPayForm.method} onValueChange={(method) => setSessionPayForm((item) => ({ ...item, method }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{paymentMethods.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
                 <Button className="md:col-span-2 xl:col-span-4" type="submit" disabled={!sessionPayForm.simulatorId || !sessionPayForm.amount}><FiCreditCard /> Sessiyani to'lash</Button>
+              </form>
+              {cashierMessage ? <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm font-semibold text-emerald-200">{cashierMessage}</div> : null}
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="tx">
+            <Card className="space-y-4 p-4">
+              <div>
+                <div className="text-xl font-black text-white">Prixod va Rasxod kiritish</div>
+                <div className="text-sm text-slate-400">Kassaga kirim (prixod) yoki chiqim (rasxod) tranzaksiyalarini yozib borish.</div>
+              </div>
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                const amount = Number(txForm.amount);
+                if (!txForm.source.trim() || !Number.isFinite(amount) || amount <= 0) return;
+                addCashTransaction(txForm.type, amount, txForm.source.trim(), txForm.method);
+                setCashierMessage(`${txForm.type === "income" ? "Kirim (Prixod)" : "Chiqim (Rasxod)"}: ${money(amount)} muvaffaqiyatli saqlandi.`);
+                setTxForm({ type: "income", amount: "", source: "", method: "Naqd" });
+              }} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="space-y-2">
+                  <Label>Turi</Label>
+                  <Select value={txForm.type} onValueChange={(v) => setTxForm((item) => ({ ...item, type: v as "income" | "expense" }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="income">Kirim (Prixod)</SelectItem>
+                      <SelectItem value="expense">Chiqim (Rasxod)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>To'lov turi</Label>
+                  <Select value={txForm.method} onValueChange={(method) => setTxForm((item) => ({ ...item, method }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {paymentMethods.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2"><Label>Summa</Label><Input inputMode="numeric" value={formatNumber(txForm.amount)} onChange={(e) => setTxForm((item) => ({ ...item, amount: e.target.value.replace(/\D/g, "") }))} placeholder="50 000" /></div>
+                <div className="space-y-2 md:col-span-2 xl:col-span-4"><Label>Tavsif (Sabab)</Label><Input value={txForm.source} onChange={(e) => setTxForm((item) => ({ ...item, source: e.target.value }))} placeholder="Masalan: Kabel xaridi, turnir depoziti" /></div>
+                <Button className="md:col-span-2 xl:col-span-4" type="submit" disabled={!txForm.source.trim() || !txForm.amount}><FiPlusCircle /> Saqlash</Button>
               </form>
               {cashierMessage ? <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm font-semibold text-emerald-200">{cashierMessage}</div> : null}
             </Card>

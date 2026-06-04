@@ -117,18 +117,33 @@ export const initialLogs: LogEntry[] = [
 ];
 
 export const initialRevenueEvents = [
-  { id: "r1", time: "09:20", amount: 18000, source: "shop sale", branchId: "b2-main-arena" },
-  { id: "r2", time: "10:10", amount: 15000, source: "shop sale", branchId: "b2-main-arena" },
-  { id: "r3", time: "11:05", amount: 22000, source: "shop sale", branchId: "b2-main-arena" },
-  { id: "r4", time: "12:30", amount: 30000, source: "session payment", branchId: "b2-main-arena" },
-  { id: "r5", time: "13:15", amount: 24000, source: "shop sale", branchId: "b2-main-arena" },
-  { id: "r6", time: "14:25", amount: 38000, source: "session payment", branchId: "b2-main-arena" },
-  { id: "r7", time: "15:11", amount: 50000, source: "session payment", branchId: "b2-main-arena" },
-  { id: "r8", time: "16:05", amount: 42000, source: "balance top-up", branchId: "b2-main-arena" },
-  { id: "r9", time: "17:40", amount: 32000, source: "shop sale", branchId: "b2-main-arena" },
-  { id: "r10", time: "18:10", amount: 48000, source: "session payment", branchId: "b2-main-arena" },
-  { id: "r11", time: "19:35", amount: 43000, source: "shop sale", branchId: "b2-main-arena" },
-  { id: "r12", time: "20:05", amount: 50000, source: "session payment", branchId: "b2-main-arena" },
+  { id: "r1", time: "09:20", date: "2026-06-04", amount: 18000, source: "shop sale", branchId: "b2-main-arena" },
+  { id: "r2", time: "10:10", date: "2026-06-04", amount: 15000, source: "shop sale", branchId: "b2-main-arena" },
+  { id: "r3", time: "11:05", date: "2026-06-04", amount: 22000, source: "shop sale", branchId: "b2-main-arena" },
+  { id: "r4", time: "12:30", date: "2026-06-04", amount: 30000, source: "session payment", branchId: "b2-main-arena" },
+  { id: "r5", time: "13:15", date: "2026-06-04", amount: 24000, source: "shop sale", branchId: "b2-main-arena" },
+  { id: "r6", time: "14:25", date: "2026-06-04", amount: 38000, source: "session payment", branchId: "b2-main-arena" },
+  { id: "r7", time: "15:11", date: "2026-06-04", amount: 50000, source: "session payment", branchId: "b2-main-arena" },
+  { id: "r8", time: "16:05", date: "2026-06-04", amount: 42000, source: "balance top-up", branchId: "b2-main-arena" },
+  { id: "r9", time: "17:40", date: "2026-06-04", amount: 32000, source: "shop sale", branchId: "b2-main-arena" },
+  { id: "r10", time: "18:10", date: "2026-06-04", amount: 48000, source: "session payment", branchId: "b2-main-arena" },
+  { id: "r11", time: "19:35", date: "2026-06-04", amount: 43000, source: "shop sale", branchId: "b2-main-arena" },
+  { id: "r12", time: "20:05", date: "2026-06-04", amount: 50000, source: "session payment", branchId: "b2-main-arena" },
+
+  // July 2nd revenue events
+  { id: "r13", time: "09:30", date: "2026-07-02", amount: 120000, source: "Cash In: PlayStation turnir homiylik to'lovi", branchId: "b2-main-arena" },
+  { id: "r14", time: "10:30", date: "2026-07-02", amount: 30000, source: "shop sale", branchId: "b2-main-arena" },
+  { id: "r15", time: "14:15", date: "2026-07-02", amount: 80000, source: "shop sale", branchId: "b2-main-arena" },
+  { id: "r16", time: "15:30", date: "2026-07-02", amount: -45000, source: "Expense: Simulator uchun yangi HDMI kabel xaridi", branchId: "b2-main-arena" },
+  { id: "r17", time: "20:45", date: "2026-07-02", amount: 51000, source: "shop sale", branchId: "b2-main-arena" },
+  { id: "r18", time: "22:15", date: "2026-07-02", amount: 80000, source: "Cash In: Mijozdan kech qolganlik uchun jarima to'lovi", branchId: "b2-main-arena" },
+  { id: "r19", time: "23:45", date: "2026-07-02", amount: -110000, source: "Expense: Tungi smena ovqat xarajatlari", branchId: "b2-main-arena" },
+
+  // July 3rd revenue events
+  { id: "r20", time: "11:00", date: "2026-07-03", amount: 102000, source: "shop sale", branchId: "b2-main-arena" },
+  { id: "r21", time: "11:45", date: "2026-07-03", amount: 200000, source: "Cash In: VIP xonani bron qilish depoziti", branchId: "b2-main-arena" },
+  { id: "r22", time: "14:20", date: "2026-07-03", amount: -85000, source: "Expense: Kantselyariya va qog'oz sotib olindi", branchId: "b2-main-arena" },
+  { id: "r23", time: "16:20", date: "2026-07-03", amount: 48000, source: "shop sale", branchId: "b2-main-arena" },
 ];
 
 export const supportMessages = [

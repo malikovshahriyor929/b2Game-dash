@@ -2,16 +2,30 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
-import { bookings as bookingSeed, branches, initialLogs, initialRepairRequests, initialRevenueEvents, initialSimulators, products } from "@/lib/mock-data";
+import {
+  bookings as bookingSeed,
+  branches,
+  initialLogs,
+  initialRepairRequests,
+  initialRevenueEvents,
+  initialSimulators,
+  products,
+  initialShifts,
+  initialLockUnlockLogs,
+  initialBarSales,
+  initialCashTransactions,
+} from "@/lib/mock-data";
 import { Booking } from "@/types/booking";
-import { LogEntry } from "@/types/log";
-import { OrderItem, Product } from "@/types/product";
+import { LogEntry, LockUnlockEntry } from "@/types/log";
+import { OrderItem, Product, BarSale } from "@/types/product";
 import { RepairErrorType, RepairPriority, RepairRequest, Simulator } from "@/types/simulator";
+import { CashTransaction, Shift } from "@/types/report";
 
 type StartPayload = { customerName: string; phone: string; tariff: string; duration: number; amount: number; paymentStatus: "paid" | "unpaid" | "partial" };
 type PeriodFilter = "today" | "yesterday" | "week" | "month" | "year" | "custom";
 type RepairPayload = { title: string; description: string; errorType: RepairErrorType; priority: RepairPriority; note?: string };
-type RevenueEvent = { id: string; time: string; amount: number; source: string; branchId?: string };
+type RevenueEvent = { id: string; time: string; date?: string; amount: number; source: string; branchId?: string };
+
 
 type DashboardStore = {
   simulators: Simulator[];
@@ -22,6 +36,11 @@ type DashboardStore = {
   revenue: number;
   revenueEvents: RevenueEvent[];
   logs: LogEntry[];
+  lockUnlockLogs: LockUnlockEntry[];
+  barSales: BarSale[];
+  cashTransactions: CashTransaction[];
+  shifts: Shift[];
+  activeShift: Shift | null;
   repairRequests: RepairRequest[];
   products: Product[];
   order: OrderItem[];
@@ -31,6 +50,10 @@ type DashboardStore = {
   setSelectedBranchId: (id: string) => void;
   period: PeriodFilter;
   setPeriod: (period: PeriodFilter) => void;
+  customStartDate: string;
+  setCustomStartDate: (date: string) => void;
+  customEndDate: string;
+  setCustomEndDate: (date: string) => void;
   startSession: (id: string, payload: StartPayload) => void;
   addTime: (id: string, minutes: number, amount: number, method: string) => void;
   pay: (id: string, amount: number, method: string) => void;
@@ -55,8 +78,12 @@ type DashboardStore = {
   recordCashierTransaction: (action: string, amount: number, method: string) => void;
   updateQty: (id: string, qty: number) => void;
   clearOrder: () => void;
-  payOrder: (attachTo?: string) => void;
+  payOrder: (attachTo?: string, paymentMethod?: string) => void;
+  openShift: (operator: string, shiftType: "Kunduzgi (09:00 - 18:00)" | "Tungi (18:01 - 09:00)", startingCash: number) => void;
+  closeShift: (actualCash: number, notes?: string) => void;
+  addCashTransaction: (type: "income" | "expense", amount: number, source: string, method: string) => void;
 };
+
 
 const StoreContext = createContext<DashboardStore | null>(null);
 
@@ -69,6 +96,12 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
   const [allSimulators, setAllSimulators] = useState(initialSimulators);
   const [selectedId, setSelectedId] = useState<string | null>(initialSimulators[0]?.id ?? null);
   const [logs, setLogs] = useState(initialLogs);
+  const [lockUnlockLogs, setLockUnlockLogs] = useState<LockUnlockEntry[]>(initialLockUnlockLogs);
+  const [barSales, setBarSales] = useState<BarSale[]>(initialBarSales);
+  const [cashTransactions, setCashTransactions] = useState<CashTransaction[]>(initialCashTransactions);
+  const [shifts, setShifts] = useState<Shift[]>(initialShifts);
+  const [customStartDate, setCustomStartDate] = useState("2026-06-04");
+  const [customEndDate, setCustomEndDate] = useState("2026-06-04");
   const [revenueEvents, setRevenueEvents] = useState<RevenueEvent[]>(initialRevenueEvents);
   const [repairRequests, setRepairRequests] = useState(initialRepairRequests);
   const [revenue, setRevenue] = useState(390000);
@@ -78,6 +111,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
   const defaultBranchId = data?.user?.role === "super_admin" ? "all" : data?.user?.branchIds?.[0] ?? branches[0].id;
   const [selectedBranchId, setSelectedBranchIdState] = useState(defaultBranchId);
   const [period, setPeriod] = useState<PeriodFilter>("today");
+
 
   const operator = data?.user?.name ?? "Admin";
   const role = data?.user?.role;
@@ -119,6 +153,8 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     setSelectedId(first?.id ?? null);
   }
 
+  const activeShift = useMemo(() => shifts.find((item) => item.status === "open") ?? null, [shifts]);
+
   const value = useMemo<DashboardStore>(() => ({
     simulators,
     allSimulators,
@@ -128,6 +164,11 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     revenue,
     revenueEvents: revenueEvents.filter((event) => !event.branchId || visibleBranchIds.includes(event.branchId)),
     logs,
+    lockUnlockLogs,
+    barSales,
+    cashTransactions,
+    shifts,
+    activeShift,
     repairRequests: scopedRepairRequests,
     products: inventory,
     order,
@@ -137,6 +178,10 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     setSelectedBranchId,
     period,
     setPeriod,
+    customStartDate,
+    setCustomStartDate,
+    customEndDate,
+    setCustomEndDate,
     startSession(id, payload) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator || !visibleBranchIds.includes(simulator.branchId) || ["offline", "locked", "broken", "repair_requested", "repair_approved", "fixing", "fixed_waiting_confirmation"].includes(simulator.status)) return;
@@ -176,8 +221,25 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     toggleLock(id) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator) return;
-      patchSimulator(id, { status: simulator.status === "locked" ? "ready_to_play" : "locked" });
-      appendLog(`${simulator.status === "locked" ? "unlocked" : "locked"} ${simulator.name}`, simulator.name);
+      const isLocked = simulator.status === "locked";
+      const nextStatus = isLocked ? "ready_to_play" : "locked";
+      patchSimulator(id, { status: nextStatus });
+      appendLog(`${isLocked ? "unlocked" : "locked"} ${simulator.name}`, simulator.name);
+
+      const d = new Date();
+      const timeStr = d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
+      const dateStr = d.toISOString().split("T")[0];
+      setLockUnlockLogs((items) => [
+        {
+          id: crypto.randomUUID(),
+          time: timeStr,
+          date: dateStr,
+          operator,
+          simulator: simulator.name,
+          action: isLocked ? "unlock" : "lock",
+        },
+        ...items,
+      ]);
     },
     requestFix(id, payload) {
       const simulator = allSimulators.find((item) => item.id === id);
@@ -323,7 +385,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     clearOrder() {
       setOrder([]);
     },
-    payOrder(attachTo) {
+    payOrder(attachTo, paymentMethod = "Karta") {
       const total = order.reduce((sum, item) => sum + item.price * item.qty, 0);
       if (!total) return;
       const simulator = attachTo ? allSimulators.find((item) => item.id === attachTo) : undefined;
@@ -333,9 +395,169 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         patchSimulator(attachTo, { orderItems: [...(simulator?.orderItems ?? []), names] });
       }
       appendLog(`paid shop order ${total.toLocaleString("uz-UZ")}`, attachTo);
+
+      // Record a detailed BarSale
+      const d = new Date();
+      const timeStr = d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
+      const dateStr = d.toISOString().split("T")[0];
+
+      const newSale: BarSale = {
+        id: crypto.randomUUID(),
+        date: dateStr,
+        time: timeStr,
+        operator,
+        items: order.map((o) => ({
+          productId: o.id,
+          name: o.name,
+          qty: o.qty,
+          price: o.price,
+        })),
+        totalAmount: total,
+        paymentMethod,
+        branchId: simulator?.branchId ?? branches[0].id,
+        shiftId: activeShift?.id ?? undefined,
+      };
+      setBarSales((items) => [newSale, ...items]);
+
+      // If active shift exists, update its revenues
+      if (activeShift) {
+        setShifts((prev) =>
+          prev.map((s) => {
+            if (s.id === activeShift.id) {
+              return {
+                ...s,
+                cardRevenue: paymentMethod === "Karta" ? s.cardRevenue + total : s.cardRevenue,
+                qrRevenue: paymentMethod === "QR" ? s.qrRevenue + total : s.qrRevenue,
+              };
+            }
+            return s;
+          })
+        );
+      }
+
       setOrder([]);
     },
-  }), [allSimulators, bookings, effectiveBranchId, inventory, logs, order, operator, period, repairRequests, revenue, revenueEvents, role, scopedRepairRequests, selectedId, simulators, visibleBranchIds]);
+    openShift(operatorName, shiftType, startingCash) {
+      const d = new Date();
+      const timeStr = d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
+      const dateStr = d.toISOString().split("T")[0];
+      const newShift: Shift = {
+        id: crypto.randomUUID(),
+        operator: operatorName,
+        date: dateStr,
+        shiftType,
+        status: "open",
+        openTime: timeStr,
+        startingCash,
+        cardRevenue: 0,
+        qrRevenue: 0,
+        totalIncome: 0,
+        totalExpense: 0,
+      };
+      setShifts((prev) => [newShift, ...prev]);
+      appendLog(`opened shift: ${shiftType} with cash ${startingCash.toLocaleString()}`);
+    },
+    closeShift(actualCash, notes) {
+      if (!activeShift) return;
+      const d = new Date();
+      const timeStr = d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
+
+      const shiftBarCash = barSales
+        .filter((s) => s.shiftId === activeShift.id && s.paymentMethod === "Naqd")
+        .reduce((sum, s) => sum + s.totalAmount, 0);
+
+      const expectedCash = activeShift.startingCash + activeShift.totalIncome - activeShift.totalExpense + shiftBarCash;
+      const discrepancy = actualCash - expectedCash;
+
+      setShifts((prev) =>
+        prev.map((s) => {
+          if (s.id === activeShift.id) {
+            return {
+              ...s,
+              status: "closed",
+              closeTime: timeStr,
+              expectedCash,
+              actualCash,
+              discrepancy,
+              notes,
+            };
+          }
+          return s;
+        })
+      );
+      appendLog(`closed shift: ${activeShift.shiftType}. Actual cash: ${actualCash.toLocaleString()}`);
+    },
+    addCashTransaction(type, amount, source, method) {
+      const d = new Date();
+      const timeStr = d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
+      const dateStr = d.toISOString().split("T")[0];
+      const newTx: CashTransaction = {
+        id: crypto.randomUUID(),
+        type,
+        amount,
+        source,
+        operator,
+        date: dateStr,
+        time: timeStr,
+        paymentMethod: method,
+        branchId: effectiveBranchId === "all" ? branches[0].id : effectiveBranchId,
+        shiftId: activeShift?.id ?? undefined,
+      };
+      setCashTransactions((prev) => [newTx, ...prev]);
+
+      if (activeShift) {
+        setShifts((prev) =>
+          prev.map((s) => {
+            if (s.id === activeShift.id) {
+              return {
+                ...s,
+                totalIncome: type === "income" ? s.totalIncome + amount : s.totalIncome,
+                totalExpense: type === "expense" ? s.totalExpense + amount : s.totalExpense,
+                cardRevenue: type === "income" && method === "Karta" ? s.cardRevenue + amount : s.cardRevenue,
+                qrRevenue: type === "income" && method === "QR" ? s.qrRevenue + amount : s.qrRevenue,
+              };
+            }
+            return s;
+          })
+        );
+      }
+
+      if (type === "income") {
+        recordRevenue(amount, `Cash In: ${source}`, newTx.branchId);
+      } else {
+        setRevenue((current) => current - amount);
+        setRevenueEvents((items) => [
+          { id: crypto.randomUUID(), time: timeStr, amount: -amount, source: `Expense: ${source}`, branchId: newTx.branchId },
+          ...items,
+        ]);
+        appendLog(`expense recorded: ${source} - ${amount.toLocaleString()}`, undefined, method);
+      }
+    },
+  }), [
+    allSimulators,
+    bookings,
+    effectiveBranchId,
+    inventory,
+    logs,
+    lockUnlockLogs,
+    barSales,
+    cashTransactions,
+    shifts,
+    activeShift,
+    customStartDate,
+    customEndDate,
+    order,
+    operator,
+    period,
+    repairRequests,
+    revenue,
+    revenueEvents,
+    role,
+    scopedRepairRequests,
+    selectedId,
+    simulators,
+    visibleBranchIds,
+  ]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

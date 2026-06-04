@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { FiClock, FiLock, FiLogOut, FiMenu, FiMoon, FiPlay, FiPlusCircle, FiRefreshCw, FiSearch, FiSquare, FiSun } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
@@ -9,19 +10,53 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { canUseAction } from "@/lib/permissions";
 import { money } from "@/lib/format";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 
 export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start" | "addTime" | "payment" | "stop") => void; onOpenSidebar: () => void }) {
   const { data } = useSession();
-  const { branches, period, revenue, selected, selectedBranchId, setPeriod, setSelectedBranchId, simulators, toggleLock } = useDashboardStore();
+  const {
+    branches,
+    period,
+    revenue,
+    selected,
+    selectedBranchId,
+    setPeriod,
+    setSelectedBranchId,
+    simulators,
+    toggleLock,
+    shifts,
+    activeShift,
+    openShift,
+    closeShift,
+    barSales,
+  } = useDashboardStore();
+
+  const [shiftModalOpen, setShiftModalOpen] = useState(false);
+  const [startingCash, setStartingCash] = useState("");
+  const [shiftType, setShiftType] = useState<"Kunduzgi (09:00 - 18:00)" | "Tungi (18:01 - 09:00)">("Kunduzgi (09:00 - 18:00)");
+  const [actualCash, setActualCash] = useState("");
+  const [closeNotes, setCloseNotes] = useState("");
+
   const role = data?.user?.role;
   const branchOptions = role === "super_admin" ? branches : branches.filter((branch) => data?.user?.branchIds?.includes(branch.id));
   const active = simulators.filter((item) => ["busy", "unpaid"].includes(item.status)).length;
   const ready = simulators.filter((item) => item.status === "ready_to_play").length;
   const reserved = simulators.filter((item) => item.status === "reserved").length;
   const selectedBranchName = selectedBranchId === "all" ? "All branches" : branches.find((branch) => branch.id === selectedBranchId)?.name ?? "Branch";
+
+  const shiftBarCash = activeShift
+    ? barSales
+        .filter((s) => s.shiftId === activeShift.id && s.paymentMethod === "Naqd")
+        .reduce((sum, s) => sum + s.totalAmount, 0)
+    : 0;
+
+  const expectedCashVal = activeShift
+    ? activeShift.startingCash + activeShift.totalIncome - activeShift.totalExpense + shiftBarCash
+    : 0;
 
   const quickActions = [
     { key: "refresh", label: "Refresh", icon: FiRefreshCw, enabled: true, click: () => location.reload() },
@@ -40,7 +75,23 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
           <div className="truncate text-sm font-semibold text-white">B2 Game Club</div>
           <div className="truncate text-xs text-slate-400">{selectedBranchName}</div>
         </div>
-        <Badge variant="success" className="hidden shrink-0 whitespace-nowrap sm:inline-flex">Smena ochiq</Badge>
+        {activeShift ? (
+          <button
+            onClick={() => setShiftModalOpen(true)}
+            className="hidden shrink-0 items-center gap-1.5 rounded-lg bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition sm:inline-flex"
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            Smena ochiq ({activeShift.operator})
+          </button>
+        ) : (
+          <button
+            onClick={() => setShiftModalOpen(true)}
+            className="hidden shrink-0 items-center gap-1.5 rounded-lg bg-rose-500/10 px-2.5 py-1 text-xs font-semibold text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 transition sm:inline-flex"
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+            Smena yopiq
+          </button>
+        )}
         <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1.5">
           <TooltipProvider>
             <div className="flex gap-1">
@@ -107,6 +158,132 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
           <Badge variant="warning" className="shrink-0 whitespace-nowrap">{reserved} bron</Badge>
         </div>
       </div>
+
+      <Dialog open={shiftModalOpen} onOpenChange={setShiftModalOpen}>
+        <DialogContent className="max-w-md border-slate-800 bg-slate-900 text-slate-100">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-white">
+              {activeShift ? "Smenani Yopish" : "Yangi Smena Ochish"}
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              {activeShift
+                ? "Smenani yakunlash uchun naqd pul qoldig'ini kiriting."
+                : "Ishni boshlash uchun smena ma'lumotlarini kiriting."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {activeShift ? (
+            <div className="space-y-4 pt-3">
+              <div className="rounded-lg bg-slate-950 p-3.5 space-y-2 text-sm">
+                <div className="flex justify-between"><span className="text-slate-400">Admin:</span><span className="font-semibold text-white">{activeShift.operator}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Smena turi:</span><span className="font-semibold text-white">{activeShift.shiftType}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Ochilgan vaqt:</span><span className="font-semibold text-white">{activeShift.date} {activeShift.openTime}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Boshlang'ich naqd:</span><span className="font-semibold text-sky-300">{money(activeShift.startingCash)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Kirimlar (Prixod):</span><span className="font-semibold text-emerald-300">+{money(activeShift.totalIncome)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Chiqimlar (Rasxod):</span><span className="font-semibold text-rose-300">-{money(activeShift.totalExpense)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Bar savdosi (Naqd):</span><span className="font-semibold text-emerald-300">+{money(shiftBarCash)}</span></div>
+                <div className="border-t border-slate-800 my-2 pt-2 flex justify-between font-bold text-white text-base">
+                  <span>Kutilayotgan naqd:</span>
+                  <span className="text-sky-300">{money(expectedCashVal)}</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="actualCash" className="text-sm font-semibold text-slate-300">Kassadagi haqiqiy naqd pul summasi</Label>
+                <Input
+                  id="actualCash"
+                  placeholder="Masalan: 350 000"
+                  type="text"
+                  value={actualCash}
+                  onChange={(e) => setActualCash(e.target.value.replace(/\D/g, ""))}
+                  className="bg-slate-950 border-slate-800"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="closeNotes" className="text-sm font-semibold text-slate-300">Smena bo'yicha izoh (ixtiyoriy)</Label>
+                <Input
+                  id="closeNotes"
+                  placeholder="Izoh yozing..."
+                  value={closeNotes}
+                  onChange={(e) => setCloseNotes(e.target.value)}
+                  className="bg-slate-950 border-slate-800"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <Button variant="secondary" className="flex-1" onClick={() => setShiftModalOpen(false)}>Bekor qilish</Button>
+                <Button
+                  className="flex-1"
+                  variant="destructive"
+                  disabled={!actualCash}
+                  onClick={() => {
+                    closeShift(Number(actualCash), closeNotes);
+                    setActualCash("");
+                    setCloseNotes("");
+                    setShiftModalOpen(false);
+                  }}
+                >
+                  Smenani yopish
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4 pt-3">
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-slate-300">Operator (Admin)</Label>
+                <Input
+                  value={data?.user?.name ?? "Admin"}
+                  disabled
+                  className="bg-slate-950 border-slate-800"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-slate-300">Smena turi</Label>
+                <Select
+                  value={shiftType}
+                  onValueChange={(val) => setShiftType(val as any)}
+                >
+                  <SelectTrigger className="bg-slate-950 border-slate-800">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-slate-800 text-slate-100">
+                    <SelectItem value="Kunduzgi (09:00 - 18:00)">Kunduzgi (09:00 - 18:00)</SelectItem>
+                    <SelectItem value="Tungi (18:01 - 09:00)">Tungi (18:01 - 09:00)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="startingCash" className="text-sm font-semibold text-slate-300">Kassa boshlang'ich naqd summasi</Label>
+                <Input
+                  id="startingCash"
+                  placeholder="Masalan: 150 000"
+                  value={startingCash}
+                  onChange={(e) => setStartingCash(e.target.value.replace(/\D/g, ""))}
+                  className="bg-slate-950 border-slate-800"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <Button variant="secondary" className="flex-1" onClick={() => setShiftModalOpen(false)}>Bekor qilish</Button>
+                <Button
+                  className="flex-1"
+                  disabled={!startingCash}
+                  onClick={() => {
+                    openShift(data?.user?.name ?? "Admin", shiftType, Number(startingCash));
+                    setStartingCash("");
+                    setShiftModalOpen(false);
+                  }}
+                >
+                  Smenani ochish
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </header>
   );
 }
