@@ -1,8 +1,8 @@
 import { Role } from "@/types/user";
 
 export const roleAccess: Record<Role, string[]> = {
-  admin: ["dashboard", "simulators", "cashier", "bookings", "customers", "shop", "tariffs", "games", "logs", "support"],
-  super_admin: ["dashboard", "simulators", "cashier", "bookings", "customers", "shop", "tariffs", "games", "logs", "promo", "reports", "analytics", "support", "settings"],
+  admin: ["dashboard", "simulators", "cashier", "bookings", "customers", "tariffs", "games", "logs", "support"],
+  super_admin: ["dashboard", "simulators", "cashier", "bookings", "customers", "tariffs", "games", "logs", "promo", "reports", "analytics", "support", "settings"],
 };
 
 export function canAccess(role: Role | undefined, key: string) {

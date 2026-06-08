@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { FiEdit2, FiPackage, FiPlus, FiTrash2 } from "react-icons/fi";
+import { FiEdit2, FiPlus, FiTrash2 } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { money } from "@/lib/format";
 import { Product } from "@/types/product";
+import { ProductIcon } from "@/lib/product-icons";
 
 export function ProductCard({ product, onAdd, onEdit, onDelete }: { product: Product; onAdd: () => void; onEdit?: () => void; onDelete?: () => void }) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -24,7 +25,7 @@ export function ProductCard({ product, onAdd, onEdit, onDelete }: { product: Pro
           />
         ) : (
           <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_top,#1f3b53,transparent_55%),linear-gradient(135deg,#0f172a,#020617)] text-4xl text-sky-200">
-            <FiPackage />
+            <ProductIcon iconKey={product.icon} />
           </div>
         )}
         <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-slate-950/95 to-transparent" />
@@ -41,6 +42,10 @@ export function ProductCard({ product, onAdd, onEdit, onDelete }: { product: Pro
         <div className="min-h-10 text-sm font-semibold text-white">{product.name}</div>
         <div className="truncate rounded-lg bg-slate-950 px-2 py-1 text-[11px] font-semibold text-slate-400">{product.qrCode}</div>
         <div className="font-black text-sky-200">{money(product.price)}</div>
+        <div className="flex justify-between text-[11px] font-semibold text-slate-500">
+          <span>Cost: {money(product.cost ?? 0)}</span>
+          <span>Profit: {money(product.price - (product.cost ?? 0))}</span>
+        </div>
         <Button size="sm" className="w-full" disabled={product.stock <= 0} onClick={onAdd}><FiPlus /> Add</Button>
       </div>
     </Card>

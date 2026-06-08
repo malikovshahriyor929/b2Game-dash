@@ -131,8 +131,12 @@ export function BookingForm({ booking, onSaved }: { booking?: Booking | null; on
     note: booking.note,
   } : emptyForm);
   const simulatorsByType = useMemo(() => simulators.filter((item) => item.zone === form.simulatorType), [form.simulatorType, simulators]);
+  const tariffsByType = useMemo(() => {
+    const zone = form.simulatorType === "VIP" ? "vip" : "main";
+    return tariffs.filter((item) => item.simulatorZone === zone || item.simulatorZone === "all");
+  }, [form.simulatorType, tariffs]);
   const conflict = hasConflict(bookings, form, booking?.id);
-  const selectedTariff = tariffs.find((item) => item.name === form.tariff);
+  const selectedTariff = tariffsByType.find((item) => item.name === form.tariff);
   const phoneValid = normalizeUzPhone(form.phone).length === 12;
   const submitLabel = booking ? "Save booking" : "Create booking";
 
@@ -163,12 +167,12 @@ export function BookingForm({ booking, onSaved }: { booking?: Booking | null; on
             </div>
             <div className="text-xs text-slate-500">Ko'rinishi: {form.phone ? formatUzPhone(form.phone) : "+998 XX XXX XX XX"}</div>
           </div>
-          <div className="space-y-2"><Label>Simulator type</Label><Select value={form.simulatorType} onValueChange={(simulatorType) => setForm((item) => ({ ...item, simulatorType, simulatorId: "" }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Standard">Logitech (Standard)</SelectItem><SelectItem value="VIP">Moza (VIP)</SelectItem></SelectContent></Select></div>
+          <div className="space-y-2"><Label>Simulator type</Label><Select value={form.simulatorType} onValueChange={(simulatorType) => setForm((item) => ({ ...item, simulatorType, simulatorId: "", tariff: "" }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Standard">Logitech (Standard)</SelectItem><SelectItem value="VIP">Moza (VIP)</SelectItem></SelectContent></Select></div>
           <div className="space-y-2"><Label>Exact simulator</Label><Select value={form.simulatorId} onValueChange={(simulatorId) => setForm((item) => ({ ...item, simulatorId }))}><SelectTrigger><SelectValue placeholder="Simulator tanlang" /></SelectTrigger><SelectContent>{simulatorsByType.map((simulator) => <SelectItem key={simulator.id} value={simulator.id}>{simulator.branchName} - {simulator.name}</SelectItem>)}</SelectContent></Select></div>
           <div className="space-y-2"><Label>Date</Label><DatePicker value={form.date} onChange={(date) => setForm((item) => ({ ...item, date }))} /></div>
           <div className="space-y-2"><Label>Start time</Label><Input type="time" value={form.startTime} onChange={(event) => setForm((item) => ({ ...item, startTime: event.target.value }))} /></div>
           <div className="space-y-2"><Label>End time</Label><Input type="time" value={form.endTime} onChange={(event) => setForm((item) => ({ ...item, endTime: event.target.value }))} /></div>
-          <div className="space-y-2"><Label>Tariff</Label><Select value={form.tariff} onValueChange={(tariff) => setForm((item) => ({ ...item, tariff }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{tariffs.map((tariff) => <SelectItem key={tariff.id} value={tariff.name}>{tariff.name} - {money(tariff.price)}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-2"><Label>Tariff</Label><Select value={form.tariff} onValueChange={(tariff) => setForm((item) => ({ ...item, tariff }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{tariffsByType.map((tariff) => <SelectItem key={tariff.id} value={tariff.name}>{tariff.name} - {money(tariff.price)}{tariff.bonus ? ` + ${tariff.bonus}` : ""}</SelectItem>)}</SelectContent></Select></div>
           <div className="space-y-2"><Label>Prepayment</Label><Input inputMode="numeric" value={formatNumber(form.prepayment)} onChange={(event) => setForm((item) => ({ ...item, prepayment: Number(event.target.value.replace(/\D/g, "")) }))} placeholder="20 000" /></div>
           <div className="space-y-2"><Label>Note</Label><Input value={form.note} onChange={(event) => setForm((item) => ({ ...item, note: event.target.value }))} placeholder="Izoh" /></div>
           <div className={`rounded-xl border p-3 text-sm lg:col-span-2 ${conflict ? "border-red-500/40 bg-red-500/10 text-red-200" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"}`}>

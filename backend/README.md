@@ -20,12 +20,26 @@ Then run:
 
 ```bash
 npm run prisma:generate
-npm run migrate
+npm run migrate -- --name init
 npm run seed
 npm run dev
 ```
 
 Server runs on `http://localhost:4000`.
+
+Prisma is the source of truth for database structure:
+
+- Schema: `backend/prisma/schema.prisma`
+- Local migration: `npm run migrate -- --name <migration_name>`
+- Production migration: `npm run db:deploy`
+- Quick schema sync without migration history: `npm run db:push`
+
+From the repository root, use:
+
+```bash
+npm run db:migrate -- --name init
+npm run db:seed
+```
 
 ## Environment
 

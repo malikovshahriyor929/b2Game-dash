@@ -14,11 +14,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { money } from "@/lib/format";
+import { ProductIcon, productIcons } from "@/lib/product-icons";
+import { usePaymentMethods } from "@/lib/use-payment-methods";
 import { Product } from "@/types/product";
 
 const cats = ["Barchasi", "Paketlar", "Ichimliklar", "Snack", "Fast food", "Energy drink", "Merch", "Promo"];
 const productCategories: Product["category"][] = ["Paketlar", "Ichimliklar", "Snack", "Fast food", "Energy drink", "Merch", "Promo"];
-const paymentMethods = ["Naqd", "Karta", "QR", "Balans", "Aralash"];
 
 function formatNumber(value: string) {
   return value.replace(/\D/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
@@ -30,6 +31,7 @@ function normalizeScanCode(value: string) {
 
 export function CashierTabs() {
   const { products, addProduct, addProductByQr, createProduct, updateProduct, deleteProduct, recordCashierTransaction, simulators, pay, addCashTransaction } = useDashboardStore();
+  const paymentMethods = usePaymentMethods();
   const [activeTab, setActiveTab] = useState("shop");
   const [category, setCategory] = useState("Barchasi");
   const [query, setQuery] = useState("");
@@ -38,7 +40,8 @@ export function CashierTabs() {
   const [scanMessage, setScanMessage] = useState("Scanner tayyor. QR kodni skan qiling yoki kodni kiriting.");
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
-  const [newProduct, setNewProduct] = useState({ name: "", qrCode: "", price: "", stock: "", category: "Ichimliklar" as Product["category"], icon: "PR", imageUrl: "" });
+  const [newProduct, setNewProduct] = useState({ name: "", qrCode: "", price: "", cost: "", stock: "", category: "Ichimliklar" as Product["category"], icon: "snack", imageUrl: "" });
+  const [manageQrCode, setManageQrCode] = useState("");
   const [balanceForm, setBalanceForm] = useState({ customer: "", phone: "", amount: "", method: "Karta" });
   const [returnForm, setReturnForm] = useState({ saleAmount: "", receivedAmount: "", method: "Naqd" });
   const [postPayForm, setPostPayForm] = useState({ simulatorId: "", amount: "", method: "Karta" });
@@ -58,10 +61,17 @@ export function CashierTabs() {
   const unpaidSimulators = payableSimulators.filter((item) => item.paymentStatus !== "paid" || item.status === "unpaid");
   const changeAmount = Math.max(Number(returnForm.receivedAmount || 0) - Number(returnForm.saleAmount || 0), 0);
 
+  function focusScannerInput() {
+    window.setTimeout(() => {
+      qrInputRef.current?.focus();
+      qrInputRef.current?.select();
+    }, 0);
+  }
+
   const scanProduct = useCallback((code = scanCode) => {
     const normalizedCode = normalizeScanCode(code);
     if (!normalizedCode) {
-      qrInputRef.current?.focus();
+      focusScannerInput();
       return;
     }
 
@@ -69,7 +79,7 @@ export function CashierTabs() {
     if (existingProduct && existingProduct.stock <= 0) {
       setScanMessage(`${existingProduct.name} stock tugagan. QR: ${existingProduct.qrCode}`);
       setScanCode("");
-      qrInputRef.current?.focus();
+      focusScannerInput();
       return;
     }
 
@@ -77,13 +87,13 @@ export function CashierTabs() {
     if (product) {
       setScanMessage(`${product.name} orderga qo'shildi (${product.qrCode}).`);
       setScanCode("");
-      qrInputRef.current?.focus();
+      focusScannerInput();
       return;
     }
     setScanMessage(`QR topilmadi: ${normalizedCode}. Mahsulot ma'lumotlarini kiriting va saqlang.`);
     setScanCode(normalizedCode);
     setEditingProductId(null);
-    setNewProduct((item) => ({ ...item, qrCode: normalizedCode, name: "", price: "", stock: "", icon: "PR" }));
+    setNewProduct((item) => ({ ...item, qrCode: normalizedCode, name: "", price: "", cost: "", stock: "", icon: "snack" }));
     setProductModalOpen(true);
   }, [addProductByQr, products, scanCode]);
 
@@ -133,15 +143,16 @@ export function CashierTabs() {
   }, [activeTab, scanProduct, scannerMode, productModalOpen]);
 
   function resetProductForm() {
-    setNewProduct({ name: "", qrCode: "", price: "", stock: "", category: "Ichimliklar", icon: "PR", imageUrl: "" });
+    setNewProduct({ name: "", qrCode: "", price: "", cost: "", stock: "", category: "Ichimliklar", icon: "snack", imageUrl: "" });
     setEditingProductId(null);
     setProductModalOpen(false);
   }
 
   function startCreateProduct() {
     setEditingProductId(null);
-    setNewProduct({ name: "", qrCode: "", price: "", stock: "", category: "Ichimliklar", icon: "PR", imageUrl: "" });
-    setProductModalOpen(true);
+    setNewProduct({ name: "", qrCode: "", price: "", cost: "", stock: "", category: "Ichimliklar", icon: "snack", imageUrl: "" });
+    setActiveTab("manage");
+    window.setTimeout(() => qrInputRef.current?.blur(), 0);
   }
 
   function startEditProduct(product: Product) {
@@ -150,26 +161,53 @@ export function CashierTabs() {
       name: product.name,
       qrCode: product.qrCode,
       price: String(product.price),
+      cost: String(product.cost ?? 0),
       stock: String(product.stock),
       category: product.category,
-      icon: product.icon,
+      icon: product.icon || "snack",
       imageUrl: product.imageUrl ?? "",
     });
     setProductModalOpen(true);
   }
 
+  function searchManageProduct(code = manageQrCode) {
+    const normalizedCode = normalizeScanCode(code);
+    if (!normalizedCode) return;
+    const product = products.find((item) => item.qrCode.toLowerCase() === normalizedCode.toLowerCase() || item.id.toLowerCase() === normalizedCode.toLowerCase());
+    if (product) {
+      setEditingProductId(product.id);
+      setNewProduct({
+        name: product.name,
+        qrCode: product.qrCode,
+        price: String(product.price),
+        cost: String(product.cost ?? 0),
+        stock: String(product.stock),
+        category: product.category,
+        icon: product.icon || "snack",
+        imageUrl: product.imageUrl ?? "",
+      });
+      setScanMessage(`${product.name} topildi. Stock, olingan narx va sotuv narxi autofill qilindi.`);
+      return;
+    }
+    setEditingProductId(null);
+    setNewProduct((item) => ({ ...item, qrCode: normalizedCode, name: "", price: "", cost: "", stock: "", icon: "snack" }));
+    setScanMessage(`Yangi mahsulot QR: ${normalizedCode}. Formani to'ldirib saqlang.`);
+  }
+
   async function submitProduct(event: React.FormEvent) {
     event.preventDefault();
     const price = Number(newProduct.price);
+    const cost = Number(newProduct.cost || 0);
     const stock = Number(newProduct.stock);
-    if (!newProduct.name.trim() || !newProduct.qrCode.trim() || !Number.isFinite(price) || !Number.isFinite(stock)) return;
+    if (!newProduct.name.trim() || !newProduct.qrCode.trim() || !Number.isFinite(price) || !Number.isFinite(cost) || !Number.isFinite(stock)) return;
     const payload = {
       name: newProduct.name.trim(),
       qrCode: newProduct.qrCode.trim(),
       price,
+      cost,
       stock,
       category: newProduct.category,
-      icon: newProduct.icon.trim() || newProduct.name.slice(0, 2).toUpperCase(),
+      icon: newProduct.icon || "snack",
       imageUrl: newProduct.imageUrl.trim() || undefined,
     };
 
@@ -254,6 +292,7 @@ export function CashierTabs() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="w-full gap-1 rounded-xl p-1 sm:w-fit">
             <TabsTrigger className="h-9 px-3 text-sm" value="shop">Do'kon</TabsTrigger>
+            <TabsTrigger className="h-9 px-3 text-sm" value="manage">Mahsulot qo'shish</TabsTrigger>
             <TabsTrigger className="h-9 px-3 text-sm" value="balance">Balans</TabsTrigger>
             <TabsTrigger className="h-9 px-3 text-sm" value="return">Qaytim</TabsTrigger>
             <TabsTrigger className="h-9 px-3 text-sm" value="post">Post-pay</TabsTrigger>
@@ -304,6 +343,75 @@ export function CashierTabs() {
               {visible.map((item) => <ProductCard key={item.id} product={item} onAdd={() => addProduct(item)} onEdit={() => startEditProduct(item)} onDelete={() => removeProduct(item)} />)}
             </div>
           </TabsContent>
+          <TabsContent value="manage">
+            <Card className="space-y-4 p-4">
+              <div>
+                <div className="text-xl font-black text-white">Mahsulot qo'shish / stock yangilash</div>
+                <div className="text-sm text-slate-400">QR kodni skan qiling. Mavjud mahsulot bo'lsa ma'lumotlari avtomatik chiqadi, yangi bo'lsa formani to'ldiring.</div>
+              </div>
+              <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
+                <div className="relative">
+                  <RiQrScan2Line className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <Input
+                    className="h-10 rounded-lg pl-9"
+                    value={manageQrCode}
+                    onChange={(event) => setManageQrCode(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === "Tab") {
+                        event.preventDefault();
+                        searchManageProduct(event.currentTarget.value);
+                      }
+                    }}
+                    placeholder="QR code scan yoki barcode kiriting"
+                    autoComplete="off"
+                  />
+                </div>
+                <Button className="h-10 rounded-lg px-4" onClick={() => searchManageProduct()} disabled={!manageQrCode.trim()}><RiQrScan2Line /> Search QR</Button>
+              </div>
+              <form onSubmit={submitProduct} className="grid gap-4 lg:grid-cols-[220px,1fr]">
+                <div className="space-y-3">
+                  <div className="flex aspect-square items-center justify-center rounded-2xl border border-slate-800 bg-slate-950 text-6xl text-sky-200">
+                    <ProductIcon iconKey={newProduct.icon} />
+                  </div>
+                  <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-sm text-slate-400">
+                    {editingProductId ? "Mavjud mahsulot yangilanadi: stock, olingan narx va sotuv narxi saqlanadi." : "Yangi mahsulot yaratiladi va QR kodi bilan saqlanadi."}
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2 sm:col-span-2"><Label>Name</Label><Input value={newProduct.name} onChange={(event) => setNewProduct((item) => ({ ...item, name: event.target.value }))} placeholder="Product name" /></div>
+                  <div className="space-y-2"><Label>QR code</Label><Input value={newProduct.qrCode} onChange={(event) => setNewProduct((item) => ({ ...item, qrCode: event.target.value }))} placeholder="478000..." /></div>
+                  <div className="space-y-2"><Label>Category</Label><Select value={newProduct.category} onValueChange={(value) => setNewProduct((item) => ({ ...item, category: value as Product["category"] }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{productCategories.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
+                  <div className="space-y-2"><Label>Qanchaga olingan</Label><Input inputMode="numeric" value={formatNumber(newProduct.cost)} onChange={(event) => setNewProduct((item) => ({ ...item, cost: event.target.value.replace(/\D/g, "") }))} placeholder="6 000" /></div>
+                  <div className="space-y-2"><Label>Qanchaga sotilmoqda</Label><Input inputMode="numeric" value={formatNumber(newProduct.price)} onChange={(event) => setNewProduct((item) => ({ ...item, price: event.target.value.replace(/\D/g, "") }))} placeholder="9 000" /></div>
+                  <div className="space-y-2"><Label>Stock</Label><Input inputMode="numeric" value={newProduct.stock} onChange={(event) => setNewProduct((item) => ({ ...item, stock: event.target.value.replace(/\D/g, "") }))} placeholder="72" /></div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label>Icon</Label>
+                    <div className="grid grid-cols-5 gap-2 sm:grid-cols-10">
+                      {productIcons.map(({ key, label }) => (
+                        <button
+                          key={key}
+                          type="button"
+                          title={label}
+                          className={`flex h-11 items-center justify-center rounded-xl border text-xl transition ${newProduct.icon === key ? "border-sky-400 bg-sky-500/20 text-sky-100" : "border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-600"}`}
+                          onClick={() => setNewProduct((item) => ({ ...item, icon: key }))}
+                        >
+                          <ProductIcon iconKey={key} />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid gap-2 sm:col-span-2 sm:grid-cols-2">
+                    <Button type="button" variant="secondary" onClick={() => {
+                      resetProductForm();
+                      setManageQrCode("");
+                    }}><FiX /> Clear</Button>
+                    <Button type="submit" disabled={!newProduct.name.trim() || !newProduct.qrCode.trim() || !newProduct.price || !newProduct.stock}><FiPlusCircle /> {editingProductId ? "Update product" : "Create product"}</Button>
+                  </div>
+                </div>
+              </form>
+              <div className="text-xs font-semibold text-slate-400">{scanMessage}</div>
+            </Card>
+          </TabsContent>
           <TabsContent value="balance">
             <Card className="space-y-4 p-4">
               <div>
@@ -313,7 +421,7 @@ export function CashierTabs() {
               <form onSubmit={submitBalance} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <div className="space-y-2 xl:col-span-2"><Label>Mijoz</Label><Input value={balanceForm.customer} onChange={(event) => setBalanceForm((item) => ({ ...item, customer: event.target.value }))} placeholder="Mijoz ismi" /></div>
                 <div className="space-y-2"><Label>Telefon</Label><Input value={balanceForm.phone} onChange={(event) => setBalanceForm((item) => ({ ...item, phone: event.target.value }))} placeholder="+998..." /></div>
-                <div className="space-y-2"><Label>Payment</Label><Select value={balanceForm.method} onValueChange={(method) => setBalanceForm((item) => ({ ...item, method }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{paymentMethods.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
+                <div className="space-y-2"><Label>Payment</Label><Select value={balanceForm.method} onValueChange={(method) => setBalanceForm((item) => ({ ...item, method }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}</SelectContent></Select></div>
                 <div className="space-y-2 xl:col-span-2"><Label>Amount</Label><Input inputMode="numeric" value={formatNumber(balanceForm.amount)} onChange={(event) => setBalanceForm((item) => ({ ...item, amount: event.target.value.replace(/\D/g, "") }))} placeholder="50 000" /></div>
                 <Button className="xl:col-span-2" type="submit" disabled={!balanceForm.customer.trim() || !balanceForm.amount}><FiCreditCard /> Balansga qo'shish</Button>
               </form>
@@ -330,7 +438,7 @@ export function CashierTabs() {
               <form onSubmit={submitReturn} className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-2"><Label>Savdo summasi</Label><Input inputMode="numeric" value={formatNumber(returnForm.saleAmount)} onChange={(event) => setReturnForm((item) => ({ ...item, saleAmount: event.target.value.replace(/\D/g, "") }))} placeholder="35 000" /></div>
                 <div className="space-y-2"><Label>Berilgan pul</Label><Input inputMode="numeric" value={formatNumber(returnForm.receivedAmount)} onChange={(event) => setReturnForm((item) => ({ ...item, receivedAmount: event.target.value.replace(/\D/g, "") }))} placeholder="50 000" /></div>
-                <div className="space-y-2"><Label>Payment</Label><Select value={returnForm.method} onValueChange={(method) => setReturnForm((item) => ({ ...item, method }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{paymentMethods.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
+                <div className="space-y-2"><Label>Payment</Label><Select value={returnForm.method} onValueChange={(method) => setReturnForm((item) => ({ ...item, method }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}</SelectContent></Select></div>
                 <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 md:col-span-2">
                   <div className="text-xs font-semibold uppercase text-slate-500">Qaytim</div>
                   <div className="mt-1 text-3xl font-black text-sky-200">{money(changeAmount)}</div>
@@ -356,7 +464,7 @@ export function CashierTabs() {
                   </Select>
                 </div>
                 <div className="space-y-2"><Label>Amount</Label><Input inputMode="numeric" value={formatNumber(postPayForm.amount)} onChange={(event) => setPostPayForm((item) => ({ ...item, amount: event.target.value.replace(/\D/g, "") }))} placeholder="50 000" /></div>
-                <div className="space-y-2"><Label>Payment</Label><Select value={postPayForm.method} onValueChange={(method) => setPostPayForm((item) => ({ ...item, method }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{paymentMethods.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
+                <div className="space-y-2"><Label>Payment</Label><Select value={postPayForm.method} onValueChange={(method) => setPostPayForm((item) => ({ ...item, method }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}</SelectContent></Select></div>
                 <Button className="md:col-span-2 xl:col-span-4" type="submit" disabled={!postPayForm.simulatorId || !postPayForm.amount}><FiCheckCircle /> To'lovni qabul qilish</Button>
               </form>
               {cashierMessage ? <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm font-semibold text-emerald-200">{cashierMessage}</div> : null}
@@ -378,7 +486,7 @@ export function CashierTabs() {
                   </Select>
                 </div>
                 <div className="space-y-2"><Label>Amount</Label><Input inputMode="numeric" value={formatNumber(sessionPayForm.amount)} onChange={(event) => setSessionPayForm((item) => ({ ...item, amount: event.target.value.replace(/\D/g, "") }))} placeholder="50 000" /></div>
-                <div className="space-y-2"><Label>Payment</Label><Select value={sessionPayForm.method} onValueChange={(method) => setSessionPayForm((item) => ({ ...item, method }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{paymentMethods.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
+                <div className="space-y-2"><Label>Payment</Label><Select value={sessionPayForm.method} onValueChange={(method) => setSessionPayForm((item) => ({ ...item, method }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}</SelectContent></Select></div>
                 <Button className="md:col-span-2 xl:col-span-4" type="submit" disabled={!sessionPayForm.simulatorId || !sessionPayForm.amount}><FiCreditCard /> Sessiyani to'lash</Button>
               </form>
               {cashierMessage ? <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm font-semibold text-emerald-200">{cashierMessage}</div> : null}
@@ -414,7 +522,7 @@ export function CashierTabs() {
                   <Select value={txForm.method} onValueChange={(method) => setTxForm((item) => ({ ...item, method }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {paymentMethods.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                      {paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -466,9 +574,25 @@ export function CashierTabs() {
               <div className="space-y-2 sm:col-span-2"><Label>Name</Label><Input value={newProduct.name} onChange={(event) => setNewProduct((item) => ({ ...item, name: event.target.value }))} placeholder="Product name" /></div>
               <div className="space-y-2"><Label>QR code</Label><Input value={newProduct.qrCode} onChange={(event) => setNewProduct((item) => ({ ...item, qrCode: event.target.value }))} placeholder="B2-QR-0010" /></div>
               <div className="space-y-2"><Label>Category</Label><Select value={newProduct.category} onValueChange={(value) => setNewProduct((item) => ({ ...item, category: value as Product["category"] }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{productCategories.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
-              <div className="space-y-2"><Label>Price</Label><Input inputMode="numeric" value={formatNumber(newProduct.price)} onChange={(event) => setNewProduct((item) => ({ ...item, price: event.target.value.replace(/\D/g, "") }))} placeholder="9 000" /></div>
+              <div className="space-y-2"><Label>Qanchaga olingan</Label><Input inputMode="numeric" value={formatNumber(newProduct.cost)} onChange={(event) => setNewProduct((item) => ({ ...item, cost: event.target.value.replace(/\D/g, "") }))} placeholder="6 000" /></div>
+              <div className="space-y-2"><Label>Qanchaga sotilmoqda</Label><Input inputMode="numeric" value={formatNumber(newProduct.price)} onChange={(event) => setNewProduct((item) => ({ ...item, price: event.target.value.replace(/\D/g, "") }))} placeholder="9 000" /></div>
               <div className="space-y-2"><Label>Stock</Label><Input inputMode="numeric" value={newProduct.stock} onChange={(event) => setNewProduct((item) => ({ ...item, stock: event.target.value.replace(/\D/g, "") }))} placeholder="72" /></div>
-              <div className="space-y-2"><Label>Icon</Label><Input value={newProduct.icon} onChange={(event) => setNewProduct((item) => ({ ...item, icon: event.target.value }))} placeholder="PR" /></div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Icon</Label>
+                <div className="grid grid-cols-5 gap-2 sm:grid-cols-10">
+                  {productIcons.map(({ key, label }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      title={label}
+                      className={`flex h-11 items-center justify-center rounded-xl border text-xl transition ${newProduct.icon === key ? "border-sky-400 bg-sky-500/20 text-sky-100" : "border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-600"}`}
+                      onClick={() => setNewProduct((item) => ({ ...item, icon: key }))}
+                    >
+                      <ProductIcon iconKey={key} />
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="space-y-2">
                 <Label>Image URL</Label>
                 <div className="grid gap-2 sm:grid-cols-[1fr_auto]">

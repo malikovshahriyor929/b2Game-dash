@@ -17,10 +17,19 @@ type Tariff = {
   id: string;
   name: string;
   type: string;
+  simulatorZone: string;
+  durationMinutes: number;
   price: number;
+  weekdayPrice?: number;
+  weekendPrice?: number;
+  bonus?: string;
 };
 
-const tariffTypes = ["Time-based", "VIP", "Package", "Promo", "Group", "Birthday", "Night", "Weekend"];
+const tariffTypes = ["time", "vip", "package", "promo", "group", "birthday", "night", "weekend"];
+const zones = [
+  { label: "Logitech / Middle", value: "main" },
+  { label: "Moza / VIP", value: "vip" },
+];
 
 function formatNumber(value: string) {
   const digits = value.replace(/\D/g, "");
@@ -31,7 +40,7 @@ export default function TariffsPage() {
   const [tariffs, setTariffs] = useState<Tariff[]>([]);
   const [branchId, setBranchId] = useState("");
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", type: "Time-based", price: "" });
+  const [form, setForm] = useState({ name: "", type: "time", simulatorZone: "main", duration: "60", weekdayPrice: "", weekendPrice: "", weekdayBonus: "", weekendBonus: "" });
 
   async function refreshTariffs() {
     const [branchRows, rows] = await Promise.all([
@@ -43,7 +52,12 @@ export default function TariffsPage() {
       id: String(row.id),
       name: String(row.name ?? ""),
       type: String(row.type ?? row.simulator_zone ?? "Time-based"),
+      simulatorZone: String(row.simulator_zone ?? "main"),
+      durationMinutes: Number(row.duration_minutes ?? 0),
       price: Number(row.price ?? 0),
+      weekdayPrice: row.weekday_price == null ? undefined : Number(row.weekday_price),
+      weekendPrice: row.weekend_price == null ? undefined : Number(row.weekend_price),
+      bonus: row.bonus == null ? undefined : String(row.bonus),
     })));
   }
 
@@ -53,19 +67,25 @@ export default function TariffsPage() {
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
-    const price = Number(form.price.replace(/\D/g, ""));
-    if (!form.name.trim() || !Number.isFinite(price) || price <= 0 || !branchId) return;
+    const weekdayPrice = Number(form.weekdayPrice.replace(/\D/g, ""));
+    const weekendPrice = Number((form.weekendPrice || form.weekdayPrice).replace(/\D/g, ""));
+    const duration = Number(form.duration.replace(/\D/g, ""));
+    if (!form.name.trim() || !Number.isFinite(weekdayPrice) || weekdayPrice <= 0 || !Number.isFinite(duration) || duration <= 0 || !branchId) return;
     void backendPost("/tariffs", {
       branch_id: branchId,
       name: form.name.trim(),
-      simulator_zone: form.type === "VIP" ? "vip" : "main",
-      duration_minutes: 60,
-      price,
+      simulator_zone: form.simulatorZone,
+      duration_minutes: duration,
+      price: weekdayPrice,
+      weekday_price: weekdayPrice,
+      weekend_price: weekendPrice,
+      weekday_bonus: form.weekdayBonus.trim() || undefined,
+      weekend_bonus: form.weekendBonus.trim() || undefined,
       type: form.type,
       is_active: true,
     }).then(refreshTariffs).catch(() => undefined);
-    setTariffs((items) => [{ id: crypto.randomUUID(), name: form.name.trim(), type: form.type, price }, ...items]);
-    setForm({ name: "", type: "Time-based", price: "" });
+    setTariffs((items) => [{ id: crypto.randomUUID(), name: form.name.trim(), type: form.type, simulatorZone: form.simulatorZone, durationMinutes: duration, price: weekdayPrice, weekdayPrice, weekendPrice }, ...items]);
+    setForm({ name: "", type: "time", simulatorZone: "main", duration: "60", weekdayPrice: "", weekendPrice: "", weekdayBonus: "", weekendBonus: "" });
     setOpen(false);
   }
 
@@ -79,9 +99,15 @@ export default function TariffsPage() {
       <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3">
         {tariffs.map((item) => (
           <Card key={item.id} className="p-4">
-            <Badge variant={item.type === "VIP" ? "vip" : "muted"}>{item.type}</Badge>
+            <Badge variant={item.type === "vip" ? "vip" : "muted"}>{item.type}</Badge>
             <div className="mt-4 text-lg font-bold">{item.name}</div>
+            <div className="mt-1 text-xs font-semibold text-slate-500">{item.simulatorZone === "vip" ? "Moza / VIP" : "Logitech / Middle"} · {item.durationMinutes} min</div>
             <div className="mt-2 text-xl font-black text-sky-200">{money(item.price)}</div>
+            <div className="mt-2 space-y-1 text-xs font-semibold text-slate-400">
+              <div>PN-CHT: {money(item.weekdayPrice ?? item.price)}</div>
+              <div>Juma-Yakshanba: {money(item.weekendPrice ?? item.price)}</div>
+              {item.bonus ? <div className="text-emerald-300">Bonus: {item.bonus}</div> : null}
+            </div>
           </Card>
         ))}
       </div>
@@ -104,20 +130,40 @@ export default function TariffsPage() {
                 <SelectContent>{tariffTypes.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>Price</Label>
+            <div className="space-y-2">
+              <Label>Zone</Label>
+              <Select value={form.simulatorZone} onValueChange={(simulatorZone) => setForm((item) => ({ ...item, simulatorZone }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{zones.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Duration</Label>
+              <Input inputMode="numeric" value={form.duration} onChange={(event) => setForm((item) => ({ ...item, duration: event.target.value.replace(/\D/g, "") }))} placeholder="60" />
+            </div>
+            <div className="space-y-2">
+              <Label>PN-CHT price</Label>
               <div className="relative">
                 <Input
                   className="pr-16"
                   inputMode="numeric"
-                  value={formatNumber(form.price)}
-                  onChange={(event) => setForm((item) => ({ ...item, price: event.target.value.replace(/\D/g, "") }))}
-                  placeholder="75 000"
+                  value={formatNumber(form.weekdayPrice)}
+                  onChange={(event) => setForm((item) => ({ ...item, weekdayPrice: event.target.value.replace(/\D/g, "") }))}
+                  placeholder="40 000"
                 />
                 <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">so'm</span>
               </div>
             </div>
-            <Button className="sm:col-span-2" type="submit" disabled={!form.name.trim() || !form.price.trim() || !branchId}><FiPlus /> Create tariff</Button>
+            <div className="space-y-2">
+              <Label>Juma-Yakshanba price</Label>
+              <div className="relative">
+                <Input className="pr-16" inputMode="numeric" value={formatNumber(form.weekendPrice)} onChange={(event) => setForm((item) => ({ ...item, weekendPrice: event.target.value.replace(/\D/g, "") }))} placeholder="50 000" />
+                <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">so'm</span>
+              </div>
+            </div>
+            <div className="space-y-2"><Label>PN-CHT bonus</Label><Input value={form.weekdayBonus} onChange={(event) => setForm((item) => ({ ...item, weekdayBonus: event.target.value }))} placeholder="energetik" /></div>
+            <div className="space-y-2"><Label>Juma-Yakshanba bonus</Label><Input value={form.weekendBonus} onChange={(event) => setForm((item) => ({ ...item, weekendBonus: event.target.value }))} placeholder="energetik + chips" /></div>
+            <Button className="sm:col-span-2" type="submit" disabled={!form.name.trim() || !form.weekdayPrice.trim() || !branchId}><FiPlus /> Create tariff</Button>
           </form>
         </DialogContent>
       </Dialog>

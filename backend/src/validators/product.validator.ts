@@ -8,6 +8,10 @@ export const productCreateSchema = z.object({
     barcode: z.string().min(4),
     price: amount,
     cost: amount.default(0),
+    icon: z.string().min(1).optional(),
+    stock_quantity: z.number().int().min(0).optional(),
+    stock: z.number().int().min(0).optional(),
+    low_stock_threshold: z.number().int().min(0).optional(),
     is_active: z.boolean().optional(),
   }),
 });

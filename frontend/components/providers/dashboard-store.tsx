@@ -19,12 +19,20 @@ import {
   unlockRig as unlockAdminRig,
 } from "@/lib/rig-admin-api";
 
-type StartPayload = { customerName: string; phone: string; tariff: string; duration: number; amount: number; paymentStatus: "paid" | "unpaid" | "partial" };
+type StartPayload = { customerName: string; phone: string; tariff: string; duration: number; amount: number; paymentStatus: "paid" | "unpaid" | "partial"; paymentMethod?: string };
 type PeriodFilter = "today" | "yesterday" | "week" | "month" | "year" | "custom";
 type RepairPayload = { title: string; description: string; errorType: RepairErrorType; priority: RepairPriority; note?: string };
 type RevenueEvent = { id: string; time: string; date?: string; amount: number; source: string; branchId?: string };
 type ApiResponse<T> = { success: boolean; data: T; message?: string };
-type PaymentMethod = "cash" | "card" | "qr" | "balance";
+type PaymentMethod = "cash" | "card" | "qr" | "balance" | "mixed";
+type PaymentPayload = {
+  cash_amount: number;
+  card_amount: number;
+  qr_amount: number;
+  balance_amount: number;
+  received_amount?: number;
+  change_amount?: number;
+};
 
 const fallbackBranch: Branch = { id: "default-branch", name: "Default branch" };
 
@@ -80,7 +88,7 @@ type DashboardStore = {
   recordCashierTransaction: (action: string, amount: number, method: string) => void;
   updateQty: (id: string, qty: number) => void;
   clearOrder: () => void;
-  payOrder: (attachTo?: string, paymentMethod?: string) => void;
+  payOrder: (attachTo?: string, paymentMethod?: string, customerId?: string, payment?: Partial<PaymentPayload>) => void;
   openShift: (operator: string, shiftType: "Kunduzgi (09:00 - 18:00)" | "Tungi (18:01 - 09:00)", startingCash: number) => void;
   closeShift: (actualCash: number, notes?: string) => void;
   addCashTransaction: (type: "income" | "expense", amount: number, source: string, method: string) => void;
@@ -146,13 +154,14 @@ function toApiPaymentMethod(method?: string): PaymentMethod {
   if (value.includes("naqd") || value.includes("cash")) return "cash";
   if (value.includes("qr")) return "qr";
   if (value.includes("balance")) return "balance";
+  if (value.includes("aralash") || value.includes("mixed")) return "mixed";
   return "card";
 }
 
-function splitPayment(amount: number, method: PaymentMethod) {
+function splitPayment(amount: number, method: PaymentMethod): PaymentPayload {
   return {
     cash_amount: method === "cash" ? amount : 0,
-    card_amount: method === "card" ? amount : 0,
+    card_amount: method === "card" || method === "mixed" ? amount : 0,
     qr_amount: method === "qr" ? amount : 0,
     balance_amount: method === "balance" ? amount : 0,
   };
@@ -170,13 +179,17 @@ function productCategory(value?: string): Product["category"] {
 }
 
 function productIcon(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase() || "P";
+  const text = name.toLowerCase();
+  if (text.includes("burger") || text.includes("food")) return "burger";
+  if (text.includes("water") || text.includes("cola") || text.includes("drink")) return "drink";
+  if (text.includes("energy")) return "energy";
+  if (text.includes("snack") || text.includes("chips") || text.includes("snicker")) return "snack";
+  if (text.includes("pizza")) return "pizza";
+  if (text.includes("hotdog")) return "hotdog";
+  if (text.includes("coffee")) return "coffee";
+  if (text.includes("cake")) return "cake";
+  if (text.includes("cookie")) return "cookie";
+  return "snack";
 }
 
 function rigRemainingMinutes(unlockUntil: string | null) {
@@ -244,9 +257,10 @@ function mapProduct(row: Record<string, unknown>): Product {
     name,
     qrCode: String(row.barcode ?? row.qr_code ?? row.id),
     price: numberValue(row.price),
+    cost: numberValue(row.cost),
     stock: Number(row.stock_quantity ?? row.stock ?? 0),
     category: productCategory(String(row.category ?? "")),
-    icon: productIcon(name),
+    icon: String(row.icon ?? productIcon(name)),
   };
 }
 
@@ -606,7 +620,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator || !visibleBranchIds.includes(simulator.branchId) || ["offline", "locked", "broken", "repair_requested", "repair_approved", "fixing", "fixed_waiting_confirmation"].includes(simulator.status)) return;
       if (simulator.rigId) void unlockAdminRig(simulator.rigId, payload.duration).then(refreshBackendData).catch(() => undefined);
-      const method = toApiPaymentMethod(payload.paymentStatus === "paid" ? "card" : undefined);
+      const method = toApiPaymentMethod(payload.paymentStatus === "paid" ? payload.paymentMethod : undefined);
       void backendPost<Record<string, unknown>>("/sessions/start", {
         simulator_id: simulator.id,
         branch_id: simulator.branchId,
@@ -840,6 +854,10 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         if (existing) return items.map((item) => (item.id === product.id ? { ...item, qty: item.qty + 1 } : item));
         return [...items, { ...product, qty: 1 }];
       });
+      void backendPost<Record<string, unknown>>("/cashier/scan", {
+        branch_id: effectiveBranchId === "all" ? firstBackendBranchId : effectiveBranchId,
+        barcode: product.qrCode,
+      }).catch(() => undefined);
       appendLog(`scanned product ${product.name}`);
       return product;
     },
@@ -851,7 +869,8 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         category: product.category,
         barcode: product.qrCode,
         price: product.price,
-        cost: 0,
+        cost: product.cost ?? 0,
+        icon: product.icon || "snack",
         is_active: true,
         stock_quantity: product.stock,
       });
@@ -870,7 +889,8 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         category: product.category,
         barcode: product.qrCode,
         price: product.price,
-        cost: 0,
+        cost: product.cost ?? 0,
+        icon: product.icon || "snack",
         is_active: true,
       })
         .then(() => backendPost<Record<string, unknown>>("/inventory/adjust", {
@@ -910,7 +930,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     clearOrder() {
       setOrder([]);
     },
-    payOrder(attachTo, paymentMethod = "Karta") {
+    payOrder(attachTo, paymentMethod = "Karta", customerId, payment) {
       const total = order.reduce((sum, item) => sum + item.price * item.qty, 0);
       if (!total) return;
       const simulator = attachTo ? allSimulators.find((item) => item.id === attachTo) : undefined;
@@ -918,11 +938,13 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       void backendPost<Record<string, unknown>>("/cashier/sales", {
         branch_id: simulator?.branchId ?? (effectiveBranchId === "all" ? firstBackendBranchId : effectiveBranchId),
         session_id: simulator?.currentSessionId ?? undefined,
+        customer_id: customerId ?? undefined,
         items: order.map((item) => ({ product_id: item.id, quantity: item.qty })),
       })
         .then((sale) => backendPost<Record<string, unknown>>(`/cashier/sales/${String(sale.id)}/pay`, {
           method: apiMethod,
           ...splitPayment(total, apiMethod),
+          ...payment,
         }))
         .then(refreshBackendData)
         .catch(() => undefined);
@@ -931,7 +953,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         const names = order.map((item) => item.name).join(", ");
         patchSimulator(attachTo, { orderItems: [...(simulator?.orderItems ?? []), names] });
       }
-      appendLog(`paid shop order ${total.toLocaleString("uz-UZ")}`, attachTo);
+      appendLog(`paid shop order ${total.toLocaleString("uz-UZ")}${customerId ? " for registered customer" : ""}`, attachTo);
 
       // Record a detailed BarSale
       const d = new Date();

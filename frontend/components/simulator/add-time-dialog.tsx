@@ -8,25 +8,26 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { money, minutes } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { usePaymentMethods } from "@/lib/use-payment-methods";
+import { useBackendTariffs } from "@/lib/use-backend-tariffs";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { Simulator } from "@/types/simulator";
 
-const presets = [
-  { min: 30, price: 30000 },
-  { min: 60, price: 50000 },
-  { min: 90, price: 70000 },
-  { min: 120, price: 90000 },
-  { min: 180, price: 130000 },
-];
-
-const paymentMethods = ["Naqd", "Karta", "QR", "Balans", "Aralash"] as const;
-
 export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator }) {
   const { addTime } = useDashboardStore();
-  const [selectedPreset, setSelectedPreset] = useState(presets[1]);
+  const paymentMethods = usePaymentMethods();
+  const tariffs = useBackendTariffs();
+  const presets = useMemo(() => {
+    const zone = simulator?.zone === "VIP" ? "vip" : "main";
+    return tariffs
+      .filter((item) => (item.simulatorZone === zone || item.simulatorZone === "all") && item.type !== "night")
+      .map((item) => ({ min: item.durationMinutes, price: item.price, bonus: item.bonus, name: item.name }));
+  }, [simulator?.zone, tariffs]);
+  const fallbackPreset = useMemo(() => presets[0] ?? { min: 60, price: 0, bonus: undefined, name: "" }, [presets]);
+  const [selectedPreset, setSelectedPreset] = useState(fallbackPreset);
   const [customMin, setCustomMin] = useState("");
   const [customPrice, setCustomPrice] = useState("");
-  const [method, setMethod] = useState<(typeof paymentMethods)[number]>("Karta");
+  const [method, setMethod] = useState("Karta");
 
   const customMinutes = Number(customMin);
   const customAmount = Number(customPrice);
@@ -42,11 +43,11 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
 
   useEffect(() => {
     if (!open) return;
-    setSelectedPreset(presets[1]);
+    setSelectedPreset(fallbackPreset);
     setCustomMin("");
     setCustomPrice("");
     setMethod("Karta");
-  }, [open, simulator?.id]);
+  }, [fallbackPreset, open, simulator?.id]);
 
   function submit() {
     if (!canSubmit || !simulator) return;
@@ -79,7 +80,7 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
               }}
             >
               <span className="text-base font-bold">{preset.min} min</span>
-              <span className="text-base font-bold">{money(preset.price)}</span>
+              <span className="text-right text-base font-bold">{money(preset.price)}{preset.bonus ? <span className="block text-xs text-emerald-300">+ {preset.bonus}</span> : null}</span>
             </Button>
           ))}
         </div>
@@ -111,12 +112,12 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
           </div>
           <div className="space-y-2">
             <Label>Payment</Label>
-            <Select value={method} onValueChange={(value) => setMethod(value as (typeof paymentMethods)[number])}>
+            <Select value={method} onValueChange={setMethod}>
               <SelectTrigger className="h-10">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {paymentMethods.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                {paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
