@@ -19,7 +19,16 @@ async function getBackendToken() {
     cache: "no-store",
   });
   if (!response.ok) throw new Error(`Backend login failed: ${response.status}`);
-  const json = await response.json();
+
+  const text = await response.text();
+ 
+  if (!text) throw new Error("Backend login returned an empty response");
+  let json: any;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new Error("Backend login returned a non-JSON response");
+  }
   const token = json.data?.access_token;
   if (!token) throw new Error("Backend login did not return access_token");
   tokenCache = { token, expiresAt: Date.now() + 10 * 60_000 };

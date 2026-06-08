@@ -31,9 +31,23 @@ export const authOptions: NextAuthOptions = {
           body: JSON.stringify({ email, password }),
           cache: "no-store",
         });
-        if (!response.ok) return null;
 
-        const payload = await response.json();
+        const text = await response.text();
+        console.log("[auth] backend login response", {
+          url: `${BACKEND_URL}/api/auth/login`,
+          status: response.status,
+          ok: response.ok,
+          contentType: response.headers.get("content-type"),
+          body: text,
+        });
+        if (!response.ok) return null;
+        if (!text) return null;
+        let payload: any;
+        try {
+          payload = JSON.parse(text);
+        } catch {
+          return null;
+        }
         const user = payload.data?.user;
         if (!user || !isRole(user.role)) return null;
         const branchIds = user.role === "super_admin" ? ["all"] : user.branch_id ? [String(user.branch_id)] : [];
