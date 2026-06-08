@@ -1,0 +1,149 @@
+import { Request } from "express";
+import { prisma } from "../../db/prisma";
+import { ApiError } from "../../utils/apiError";
+import { auditLog } from "../../services/auditLog.service";
+import { broadcastDashboard } from "../../websocket/dashboardConnection.manager";
+import {
+  getRigMvpRig,
+  listRigMvpRigs,
+  lockRigMvp,
+  notifyRigMvp,
+  pushRigMvpUpdate,
+  removeRigMvp,
+  RigMvpRig,
+  unlockRigMvp,
+} from "../../services/rigMvp.service";
+
+async function defaultBranch() {
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: string; name: string; code: string }>>("select id,name,code from branches order by created_at asc limit 1");
+  return rows[0] ?? { id: "rig-mvp", name: "Rig-MVP", code: "RIGMVP" };
+}
+
+function zoneFromRig(rig: RigMvpRig) {
+  const text = `${rig.label} ${rig.hostname} ${rig.rig_id}`.toLowerCase();
+  return text.includes("vip") || text.includes("moza") ? "vip" : "main";
+}
+
+function statusFromRig(rig: RigMvpRig) {
+  if (!rig.online || rig.state === "Offline") return "offline";
+  if (rig.state === "Updating") return "offline";
+  if (rig.locked || rig.state === "Available") return "ready_to_play";
+  return "busy";
+}
+
+async function rigToSimulatorRow(rig: RigMvpRig) {
+  const branch = await defaultBranch();
+  const zone = zoneFromRig(rig);
+  const status = statusFromRig(rig);
+  const name = rig.label || rig.hostname || rig.rig_id;
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `insert into simulators(branch_id,name,code,zone,simulator_type,status,device_id,ip_address,ws_rig_id,is_online,last_seen_at)
+     values($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::timestamptz)
+     on conflict(branch_id,code) do update set
+       name=excluded.name,
+       zone=excluded.zone,
+       simulator_type=excluded.simulator_type,
+       status=excluded.status,
+       device_id=excluded.device_id,
+       ip_address=excluded.ip_address,
+       ws_rig_id=excluded.ws_rig_id,
+       is_online=excluded.is_online,
+       last_seen_at=excluded.last_seen_at,
+       updated_at=now()
+     returning *`,
+    branch.id,
+    name,
+    rig.rig_id,
+    zone,
+    zone,
+    status,
+    rig.rig_id,
+    rig.hostname,
+    rig.rig_id,
+    rig.online,
+    rig.last_seen,
+  );
+  return {
+    ...rows[0],
+    branch_name: branch.name,
+    branch_code: branch.code,
+    rig_online: rig.online,
+    rig_version: rig.version,
+    latest_version: rig.latest_version,
+    update_status: rig.update_status,
+    locked: rig.locked,
+    unlock_until: rig.unlock_until,
+    first_seen: rig.first_seen,
+    last_seen: rig.last_seen,
+    source: "rig_mvp",
+  };
+}
+
+async function rigIdFromParam(id: string) {
+  const rows = await prisma.$queryRawUnsafe<Array<{ ws_rig_id: string | null }>>("select ws_rig_id from simulators where id=$1::uuid limit 1", id).catch(() => []);
+  return rows[0]?.ws_rig_id ?? id;
+}
+
+export async function listRows(requestedBranchId?: unknown, user?: Request["user"]) {
+  const branch = await defaultBranch();
+  if (user?.role === "admin" && user.branch_id !== branch.id) return [];
+  if (requestedBranchId && requestedBranchId !== "all" && requestedBranchId !== branch.id) return [];
+  const rigs = await listRigMvpRigs();
+  return Promise.all(rigs.map(rigToSimulatorRow));
+}
+
+export async function list(req: Request) {
+  return listRows(req.query.branch_id, req.user);
+}
+
+export const map = list;
+
+export async function get(req: Request) {
+  const rig = await getRigMvpRig(await rigIdFromParam(String(req.params.id)));
+  return rigToSimulatorRow(rig);
+}
+
+export async function patchStatus(req: Request) {
+  const rig = await getRigMvpRig(await rigIdFromParam(String(req.params.id)));
+  const nextStatus = String(req.body.status ?? "");
+  if (nextStatus === "locked") {
+    await lockRigMvp(rig.rig_id, req.body.message ?? "LOCKED - see staff");
+  } else if (["ready_to_play", "busy"].includes(nextStatus)) {
+    await unlockRigMvp(rig.rig_id);
+  } else if (nextStatus === "offline") {
+    await removeRigMvp(rig.rig_id);
+  } else {
+    throw new ApiError(400, "Rig-MVP simulator status can only be locked, ready_to_play, busy, or offline");
+  }
+
+  const row = await rigToSimulatorRow(await getRigMvpRig(rig.rig_id));
+  await auditLog({ actor: req.user, branch_id: row.branch_id, action_type: "simulator_status_changed", entity_type: "rig_mvp", entity_id: null, details: { rig_id: rig.rig_id, to: nextStatus } });
+  broadcastDashboard("simulator_updated", row, row.branch_id);
+  return row;
+}
+
+async function command(req: Request, action: string, work: (rig: RigMvpRig) => Promise<unknown>) {
+  const rig = await getRigMvpRig(await rigIdFromParam(String(req.params.id)));
+  await work(rig);
+  const row = await rigToSimulatorRow(await getRigMvpRig(rig.rig_id));
+  await auditLog({ actor: req.user, branch_id: row.branch_id, action_type: action, entity_type: "rig_mvp", entity_id: null, details: { rig_id: rig.rig_id } });
+  broadcastDashboard("simulator_updated", row, row.branch_id);
+  return { sent: true, rig_id: rig.rig_id, source: "rig_mvp" };
+}
+
+export const notify = (req: Request) => command(req, "simulator_notified", (rig) => notifyRigMvp(rig.rig_id, req.body?.message ?? "Hello"));
+export const lock = (req: Request) => command(req, "simulator_locked", (rig) => lockRigMvp(rig.rig_id, req.body?.message ?? "LOCKED - see staff"));
+export const unlock = (req: Request) => command(req, "simulator_unlocked", (rig) => unlockRigMvp(rig.rig_id));
+export const timedUnlock = (req: Request) => command(req, "simulator_unlocked", (rig) => unlockRigMvp(rig.rig_id, Number(req.body.minutes)));
+
+export async function reboot(_req: Request) {
+  throw new ApiError(501, "Rig-MVP agent does not support reboot yet");
+}
+
+export async function requestStatus(req: Request) {
+  return get(req);
+}
+
+export async function pushUpdate(req: Request) {
+  return pushRigMvpUpdate(req.body.rig_ids ?? []);
+}

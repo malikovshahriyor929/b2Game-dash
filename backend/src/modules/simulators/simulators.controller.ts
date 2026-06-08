@@ -1,0 +1,14 @@
+import { asyncHandler } from "../../utils/asyncHandler";
+import { ok } from "../../utils/apiResponse";
+import * as service from "./simulators.service";
+export const list = asyncHandler(async (req, res) => ok(res, await service.list(req)));
+export const map = asyncHandler(async (req, res) => ok(res, await service.map(req)));
+export const get = asyncHandler(async (req, res) => ok(res, await service.get(req)));
+export const patchStatus = asyncHandler(async (req, res) => ok(res, await service.patchStatus(req)));
+export const notify = asyncHandler(async (req, res) => ok(res, await service.notify(req)));
+export const lock = asyncHandler(async (req, res) => ok(res, await service.lock(req)));
+export const unlock = asyncHandler(async (req, res) => ok(res, await service.unlock(req)));
+export const timedUnlock = asyncHandler(async (req, res) => ok(res, await service.timedUnlock(req)));
+export const reboot = asyncHandler(async (req, res) => ok(res, await service.reboot(req)));
+export const requestStatus = asyncHandler(async (req, res) => ok(res, await service.requestStatus(req)));
+export const pushUpdate = asyncHandler(async (req, res) => ok(res, await service.pushUpdate(req)));

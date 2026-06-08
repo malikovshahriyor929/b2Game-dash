@@ -1,0 +1,2 @@
+import { asyncHandler } from "../../utils/asyncHandler"; import { ok } from "../../utils/apiResponse"; import * as s from "./inventory.service";
+export const list=asyncHandler(async(req,res)=>ok(res,await s.list(req))); export const lowStock=asyncHandler(async(req,res)=>ok(res,await s.lowStock(req))); export const restock=asyncHandler(async(req,res)=>ok(res,await s.move(req,"restock"))); export const adjust=asyncHandler(async(req,res)=>ok(res,await s.move(req,"adjustment")));

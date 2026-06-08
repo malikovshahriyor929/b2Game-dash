@@ -1,0 +1,2 @@
+import { Router } from "express"; import * as c from "./sessions.controller";
+export const sessionsRoutes=Router(); sessionsRoutes.post("/start",c.start); sessionsRoutes.get("/active",c.active); sessionsRoutes.get("/",c.list); sessionsRoutes.get("/:id",c.get); sessionsRoutes.post("/:id/add-time",c.addTime); sessionsRoutes.post("/:id/pause",c.pause); sessionsRoutes.post("/:id/resume",c.resume); sessionsRoutes.post("/:id/stop",c.stop);

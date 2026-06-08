@@ -1,0 +1,2 @@
+import { Request } from "express"; import { prisma } from "../../db/prisma";
+export function list(req:Request){const branch=req.user?.role==="admin"?req.user.branch_id:req.query.branch_id==="all"?null:req.query.branch_id??null; return prisma.$queryRawUnsafe("select * from logs where ($1::uuid is null or branch_id=$1) and ($2::text is null or action_type=$2) and ($3::text is null or entity_type=$3) order by created_at desc limit 500",branch,req.query.action_type??null,req.query.entity_type??null);}

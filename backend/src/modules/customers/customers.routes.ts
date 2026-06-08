@@ -1,0 +1,10 @@
+import { Router } from "express";
+import { customersController } from "./customers.controller";
+export const customersRoutes = Router();
+customersRoutes.get("/", customersController.list);
+customersRoutes.post("/", customersController.create);
+customersRoutes.get("/:id", customersController.get);
+customersRoutes.patch("/:id", customersController.update);
+customersRoutes.delete("/:id", customersController.remove);
+customersRoutes.get("/:id/sessions", customersController.sessions);
+customersRoutes.get("/:id/sales", customersController.sales);

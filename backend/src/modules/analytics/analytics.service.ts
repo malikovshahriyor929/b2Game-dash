@@ -1,0 +1,8 @@
+import { Request } from "express"; import { prisma } from "../../db/prisma";
+const b=(req:Request)=>req.user?.role==="admin"?req.user.branch_id:req.query.branch_id==="all"?null:req.query.branch_id??null;
+export const overview=(req:Request)=>prisma.$queryRawUnsafe("select * from (select count(*)::int active_sessions from sessions where status='active' and ($1::uuid is null or branch_id=$1::uuid)) a cross join (select coalesce(sum(amount),0) revenue from payments where ($1::uuid is null or branch_id=$1::uuid)) r",b(req));
+export const branchComparison=()=>prisma.$queryRawUnsafe("select b.name, coalesce(sum(p.amount),0) revenue from branches b left join payments p on p.branch_id=b.id group by b.id order by revenue desc");
+export const peakHours=(req:Request)=>prisma.$queryRawUnsafe("select extract(hour from started_at)::int as hour_of_day, count(*)::int sessions from sessions where ($1::uuid is null or branch_id=$1::uuid) group by 1 order by 1",b(req));
+export const topProducts=(req:Request)=>prisma.$queryRawUnsafe("select product_name, sum(quantity)::int qty, sum(total_price) revenue from sale_items si join sales s on s.id=si.sale_id where ($1::uuid is null or s.branch_id=$1::uuid) group by product_name order by qty desc limit 10",b(req));
+export const topSimulators=(req:Request)=>prisma.$queryRawUnsafe("select sim.name, count(sess.id)::int sessions from simulators sim left join sessions sess on sess.simulator_id=sim.id where ($1::uuid is null or sim.branch_id=$1::uuid) group by sim.id order by sessions desc limit 10",b(req));
+export const repeatCustomers=(req:Request)=>prisma.$queryRawUnsafe("select * from customers where sessions_count>1 and ($1::uuid is null or branch_id=$1::uuid) order by sessions_count desc",b(req));
