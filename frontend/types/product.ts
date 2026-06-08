@@ -3,6 +3,7 @@ export type Product = {
   name: string;
   qrCode: string;
   price: number;
+  cost?: number;
   stock: number;
   category: "Paketlar" | "Ichimliklar" | "Snack" | "Fast food" | "Energy drink" | "Merch" | "Promo";
   icon: string;
@@ -27,4 +28,3 @@ export type BarSale = {
   branchId: string;
   shiftId?: string;
 };
-

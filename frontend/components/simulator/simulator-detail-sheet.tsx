@@ -36,13 +36,15 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
   const canAddTime = canOperate && busy;
   const canTakePayment = canOperate && ["busy", "unpaid", "reserved"].includes(simulator.status);
   const canStop = canOperate && busy;
-  const canLock = canOperate && (simulator.rigId ? simulator.rigOnline : !busy);
+  const canToggleLock = isSuperAdmin
+    ? canOperate && (simulator.rigId ? simulator.rigOnline : !busy)
+    : canOperate && simulator.status === "locked" && (simulator.rigId ? simulator.rigOnline : true);
   const canRequestFix = canOperate && !inRepairFlow && !["locked", "offline"].includes(simulator.status);
   const canStartFix = canOperate && simulator.status === "repair_approved";
   const canMarkFixed = canOperate && simulator.status === "fixing";
   const canReviewRepair = isSuperAdmin && repairRequest?.status === "pending";
   const canConfirmFix = isSuperAdmin && repairRequest?.status === "fixed_waiting_confirmation";
-  const showSessionActions = canStartSession || canAddTime || canTakePayment || canStop || canLock || canRequestFix;
+  const showSessionActions = canStartSession || canAddTime || canTakePayment || canStop || canToggleLock || canRequestFix;
   const showRigActions = Boolean(simulator.rigId);
   const showRepairActions = canStartFix || canMarkFixed || canReviewRepair || canConfirmFix;
 
@@ -94,7 +96,7 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
               {canAddTime ? <Button variant="secondary" onClick={() => onAction("addTime")}><FiClock /> Add time</Button> : null}
               {canTakePayment ? <Button variant="success" onClick={() => onAction("payment")}><FiCreditCard /> Payment</Button> : null}
               {canStop ? <Button variant="destructive" onClick={() => onAction("stop")}><FiPower /> Stop</Button> : null}
-              {canLock ? <Button variant="secondary" onClick={() => toggleLock(simulator.id)}><FiLock /> Lock / Unlock</Button> : null}
+              {canToggleLock ? <Button variant="secondary" onClick={() => toggleLock(simulator.id)}><FiLock /> {simulator.status === "locked" ? "Unlock" : "Lock / Unlock"}</Button> : null}
               {canRequestFix ? <Button variant="warning" onClick={() => setFixOpen(true)}><FiTool /> Request Fix</Button> : null}
             </div>
           </div>

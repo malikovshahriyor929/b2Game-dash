@@ -8,7 +8,14 @@
     "dev:backend": "npm --prefix backend run dev",
     "build:frontend": "npm --prefix frontend run build",
     "build:backend": "npm --prefix backend run build",
+    "db:migrate": "npm --prefix backend run migrate --",
+    "db:deploy": "npm --prefix backend run db:deploy",
+    "db:push": "npm --prefix backend run db:push",
+    "db:seed": "npm --prefix backend run seed",
     "start:frontend": "npm --prefix frontend run start",
     "start:backend": "npm --prefix backend run start"
+  },
+  "devDependencies": {
+    "prisma": "^6.19.3"
   }
 }

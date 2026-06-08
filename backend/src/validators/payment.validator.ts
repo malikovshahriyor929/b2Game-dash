@@ -12,5 +12,7 @@ export const paymentSchema = z.object({
     card_amount: amount.default(0),
     qr_amount: amount.default(0),
     balance_amount: amount.default(0),
+    received_amount: amount.optional(),
+    change_amount: amount.optional(),
   }),
 });
