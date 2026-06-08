@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { IconType } from "react-icons";
-import { FiBarChart2, FiCalendar, FiChevronLeft, FiChevronRight, FiCpu, FiDatabase, FiGift, FiHome, FiLogOut, FiMessageCircle, FiMonitor, FiPieChart, FiSettings, FiShoppingBag, FiShoppingCart, FiTag, FiUsers, FiX } from "react-icons/fi";
+import { FiBarChart2, FiCalendar, FiChevronLeft, FiChevronRight, FiCpu, FiDatabase, FiGift, FiHome, FiLogOut, FiMessageCircle, FiMonitor, FiPieChart, FiSettings, FiShoppingCart, FiTag, FiUsers, FiX } from "react-icons/fi";
 import { RiGamepadLine } from "react-icons/ri";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +18,6 @@ const items: { key: string; label: string; href: string; icon: IconType }[] = [
   { key: "cashier", label: "Kassa", href: "/dashboard/cashier", icon: FiShoppingCart },
   { key: "bookings", label: "Bronlar", href: "/dashboard/bookings", icon: FiCalendar },
   { key: "customers", label: "Mijozlar", href: "/dashboard/customers", icon: FiUsers },
-  { key: "shop", label: "Do'kon", href: "/dashboard/shop", icon: FiShoppingBag },
   { key: "tariffs", label: "Tariflar", href: "/dashboard/tariffs", icon: FiTag },
   { key: "games", label: "O'yinlar", href: "/dashboard/games", icon: RiGamepadLine },
   { key: "logs", label: "Loglar", href: "/dashboard/logs", icon: FiDatabase },

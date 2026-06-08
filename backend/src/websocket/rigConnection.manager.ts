@@ -13,13 +13,16 @@ export function getRigSocket(rigId: string) {
 
 export async function registerRig(ws: WebSocket, hello: RigHelloMessage) {
   const now = new Date();
-  const simulatorRows = hello.simulator_code && hello.branch_code
-    ? await prisma.$queryRawUnsafe<Array<{ id: string; branch_id: string; status: string }>>(
-        "select s.* from simulators s join branches b on b.id=s.branch_id where s.code=$1 and b.code=$2 limit 1",
-        hello.simulator_code,
-        hello.branch_code,
-      )
-    : [];
+  const simulatorRows =
+    hello.simulator_code && hello.branch_code
+      ? await prisma.$queryRawUnsafe<
+          Array<{ id: string; branch_id: string; status: string }>
+        >(
+          "select s.* from simulators s join branches b on b.id=s.branch_id where s.code=$1 and b.code=$2 limit 1",
+          hello.simulator_code,
+          hello.branch_code,
+        )
+      : [];
   const simulator = simulatorRows[0];
   const rigId = hello.rig_id;
   const hostname = hello.hostname ?? rigId;
@@ -27,7 +30,13 @@ export async function registerRig(ws: WebSocket, hello: RigHelloMessage) {
   const version = hello.version ?? "unknown";
 
   rigs.get(rigId)?.ws.close();
-  rigs.set(rigId, { ws, rigId, simulatorId: simulator?.id ?? null, branchId: simulator?.branch_id ?? null, lastHeartbeatAt: Date.now() });
+  rigs.set(rigId, {
+    ws,
+    rigId,
+    simulatorId: simulator?.id ?? null,
+    branchId: simulator?.branch_id ?? null,
+    lastHeartbeatAt: Date.now(),
+  });
 
   await prisma.$executeRawUnsafe(
     `insert into rig_connections(rig_id,simulator_id,branch_id,hostname,label,version,latest_version,locked,lock_message,online,first_seen_at,last_seen_at)
@@ -46,34 +55,76 @@ export async function registerRig(ws: WebSocket, hello: RigHelloMessage) {
   );
 
   if (simulator) {
-    await prisma.$executeRawUnsafe("update simulators set is_online=true, ws_rig_id=$1, last_seen_at=now(), status=case when status='offline' then 'ready_to_play' else status end where id=$2", rigId, simulator.id);
+    await prisma.$executeRawUnsafe(
+      "update simulators set is_online=true, ws_rig_id=$1, last_seen_at=now(), status=case when status='offline' then 'ready_to_play' else status end where id=$2",
+      rigId,
+      simulator.id,
+    );
   }
 
-  await auditLog({ branch_id: simulator?.branch_id ?? null, action_type: "rig_connected", entity_type: "rig_connection", details: { rig_id: rigId, label, version } });
-  broadcastDashboard("simulator_online", { rig_id: rigId, simulator_id: simulator?.id ?? null }, simulator?.branch_id ?? null);
+  await auditLog({
+    branch_id: simulator?.branch_id ?? null,
+    action_type: "rig_connected",
+    entity_type: "rig_connection",
+    details: { rig_id: rigId, label, version },
+  });
+  broadcastDashboard(
+    "simulator_online",
+    { rig_id: rigId, simulator_id: simulator?.id ?? null },
+    simulator?.branch_id ?? null,
+  );
 }
 
-export async function markRigHeartbeat(rigId: string, patch: Record<string, unknown> = {}) {
+export async function markRigHeartbeat(
+  rigId: string,
+  patch: Record<string, unknown> = {},
+) {
   const state = rigs.get(rigId);
   if (state) state.lastHeartbeatAt = Date.now();
-  await prisma.$executeRawUnsafe("update rig_connections set last_seen_at=now(), update_status=coalesce($2, update_status) where rig_id=$1", rigId, patch.update_status ?? null);
-  if (state?.simulatorId) await prisma.$executeRawUnsafe("update simulators set last_seen_at=now(), is_online=true where id=$1", state.simulatorId);
+  await prisma.$executeRawUnsafe(
+    "update rig_connections set last_seen_at=now(), update_status=coalesce($2, update_status) where rig_id=$1",
+    rigId,
+    patch.update_status ?? null,
+  );
+  if (state?.simulatorId)
+    await prisma.$executeRawUnsafe(
+      "update simulators set last_seen_at=now(), is_online=true where id=$1",
+      state.simulatorId,
+    );
 }
 
 export async function disconnectRig(rigId: string) {
   const state = rigs.get(rigId);
   rigs.delete(rigId);
-  await prisma.$executeRawUnsafe("update rig_connections set online=false, last_seen_at=now() where rig_id=$1", rigId);
-  if (state?.simulatorId) await prisma.$executeRawUnsafe("update simulators set is_online=false, status=case when status in ('busy','locked') then status else 'offline' end where id=$1", state.simulatorId);
-  await auditLog({ branch_id: state?.branchId ?? null, action_type: "rig_disconnected", entity_type: "rig_connection", details: { rig_id: rigId } });
-  broadcastDashboard("simulator_offline", { rig_id: rigId, simulator_id: state?.simulatorId ?? null }, state?.branchId ?? null);
+  await prisma.$executeRawUnsafe(
+    "update rig_connections set online=false, last_seen_at=now() where rig_id=$1",
+    rigId,
+  );
+  if (state?.simulatorId)
+    await prisma.$executeRawUnsafe(
+      "update simulators set is_online=false, status=case when status in ('busy','locked') then status else 'offline' end where id=$1",
+      state.simulatorId,
+    );
+  await auditLog({
+    branch_id: state?.branchId ?? null,
+    action_type: "rig_disconnected",
+    entity_type: "rig_connection",
+    details: { rig_id: rigId },
+  });
+  broadcastDashboard(
+    "simulator_offline",
+    { rig_id: rigId, simulator_id: state?.simulatorId ?? null },
+    state?.branchId ?? null,
+  );
 }
 
 export async function markStaleRigsOffline() {
   const now = Date.now();
   for (const [rigId, state] of rigs) {
     if (now - state.lastHeartbeatAt > env.WS_OFFLINE_AFTER_MS) {
-      try { state.ws.close(); } catch {}
+      try {
+        state.ws.close();
+      } catch {}
       await disconnectRig(rigId);
     }
   }

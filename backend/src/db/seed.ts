@@ -19,6 +19,17 @@ const products = [
   ["Snickers", "Snacks", "4780001000066", 10000, 6500, 44],
 ] as const;
 
+const tariffs = [
+  ["Logitech 1 soat", "main", 60, 40000, 50000, null, null, "time"],
+  ["Logitech 3 soat", "main", 180, 100000, 130000, null, null, "package"],
+  ["Logitech 5 soat", "main", 300, 150000, 200000, null, "energetik", "package"],
+  ["Logitech night", "main", 480, 250000, 350000, null, "energetik", "night"],
+  ["Moza VIP 1 soat", "vip", 60, 80000, 100000, null, null, "vip"],
+  ["Moza VIP 3 soat", "vip", 180, 200000, 250000, null, "energetik", "vip"],
+  ["Moza VIP 5 soat", "vip", 300, 300000, 300000, null, "energetik + chips", "vip"],
+  ["Moza VIP night", "vip", 480, 500000, 500000, "energetik", "energetik", "night"],
+] as const;
+
 async function upsertUser(name: string, email: string, password: string, role: "admin" | "super_admin", branchId: string | null) {
   const hash = await bcrypt.hash(password, 10);
   const { rows } = await pool.query(
@@ -54,16 +65,14 @@ async function run() {
     const samarqandAdmin = await upsertUser("Samarqand Admin", "admin.samarqand@b2game.uz", "admin123", "admin", branchRows.SAMARQAND);
 
     for (const [code, branchId] of Object.entries(branchRows)) {
-      await client.query(
-        `insert into tariffs(branch_id,name,simulator_zone,duration_minutes,price,type,is_active)
-         values
-          ($1,'MAIN 30 min','main',30,30000,'time',true),
-          ($1,'MAIN 60 min','main',60,50000,'time',true),
-          ($1,'VIP 30 min','vip',30,60000,'vip',true),
-          ($1,'VIP 60 min','vip',60,100000,'vip',true)
-         on conflict do nothing`,
-        [branchId],
-      );
+      await client.query("update tariffs set is_active=false where branch_id=$1", [branchId]);
+      for (const [name, zone, duration, weekdayPrice, weekendPrice, weekdayBonus, weekendBonus, type] of tariffs) {
+        await client.query(
+          `insert into tariffs(branch_id,name,simulator_zone,duration_minutes,price,weekday_price,weekend_price,weekday_bonus,weekend_bonus,type,is_active)
+           values($1,$2,$3,$4,$5,$5,$6,$7,$8,$9,true)`,
+          [branchId, name, zone, duration, weekdayPrice, weekendPrice, weekdayBonus, weekendBonus, type],
+        );
+      }
 
       for (let i = 1; i <= 16; i++) {
         const n = String(i).padStart(2, "0");
@@ -111,7 +120,7 @@ async function run() {
     const mainBranchId = branchRows.MAIN;
     const admin = (await client.query("select * from users where email='admin.main@b2game.uz'")).rows[0];
     const sim = (await client.query("select * from simulators where branch_id=$1 and code='MAIN-01'", [mainBranchId])).rows[0];
-    const tariff = (await client.query("select * from tariffs where branch_id=$1 and name='MAIN 60 min'", [mainBranchId])).rows[0];
+    const tariff = (await client.query("select * from tariffs where branch_id=$1 and name='Logitech 1 soat'", [mainBranchId])).rows[0];
     const customer = (await client.query(
       `insert into customers(branch_id,name,phone,total_spent,sessions_count,status,last_visit_at)
        values($1,'Aziz','998901112233',50000,1,'active',now())
@@ -121,14 +130,14 @@ async function run() {
 
     const session = (await client.query(
       `insert into sessions(branch_id, simulator_id, customer_id, customer_name, phone, tariff_id, status, payment_mode, duration_minutes, remaining_seconds, session_amount, total_amount, paid_amount, debt_amount, created_by)
-       values($1,$2,$3,$4,$5,$6,'active','prepaid',60,3600,50000,50000,50000,0,$7)
+       values($1,$2,$3,$4,$5,$6,'active','prepaid',60,3600,40000,40000,40000,0,$7)
        returning *`,
       [mainBranchId, sim.id, customer.id, customer.name, customer.phone, tariff.id, admin.id],
     )).rows[0];
     await client.query("update simulators set status='busy', current_session_id=$1 where id=$2", [session.id, sim.id]);
     await client.query(
       `insert into payments(branch_id, session_id, customer_id, amount, method, card_amount, paid_by_admin_id)
-       values($1,$2,$3,50000,'card',50000,$4)`,
+       values($1,$2,$3,40000,'card',40000,$4)`,
       [mainBranchId, session.id, customer.id, admin.id],
     );
 
