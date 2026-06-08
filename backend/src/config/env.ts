@@ -7,6 +7,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().default(4000),
   DATABASE_URL: z.string().default("postgres://postgres:postgres@localhost:5432/b2_game_club"),
+  DATABASE_SSL: z.coerce.boolean().default(false),
   JWT_ACCESS_SECRET: z.string().min(8).default("change_me_access"),
   JWT_REFRESH_SECRET: z.string().min(8).default("change_me_refresh"),
   JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
