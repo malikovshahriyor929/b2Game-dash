@@ -23,7 +23,16 @@ export async function GET() {
       return NextResponse.json({ success: false, message: `Backend login failed: ${response.status}`, errors: [] }, { status: 502 });
     }
 
-    const json = await response.json();
+    const text = await response.text();
+    if (!text) {
+      return NextResponse.json({ success: false, message: "Backend login returned an empty response", errors: [] }, { status: 502 });
+    }
+    let json: any;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      return NextResponse.json({ success: false, message: "Backend login returned a non-JSON response", errors: [] }, { status: 502 });
+    }
     const token = json.data?.access_token;
     if (!token) {
       return NextResponse.json({ success: false, message: "Backend login did not return access_token", errors: [] }, { status: 502 });
