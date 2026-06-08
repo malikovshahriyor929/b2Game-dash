@@ -40,7 +40,7 @@ FRONTEND_URL=http://localhost:3000
 
 ## Test Users
 
-- `superadmin@b2game.uz` / `superadmin123` / `super_admin`
+- `superadmin@b2game.uz` / `12345678` / `super_admin`
 - `admin.main@b2game.uz` / `admin123` / `admin`
 - `admin.yunusabad@b2game.uz` / `admin123` / `admin`
 - `admin.chilonzor@b2game.uz` / `admin123` / `admin`

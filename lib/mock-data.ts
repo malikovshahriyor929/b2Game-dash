@@ -11,7 +11,7 @@ export const branches: Branch[] = [
 ];
 
 export const mockUsers: MockUser[] = [
-  { id: "u-super-admin", name: "Super Admin", email: "superadmin@b2game.uz", role: "super_admin", branchIds: ["all"], password: "superadmin123" },
+  { id: "u-super-admin", name: "Super Admin", email: "superadmin@b2game.uz", role: "super_admin", branchIds: ["all"], password: "12345678" },
   { id: "u-admin", name: "Admin", email: "admin@b2game.uz", role: "admin", branchIds: ["b2-main-arena"], password: "admin123" },
 ];
 
@@ -433,4 +433,3 @@ export const initialCashTransactions: CashTransaction[] = [
     shiftId: "s-jun4-day"
   }
 ];
-

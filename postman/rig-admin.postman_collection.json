@@ -50,7 +50,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"superadmin@b2game.uz\",\n  \"password\": \"superadmin123\"\n}"
+              "raw": "{\n  \"email\": \"superadmin@b2game.uz\",\n  \"password\": \"12345678\"\n}"
             },
             "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
           }

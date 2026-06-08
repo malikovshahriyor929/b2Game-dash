@@ -46,7 +46,7 @@ async function run() {
       branchRows[rows[0].code] = rows[0].id;
     }
 
-    await upsertUser("Super Admin", "superadmin@b2game.uz", "superadmin123", "super_admin", null);
+    await upsertUser("Super Admin", "superadmin@b2game.uz", "12345678", "super_admin", null);
     await upsertUser("Main Admin", "admin.main@b2game.uz", "admin123", "admin", branchRows.MAIN);
     await upsertUser("Yunusabad Admin", "admin.yunusabad@b2game.uz", "admin123", "admin", branchRows.YUNUSABAD);
     await upsertUser("Chilonzor Admin", "admin.chilonzor@b2game.uz", "admin123", "admin", branchRows.CHILONZOR);

@@ -84,12 +84,53 @@ async function rigIdFromParam(id: string) {
   return rows[0]?.ws_rig_id ?? id;
 }
 
+async function listDbSimulatorRows(requestedBranchId?: unknown, user?: Request["user"]) {
+  const branchId = user?.role === "admin"
+    ? user.branch_id
+    : requestedBranchId && requestedBranchId !== "all"
+      ? String(requestedBranchId)
+      : null;
+
+  if (user?.role === "admin" && !branchId) return [];
+
+  return prisma.$queryRawUnsafe<any[]>(
+    `select
+       s.*,
+       b.name as branch_name,
+       b.code as branch_code,
+       s.is_online as rig_online,
+       'backend' as rig_version,
+       'backend' as latest_version,
+       '' as update_status,
+       (s.status = 'locked') as locked,
+       null::timestamptz as unlock_until,
+       s.created_at as first_seen,
+       s.last_seen_at as last_seen,
+       'database' as source
+     from simulators s
+     join branches b on b.id = s.branch_id
+     where ($1::uuid is null or s.branch_id = $1::uuid)
+     order by b.created_at asc, s.zone asc, s.code asc`,
+    branchId,
+  );
+}
+
 export async function listRows(requestedBranchId?: unknown, user?: Request["user"]) {
   const branch = await defaultBranch();
-  if (user?.role === "admin" && user.branch_id !== branch.id) return [];
-  if (requestedBranchId && requestedBranchId !== "all" && requestedBranchId !== branch.id) return [];
-  const rigs = await listRigMvpRigs();
-  return Promise.all(rigs.map(rigToSimulatorRow));
+  const canUseRigMvp =
+    (!user || user.role !== "admin" || user.branch_id === branch.id) &&
+    (!requestedBranchId || requestedBranchId === "all" || requestedBranchId === branch.id);
+
+  if (canUseRigMvp) {
+    try {
+      const rigs = await listRigMvpRigs();
+      if (rigs.length) return Promise.all(rigs.map(rigToSimulatorRow));
+    } catch {
+      // Keep the dashboard usable from the seeded PostgreSQL data when Rig-MVP is down.
+    }
+  }
+
+  return listDbSimulatorRows(requestedBranchId, user);
 }
 
 export async function list(req: Request) {

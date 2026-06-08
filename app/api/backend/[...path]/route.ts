@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://127.0.0.1:4000";
 const BACKEND_PROXY_EMAIL = process.env.BACKEND_PROXY_EMAIL ?? "superadmin@b2game.uz";
-const BACKEND_PROXY_PASSWORD = process.env.BACKEND_PROXY_PASSWORD ?? "superadmin123";
+const BACKEND_PROXY_PASSWORD = process.env.BACKEND_PROXY_PASSWORD ?? "12345678";
 
 type RouteContext = {
   params: Promise<{ path: string[] }>;
