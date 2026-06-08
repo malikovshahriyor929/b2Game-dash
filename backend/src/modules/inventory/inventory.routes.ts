@@ -1,0 +1,1 @@
+import { Router } from "express"; import * as c from "./inventory.controller"; export const inventoryRoutes=Router(); inventoryRoutes.get("/",c.list); inventoryRoutes.get("/low-stock",c.lowStock); inventoryRoutes.post("/restock",c.restock); inventoryRoutes.post("/adjust",c.adjust);

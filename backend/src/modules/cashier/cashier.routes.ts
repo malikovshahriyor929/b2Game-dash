@@ -1,0 +1,1 @@
+import { Router } from "express"; import * as c from "./cashier.controller"; export const cashierRoutes=Router(); cashierRoutes.get("/products",c.products); cashierRoutes.post("/scan",c.scan); cashierRoutes.post("/sales",c.createSale); cashierRoutes.get("/sales",c.sales); cashierRoutes.get("/sales/:id",c.sale); cashierRoutes.post("/sales/:id/pay",c.paySale);

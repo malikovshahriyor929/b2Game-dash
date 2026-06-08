@@ -1,0 +1,1 @@
+import { asyncHandler } from "../../utils/asyncHandler"; import { ok } from "../../utils/apiResponse"; import * as s from "./logs.service"; export const list=asyncHandler(async(req,res)=>ok(res,await s.list(req)));

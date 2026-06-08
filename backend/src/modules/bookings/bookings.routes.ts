@@ -1,0 +1,1 @@
+import { Router } from "express"; import * as c from "./bookings.controller"; export const bookingsRoutes=Router(); bookingsRoutes.get("/",c.list); bookingsRoutes.post("/",c.create); bookingsRoutes.patch("/:id",c.update); bookingsRoutes.post("/:id/cancel",c.cancel); bookingsRoutes.post("/:id/arrived",c.arrived); bookingsRoutes.post("/:id/complete",c.complete);

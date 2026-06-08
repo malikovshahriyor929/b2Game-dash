@@ -1,0 +1,14 @@
+import { Router } from "express";
+import * as c from "./simulators.controller";
+export const simulatorsRoutes = Router();
+simulatorsRoutes.get("/map", c.map);
+simulatorsRoutes.get("/", c.list);
+simulatorsRoutes.post("/push-update", c.pushUpdate);
+simulatorsRoutes.get("/:id", c.get);
+simulatorsRoutes.patch("/:id/status", c.patchStatus);
+simulatorsRoutes.post("/:id/notify", c.notify);
+simulatorsRoutes.post("/:id/lock", c.lock);
+simulatorsRoutes.post("/:id/unlock", c.unlock);
+simulatorsRoutes.post("/:id/timed-unlock", c.timedUnlock);
+simulatorsRoutes.post("/:id/reboot", c.reboot);
+simulatorsRoutes.post("/:id/request-status", c.requestStatus);

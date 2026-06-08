@@ -1,0 +1,62 @@
+import express from "express";
+import helmet from "helmet";
+import morgan from "morgan";
+import { corsMiddleware } from "./config/cors";
+import { requireAuth } from "./middleware/auth.middleware";
+import { requireBranchScope } from "./middleware/branchScope.middleware";
+import { errorMiddleware } from "./middleware/error.middleware";
+import { notFoundMiddleware } from "./middleware/notFound.middleware";
+import { authRoutes } from "./modules/auth/auth.routes";
+import { usersRoutes } from "./modules/users/users.routes";
+import { branchesRoutes } from "./modules/branches/branches.routes";
+import { simulatorsRoutes } from "./modules/simulators/simulators.routes";
+import { sessionsRoutes } from "./modules/sessions/sessions.routes";
+import { paymentsRoutes } from "./modules/payments/payments.routes";
+import { cashierRoutes } from "./modules/cashier/cashier.routes";
+import { productsRoutes } from "./modules/products/products.routes";
+import { inventoryRoutes } from "./modules/inventory/inventory.routes";
+import { bookingsRoutes } from "./modules/bookings/bookings.routes";
+import { repairsRoutes } from "./modules/repairs/repairs.routes";
+import { shiftsRoutes } from "./modules/shifts/shifts.routes";
+import { customersRoutes } from "./modules/customers/customers.routes";
+import { logsRoutes } from "./modules/logs/logs.routes";
+import { reportsRoutes } from "./modules/reports/reports.routes";
+import { analyticsRoutes } from "./modules/analytics/analytics.routes";
+import { monitoringRoutes } from "./modules/monitoring/monitoring.routes";
+import { settingsRoutes } from "./modules/settings/settings.routes";
+import { dashboardRoutes } from "./modules/dashboard/dashboard.routes";
+import { tariffsRoutes } from "./modules/tariffs/tariffs.routes";
+
+export const app = express();
+
+app.use(helmet());
+app.use(corsMiddleware);
+app.use(express.json({ limit: "1mb" }));
+app.use(morgan("dev"));
+
+app.get("/health", (_req, res) => res.json({ success: true, data: { ok: true } }));
+app.use("/api/auth", authRoutes);
+
+app.use("/api", requireAuth, requireBranchScope);
+app.use("/api/users", usersRoutes);
+app.use("/api/branches", branchesRoutes);
+app.use("/api/simulators", simulatorsRoutes);
+app.use("/api/sessions", sessionsRoutes);
+app.use("/api/payments", paymentsRoutes);
+app.use("/api/cashier", cashierRoutes);
+app.use("/api/products", productsRoutes);
+app.use("/api/inventory", inventoryRoutes);
+app.use("/api/bookings", bookingsRoutes);
+app.use("/api/repair-requests", repairsRoutes);
+app.use("/api/shifts", shiftsRoutes);
+app.use("/api/customers", customersRoutes);
+app.use("/api/logs", logsRoutes);
+app.use("/api/reports", reportsRoutes);
+app.use("/api/analytics", analyticsRoutes);
+app.use("/api/monitoring", monitoringRoutes);
+app.use("/api/settings", settingsRoutes);
+app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/tariffs", tariffsRoutes);
+
+app.use(notFoundMiddleware);
+app.use(errorMiddleware);
