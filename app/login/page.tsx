@@ -9,14 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { mockUsers } from "@/lib/mock-data";
 
 function LoginPanel() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [email, setEmail] = useState("superadmin@b2game.uz");
-  const [password, setPassword] = useState("superadmin123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
   async function handleSubmit(event: React.FormEvent) {
@@ -40,11 +38,6 @@ function LoginPanel() {
               <CardTitle>B2 Game Club</CardTitle>
               <CardDescription>Admin paneliga kirish</CardDescription>
             </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {mockUsers.map((user) => (
-              <Badge key={user.id} variant="muted">{user.role}: {user.email}</Badge>
-            ))}
           </div>
         </CardHeader>
         <CardContent>

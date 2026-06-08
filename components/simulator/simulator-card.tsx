@@ -37,7 +37,7 @@ export function SimulatorCard({ simulator, selected, onClick, compact = false }:
       </div>
       <div className={cn("space-y-1.5 text-xs text-slate-300", compact ? "mt-3" : "mt-4")}>
         <div className="flex items-center gap-2"><FiUser className="text-slate-500" /> {simulator.currentUser ?? "Guest ready"}</div>
-        <div className="flex items-center gap-2"><FiClock className="text-slate-500" /> {simulator.remainingMinutes ? minutes(simulator.remainingMinutes) : simulatorKind(simulator)}</div>
+        <div className="flex items-center gap-2"><FiClock className="text-slate-500" /> {simulator.rigUpdateStatus || (simulator.remainingMinutes ? minutes(simulator.remainingMinutes) : simulatorKind(simulator))}</div>
         <div className="flex items-center gap-2"><FiDollarSign className={simulator.paymentStatus === "unpaid" ? "text-red-300" : "text-slate-500"} /> {simulator.paymentStatus}</div>
       </div>
     </Card>

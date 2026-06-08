@@ -29,6 +29,23 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { money } from "@/lib/format";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 
+function isoDate(date: Date) {
+  return date.toISOString().split("T")[0];
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function startOfWeek(date: Date) {
+  const next = new Date(date);
+  const day = (next.getDay() + 6) % 7;
+  next.setDate(next.getDate() - day);
+  return next;
+}
+
 export default function ReportsPage() {
   const {
     revenueEvents,
@@ -39,22 +56,20 @@ export default function ReportsPage() {
   } = useDashboardStore();
 
   const [dateFilter, setDateFilter] = useState<string>("today");
-  const [startDate, setStartDate] = useState<Date | undefined>(new Date("2026-06-04"));
-  const [endDate, setEndDate] = useState<Date | undefined>(new Date("2026-06-04"));
+  const [startDate, setStartDate] = useState<Date | undefined>(() => new Date());
+  const [endDate, setEndDate] = useState<Date | undefined>(() => new Date());
+  const today = new Date();
+  const todayIso = isoDate(today);
+  const yesterdayIso = isoDate(addDays(today, -1));
+  const weekStartIso = isoDate(startOfWeek(today));
+  const weekEndIso = isoDate(addDays(startOfWeek(today), 6));
+  const currentMonth = todayIso.slice(0, 7);
 
-  // Helper to determine if a record's date falls in the selected filter range
   function isDateInRange(dateStr: string) {
-    if (dateFilter === "today") return dateStr === "2026-06-04";
-    if (dateFilter === "yesterday") return dateStr === "2026-06-03";
-    if (dateFilter === "jul2") return dateStr === "2026-07-02";
-    if (dateFilter === "jul3") return dateStr === "2026-07-03";
-    if (dateFilter === "week") {
-      // 2026-06-01 to 2026-06-07
-      return dateStr >= "2026-06-01" && dateStr <= "2026-06-07";
-    }
-    if (dateFilter === "month") {
-      return dateStr.startsWith("2026-06") || dateStr.startsWith("2026-07");
-    }
+    if (dateFilter === "today") return dateStr === todayIso;
+    if (dateFilter === "yesterday") return dateStr === yesterdayIso;
+    if (dateFilter === "week") return dateStr >= weekStartIso && dateStr <= weekEndIso;
+    if (dateFilter === "month") return dateStr.startsWith(currentMonth);
     if (dateFilter === "custom") {
       if (!startDate || !endDate) return false;
       const start = startDate.toISOString().split("T")[0];
@@ -64,9 +79,8 @@ export default function ReportsPage() {
     return true;
   }
 
-  // Filtered lists
   const filteredRevenueEvents = revenueEvents.filter((event) => {
-    const eventDate = event.date || "2026-06-04";
+    const eventDate = event.date || todayIso;
     return isDateInRange(eventDate);
   });
 
@@ -117,10 +131,8 @@ export default function ReportsPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="bg-slate-900 border-slate-800 text-slate-100">
-              <SelectItem value="today">Bugun (4-Iyun)</SelectItem>
-              <SelectItem value="yesterday">Kecha (3-Iyun)</SelectItem>
-              <SelectItem value="jul2">2-Iyul (Otchot)</SelectItem>
-              <SelectItem value="jul3">3-Iyul (Otchot)</SelectItem>
+              <SelectItem value="today">Bugun</SelectItem>
+              <SelectItem value="yesterday">Kecha</SelectItem>
               <SelectItem value="week">Shu hafta</SelectItem>
               <SelectItem value="month">Shu oy</SelectItem>
               <SelectItem value="custom">Boshqa muddat...</SelectItem>
@@ -202,7 +214,7 @@ export default function ReportsPage() {
                         filteredRevenueEvents.map((event) => (
                           <TableRow key={event.id} className="hover:bg-slate-900/30">
                             <TableCell className="text-slate-400 text-xs font-medium">
-                              {event.date || "2026-06-04"} {event.time}
+                              {event.date || todayIso} {event.time}
                             </TableCell>
                             <TableCell className="font-semibold text-slate-200 capitalize">
                               {event.source}

@@ -2,29 +2,31 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
-import {
-  bookings as bookingSeed,
-  branches,
-  initialLogs,
-  initialRepairRequests,
-  initialRevenueEvents,
-  initialSimulators,
-  products,
-  initialShifts,
-  initialLockUnlockLogs,
-  initialBarSales,
-  initialCashTransactions,
-} from "@/lib/mock-data";
 import { Booking } from "@/types/booking";
 import { LogEntry, LockUnlockEntry } from "@/types/log";
 import { OrderItem, Product, BarSale } from "@/types/product";
 import { RepairErrorType, RepairPriority, RepairRequest, Simulator } from "@/types/simulator";
 import { CashTransaction, Shift } from "@/types/report";
+import { Branch } from "@/types/user";
+import {
+  listRigs as fetchRigList,
+  lockRig as lockAdminRig,
+  mapBackendSimulatorRows,
+  notifyRig as notifyAdminRig,
+  pushRigUpdate as pushAdminRigUpdate,
+  removeRig as removeAdminRig,
+  RigRecord,
+  unlockRig as unlockAdminRig,
+} from "@/lib/rig-admin-api";
 
 type StartPayload = { customerName: string; phone: string; tariff: string; duration: number; amount: number; paymentStatus: "paid" | "unpaid" | "partial" };
 type PeriodFilter = "today" | "yesterday" | "week" | "month" | "year" | "custom";
 type RepairPayload = { title: string; description: string; errorType: RepairErrorType; priority: RepairPriority; note?: string };
 type RevenueEvent = { id: string; time: string; date?: string; amount: number; source: string; branchId?: string };
+type ApiResponse<T> = { success: boolean; data: T; message?: string };
+type PaymentMethod = "cash" | "card" | "qr" | "balance";
+
+const fallbackBranch: Branch = { id: "default-branch", name: "Default branch" };
 
 
 type DashboardStore = {
@@ -45,7 +47,7 @@ type DashboardStore = {
   products: Product[];
   order: OrderItem[];
   bookings: Booking[];
-  branches: typeof branches;
+  branches: Branch[];
   selectedBranchId: string;
   setSelectedBranchId: (id: string) => void;
   period: PeriodFilter;
@@ -72,7 +74,7 @@ type DashboardStore = {
   deleteBooking: (id: string) => void;
   addProduct: (product: Product) => void;
   addProductByQr: (code: string) => Product | null;
-  createProduct: (product: Omit<Product, "id">) => Product;
+  createProduct: (product: Omit<Product, "id">) => Promise<Product | null>;
   updateProduct: (id: string, product: Omit<Product, "id">) => Product | null;
   deleteProduct: (id: string) => void;
   recordCashierTransaction: (action: string, amount: number, method: string) => void;
@@ -82,6 +84,10 @@ type DashboardStore = {
   openShift: (operator: string, shiftType: "Kunduzgi (09:00 - 18:00)" | "Tungi (18:01 - 09:00)", startingCash: number) => void;
   closeShift: (actualCash: number, notes?: string) => void;
   addCashTransaction: (type: "income" | "expense", amount: number, source: string, method: string) => void;
+  refreshRigs: () => void;
+  notifyRig: (id: string, message: string) => void;
+  pushRigUpdate: (id: string) => void;
+  removeOfflineRig: (id: string) => void;
 };
 
 
@@ -91,24 +97,302 @@ function now() {
   return new Date().toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
 }
 
+function shortDate(value?: string | null) {
+  return value ? new Date(value).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+}
+
+function shortTime(value?: string | null) {
+  return value ? new Date(value).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" }) : now();
+}
+
+function numberValue(value: unknown) {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function dateTimeFromParts(date: string, time: string) {
+  return new Date(`${date}T${time || "00:00"}:00`).toISOString();
+}
+
+async function backendRequest<T>(path: string, init?: RequestInit) {
+  const response = await fetch(`/api/backend${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...init?.headers,
+    },
+    cache: "no-store",
+  });
+
+  if (!response.ok) throw new Error(await response.text());
+  const payload = (await response.json()) as ApiResponse<T>;
+  return payload.data;
+}
+
+function backendGet<T>(path: string) {
+  return backendRequest<T>(path);
+}
+
+function backendPost<T>(path: string, body: Record<string, unknown> = {}) {
+  return backendRequest<T>(path, { method: "POST", body: JSON.stringify(body) });
+}
+
+function backendPatch<T>(path: string, body: Record<string, unknown> = {}) {
+  return backendRequest<T>(path, { method: "PATCH", body: JSON.stringify(body) });
+}
+
+function toApiPaymentMethod(method?: string): PaymentMethod {
+  const value = (method ?? "").toLowerCase();
+  if (value.includes("naqd") || value.includes("cash")) return "cash";
+  if (value.includes("qr")) return "qr";
+  if (value.includes("balance")) return "balance";
+  return "card";
+}
+
+function splitPayment(amount: number, method: PaymentMethod) {
+  return {
+    cash_amount: method === "cash" ? amount : 0,
+    card_amount: method === "card" ? amount : 0,
+    qr_amount: method === "qr" ? amount : 0,
+    balance_amount: method === "balance" ? amount : 0,
+  };
+}
+
+function productCategory(value?: string): Product["category"] {
+  const text = (value ?? "").toLowerCase();
+  if (text.includes("drink") || text.includes("ichim")) return "Ichimliklar";
+  if (text.includes("food") || text.includes("burger")) return "Fast food";
+  if (text.includes("energy")) return "Energy drink";
+  if (text.includes("merch")) return "Merch";
+  if (text.includes("promo")) return "Promo";
+  if (text.includes("paket") || text.includes("tariff")) return "Paketlar";
+  return "Snack";
+}
+
+function productIcon(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase() || "P";
+}
+
+function rigRemainingMinutes(unlockUntil: string | null) {
+  if (!unlockUntil) return 0;
+  const diff = new Date(unlockUntil).getTime() - Date.now();
+  return diff > 0 ? Math.ceil(diff / 60000) : 0;
+}
+
+function rigStatus(rig: RigRecord): Simulator["status"] {
+  if (["ready_to_play", "busy", "reserved", "unpaid", "broken", "repair_requested", "repair_approved", "fixing", "fixed_waiting_confirmation", "offline", "locked"].includes(rig.state)) {
+    return rig.state as Simulator["status"];
+  }
+  if (!rig.online || rig.state === "Offline") return "offline";
+  return rig.locked ? "ready_to_play" : "busy";
+}
+
+function rigType(rig: RigRecord): Simulator["zone"] {
+  const text = `${rig.label} ${rig.hostname} ${rig.rig_id} ${rig.zone ?? ""}`.toLowerCase();
+  return text.includes("moza") || text.includes("vip") ? "VIP" : "Standard";
+}
+
+function rigsToSimulators(rigs: RigRecord[], branchList: Branch[]) {
+  return rigs.map((rig) => {
+    const zone = rigType(rig);
+    const status = rigStatus(rig);
+    const branch = branchList.find((item) => item.id === rig.branch_id) ?? {
+      id: rig.branch_id ?? branchList[0]?.id ?? fallbackBranch.id,
+      name: rig.branch_name ?? branchList[0]?.name ?? fallbackBranch.name,
+    };
+
+    return {
+      id: rig.simulator_id ?? rig.rig_id,
+      name: rig.label || rig.hostname || rig.rig_id,
+      type: zone,
+      zone,
+      branchId: branch.id,
+      branchName: branch.name,
+      status,
+      deviceId: rig.rig_id,
+      ipAddress: rig.hostname,
+      currentUser: status === "busy" ? "Active rig" : undefined,
+      tariff: "Rig Admin",
+      remainingMinutes: status === "busy" ? rigRemainingMinutes(rig.unlock_until) : 0,
+      paidAmount: 0,
+      paymentStatus: "paid",
+      orderItems: [],
+      rigId: rig.rig_id,
+      rigHostname: rig.hostname,
+      rigVersion: rig.version,
+      rigLatestVersion: rig.latest_version,
+      rigNeedsUpdate: rig.needs_update,
+      rigOnline: rig.online,
+      rigUnlockUntil: rig.unlock_until,
+      rigUpdateStatus: rig.update_status,
+      rigLastSeen: rig.last_seen,
+      currentSessionId: rig.current_session_id,
+    } satisfies Simulator;
+  });
+}
+
+function mapProduct(row: Record<string, unknown>): Product {
+  const name = String(row.name ?? "Product");
+  return {
+    id: String(row.id),
+    name,
+    qrCode: String(row.barcode ?? row.qr_code ?? row.id),
+    price: numberValue(row.price),
+    stock: Number(row.stock_quantity ?? row.stock ?? 0),
+    category: productCategory(String(row.category ?? "")),
+    icon: productIcon(name),
+  };
+}
+
+function mapBooking(row: Record<string, unknown>): Booking {
+  const start = String(row.start_time ?? "");
+  const end = String(row.end_time ?? "");
+  const statusMap: Record<string, Booking["status"]> = {
+    pending: "Pending",
+    confirmed: "Confirmed",
+    arrived: "Arrived",
+    cancelled: "Cancelled",
+    no_show: "No-show",
+    completed: "Completed",
+  };
+  return {
+    id: String(row.id),
+    customerName: String(row.customer_name ?? ""),
+    phone: String(row.phone ?? ""),
+    simulatorType: String(row.booking_type ?? "session"),
+    simulatorId: String(row.simulator_id ?? ""),
+    date: shortDate(start),
+    startTime: shortTime(start),
+    endTime: shortTime(end),
+    tariff: String(row.booking_type ?? "Booking"),
+    prepayment: 0,
+    note: String(row.note ?? ""),
+    status: statusMap[String(row.status ?? "pending")] ?? "Pending",
+  };
+}
+
+function mapRepair(row: Record<string, unknown>): RepairRequest {
+  const statusMap: Record<string, RepairRequest["status"]> = {
+    requested: "pending",
+    approved: "approved",
+    rejected: "rejected",
+    need_more_details: "more_details_requested",
+    fixing: "fixing",
+    fixed_waiting_confirmation: "fixed_waiting_confirmation",
+    confirmed_fixed: "confirmed_fixed",
+    rejected_fix: "fixing",
+  };
+  return {
+    id: String(row.id),
+    simulatorId: String(row.simulator_id ?? ""),
+    simulatorName: String(row.simulator_name ?? row.simulator_id ?? ""),
+    branchId: String(row.branch_id ?? ""),
+    branchName: String(row.branch_name ?? ""),
+    requestedBy: String(row.requested_by ?? ""),
+    requestedAt: String(row.requested_at ? new Date(String(row.requested_at)).toLocaleString("uz-UZ") : ""),
+    title: String(row.title ?? ""),
+    description: String(row.description ?? ""),
+    errorType: String(row.error_type ?? "other") as RepairErrorType,
+    priority: String(row.priority ?? "medium") as RepairPriority,
+    note: String(row.admin_note ?? row.super_admin_note ?? ""),
+    status: statusMap[String(row.status ?? "requested")] ?? "pending",
+    affectedRevenue: numberValue(row.revenue_impact),
+    approvedAt: row.approved_at ? String(row.approved_at) : undefined,
+    fixingStartedAt: row.fixing_started_at ? String(row.fixing_started_at) : undefined,
+    fixedAt: row.marked_fixed_at ? String(row.marked_fixed_at) : undefined,
+    confirmedAt: row.confirmed_at ? String(row.confirmed_at) : undefined,
+  };
+}
+
+function mapShift(row: Record<string, unknown>, operator: string): Shift {
+  const openedAt = String(row.opened_at ?? "");
+  const closedAt = row.closed_at ? String(row.closed_at) : undefined;
+  return {
+    id: String(row.id),
+    operator,
+    date: shortDate(openedAt),
+    shiftType: "Kunduzgi (09:00 - 18:00)",
+    status: String(row.status ?? "open") === "closed" ? "closed" : "open",
+    openTime: shortTime(openedAt),
+    closeTime: closedAt ? shortTime(closedAt) : undefined,
+    startingCash: numberValue(row.starting_cash),
+    expectedCash: numberValue(row.expected_cash),
+    actualCash: row.actual_cash == null ? undefined : numberValue(row.actual_cash),
+    discrepancy: row.difference == null ? undefined : numberValue(row.difference),
+    cardRevenue: numberValue(row.card_total),
+    qrRevenue: numberValue(row.qr_total),
+    totalIncome: numberValue(row.product_sales) + numberValue(row.session_sales),
+    totalExpense: numberValue(row.refunds),
+    notes: row.notes ? String(row.notes) : undefined,
+  };
+}
+
+function mapSale(row: Record<string, unknown>, operator: string): BarSale {
+  const created = String(row.created_at ?? "");
+  return {
+    id: String(row.id),
+    date: shortDate(created),
+    time: shortTime(created),
+    operator,
+    items: [],
+    totalAmount: numberValue(row.total),
+    paymentMethod: String(row.payment_method ?? ""),
+    branchId: String(row.branch_id ?? ""),
+  };
+}
+
+function mapPayment(row: Record<string, unknown>, operator: string): CashTransaction {
+  const created = String(row.paid_at ?? row.created_at ?? "");
+  return {
+    id: String(row.id),
+    type: "income",
+    amount: numberValue(row.amount),
+    source: row.sale_id ? "Shop sale" : row.session_id ? "Session payment" : "Payment",
+    operator,
+    date: shortDate(created),
+    time: shortTime(created),
+    paymentMethod: String(row.method ?? ""),
+    branchId: String(row.branch_id ?? ""),
+    shiftId: undefined,
+  };
+}
+
+function mapLog(row: Record<string, unknown>): LogEntry {
+  return {
+    id: String(row.id),
+    time: shortTime(String(row.created_at ?? "")),
+    operator: String(row.actor_name ?? "System"),
+    action: String(row.action_type ?? ""),
+    simulator: row.simulator_id ? String(row.simulator_id) : undefined,
+    paymentMethod: row.details && typeof row.details === "object" && "method" in row.details ? String((row.details as { method?: unknown }).method ?? "") : undefined,
+  };
+}
+
 export function DashboardStoreProvider({ children }: { children: React.ReactNode }) {
   const { data } = useSession();
-  const [allSimulators, setAllSimulators] = useState(initialSimulators);
-  const [selectedId, setSelectedId] = useState<string | null>(initialSimulators[0]?.id ?? null);
-  const [logs, setLogs] = useState(initialLogs);
-  const [lockUnlockLogs, setLockUnlockLogs] = useState<LockUnlockEntry[]>(initialLockUnlockLogs);
-  const [barSales, setBarSales] = useState<BarSale[]>(initialBarSales);
-  const [cashTransactions, setCashTransactions] = useState<CashTransaction[]>(initialCashTransactions);
-  const [shifts, setShifts] = useState<Shift[]>(initialShifts);
-  const [customStartDate, setCustomStartDate] = useState("2026-06-04");
-  const [customEndDate, setCustomEndDate] = useState("2026-06-04");
-  const [revenueEvents, setRevenueEvents] = useState<RevenueEvent[]>(initialRevenueEvents);
-  const [repairRequests, setRepairRequests] = useState(initialRepairRequests);
-  const [revenue, setRevenue] = useState(390000);
+  const [branchList, setBranchList] = useState<Branch[]>([fallbackBranch]);
+  const [allSimulators, setAllSimulators] = useState<Simulator[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [lockUnlockLogs, setLockUnlockLogs] = useState<LockUnlockEntry[]>([]);
+  const [barSales, setBarSales] = useState<BarSale[]>([]);
+  const [cashTransactions, setCashTransactions] = useState<CashTransaction[]>([]);
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [customStartDate, setCustomStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [customEndDate, setCustomEndDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [revenueEvents, setRevenueEvents] = useState<RevenueEvent[]>([]);
+  const [repairRequests, setRepairRequests] = useState<RepairRequest[]>([]);
+  const [revenue, setRevenue] = useState(0);
   const [order, setOrder] = useState<OrderItem[]>([]);
-  const [inventory, setInventory] = useState<Product[]>(products);
-  const [bookings, setBookings] = useState(bookingSeed);
-  const defaultBranchId = data?.user?.role === "super_admin" ? "all" : data?.user?.branchIds?.[0] ?? branches[0].id;
+  const [inventory, setInventory] = useState<Product[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const defaultBranchId = data?.user?.role === "super_admin" ? "all" : data?.user?.branchIds?.[0] ?? fallbackBranch.id;
   const [selectedBranchId, setSelectedBranchIdState] = useState(defaultBranchId);
   const [period, setPeriod] = useState<PeriodFilter>("today");
 
@@ -117,16 +401,152 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
   const role = data?.user?.role;
   const allowedBranchIds = data?.user?.branchIds ?? [];
   const canUseAllBranches = role === "super_admin";
-  const effectiveBranchId = canUseAllBranches ? selectedBranchId : allowedBranchIds[0] ?? branches[0].id;
-  const visibleBranchIds = effectiveBranchId === "all" ? branches.map((branch) => branch.id) : [effectiveBranchId];
+  const firstBackendBranchId = branchList[0]?.id ?? fallbackBranch.id;
+  const selectedBranchExists = selectedBranchId === "all" || branchList.some((branch) => branch.id === selectedBranchId);
+  const effectiveBranchId = canUseAllBranches ? (selectedBranchExists ? selectedBranchId : "all") : (branchList.find((branch) => allowedBranchIds.includes(branch.id))?.id ?? firstBackendBranchId);
+  const visibleBranchIds = effectiveBranchId === "all" ? branchList.map((branch) => branch.id) : [effectiveBranchId];
   const simulators = allSimulators.filter((item) => visibleBranchIds.includes(item.branchId));
   const scopedRepairRequests = repairRequests.filter((item) => visibleBranchIds.includes(item.branchId));
 
   useEffect(() => {
     if (!data?.user) return;
-    const nextBranchId = data.user.role === "super_admin" ? "all" : data.user.branchIds[0] ?? branches[0].id;
-    setSelectedBranchIdState((current) => (data.user.role === "super_admin" && current !== branches[0].id ? current : nextBranchId));
-  }, [data?.user]);
+    const nextBranchId = data.user.role === "super_admin" ? "all" : branchList.find((branch) => data.user.branchIds.includes(branch.id))?.id ?? branchList[0]?.id ?? fallbackBranch.id;
+    setSelectedBranchIdState((current) => (data.user.role === "super_admin" && current !== fallbackBranch.id ? current : nextBranchId));
+  }, [branchList, data?.user]);
+
+  async function refreshBackendData() {
+    try {
+      const branchRows = await backendGet<Array<Record<string, unknown>>>("/branches");
+      const nextBranches = branchRows.map((row) => ({ id: String(row.id), name: String(row.name) }));
+      const branchSource = nextBranches.length ? nextBranches : [fallbackBranch];
+      const dataBranchId = effectiveBranchId === "all" ? "all" : effectiveBranchId;
+      const productBranchId = effectiveBranchId === "all" ? branchSource[0]?.id ?? "all" : effectiveBranchId;
+      const query = `branch_id=${encodeURIComponent(dataBranchId)}`;
+      const productQuery = `branch_id=${encodeURIComponent(productBranchId)}`;
+      const [rigs, productRows, bookingRows, repairRows, logRows, shiftRows, saleRows, paymentRows] = await Promise.all([
+        fetchRigList(),
+        backendGet<Array<Record<string, unknown>>>(`/cashier/products?${productQuery}`),
+        backendGet<Array<Record<string, unknown>>>(`/bookings?${query}`),
+        backendGet<Array<Record<string, unknown>>>(`/repair-requests?${query}`),
+        backendGet<Array<Record<string, unknown>>>(`/logs?${query}`),
+        backendGet<Array<Record<string, unknown>>>(`/shifts?${query}`),
+        backendGet<Array<Record<string, unknown>>>(`/cashier/sales?${query}`),
+        backendGet<Array<Record<string, unknown>>>(`/payments?${query}`),
+      ]);
+      const nextRepairs = repairRows.map(mapRepair);
+      const nextSimulators = rigsToSimulators(rigs, branchSource).map((simulator) => {
+        const activeRepair = nextRepairs.find((repair) => repair.simulatorId === simulator.id && !["rejected", "confirmed_fixed"].includes(repair.status));
+        return activeRepair ? { ...simulator, repairRequestId: activeRepair.id } : simulator;
+      });
+
+      setBranchList(branchSource);
+      setAllSimulators(nextSimulators);
+      setInventory(productRows.map(mapProduct));
+      setBookings(bookingRows.map(mapBooking));
+      setRepairRequests(nextRepairs);
+      setLogs(logRows.map(mapLog));
+      setShifts(shiftRows.map((row) => mapShift(row, operator)));
+      setBarSales(saleRows.map((row) => mapSale(row, operator)));
+      setCashTransactions(paymentRows.map((row) => mapPayment(row, operator)));
+      setRevenue(paymentRows.reduce((sum, row) => sum + numberValue(row.amount), 0));
+      setRevenueEvents(paymentRows.map((row) => {
+        const created = String(row.paid_at ?? row.created_at ?? "");
+        return {
+          id: String(row.id),
+          time: shortTime(created),
+          date: shortDate(created),
+          amount: numberValue(row.amount),
+          source: row.sale_id ? "shop sale" : row.session_id ? "session payment" : "payment",
+          branchId: String(row.branch_id ?? ""),
+        };
+      }));
+      setSelectedId((current) => (current && nextSimulators.some((item) => item.id === current) ? current : nextSimulators[0]?.id ?? null));
+    } catch {
+      setAllSimulators([]);
+      setSelectedId(null);
+    }
+  }
+
+  async function writableBranchId() {
+    if (effectiveBranchId !== "all" && effectiveBranchId !== fallbackBranch.id) return effectiveBranchId;
+    const current = branchList.find((branch) => branch.id !== fallbackBranch.id);
+    if (current) return current.id;
+    const branchRows = await backendGet<Array<Record<string, unknown>>>("/branches");
+    const nextBranches = branchRows.map((row) => ({ id: String(row.id), name: String(row.name) }));
+    if (nextBranches.length) {
+      setBranchList(nextBranches);
+      return nextBranches[0].id;
+    }
+    throw new Error("Backend branch topilmadi");
+  }
+
+  useEffect(() => {
+    void refreshBackendData();
+    let cancelled = false;
+    let socket: WebSocket | null = null;
+    let reconnectTimer: number | null = null;
+
+    const refreshEvents = new Set([
+      "simulator_updated",
+      "simulator_online",
+      "simulator_offline",
+      "session_started",
+      "session_stopped",
+      "payment_created",
+      "sale_created",
+      "inventory_updated",
+      "repair_requested",
+      "repair_approved",
+      "repair_status_changed",
+      "booking_created",
+      "shift_opened",
+      "shift_closed",
+      "log_created",
+    ]);
+
+    async function connectDashboardSocket() {
+      try {
+        const tokenResponse = await fetch("/api/backend-ws-token", { cache: "no-store" });
+        const tokenJson = await tokenResponse.json();
+        const token = tokenJson.data?.token;
+        if (!token || cancelled) return;
+
+        const wsBase = process.env.NEXT_PUBLIC_BACKEND_WS_URL ?? "ws://localhost:4000/ws/dashboard";
+        const url = new URL(wsBase);
+        url.searchParams.set("token", token);
+        url.searchParams.set("branch_id", effectiveBranchId);
+
+        socket = new WebSocket(url);
+        socket.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            if (message.type === "simulators_snapshot" && Array.isArray(message.data?.simulators)) {
+              const nextSimulators = rigsToSimulators(mapBackendSimulatorRows(message.data.simulators), branchList);
+              setAllSimulators(nextSimulators);
+              setSelectedId((current) => (current && nextSimulators.some((item) => item.id === current) ? current : nextSimulators[0]?.id ?? null));
+              return;
+            }
+            if (refreshEvents.has(message.type)) void refreshBackendData();
+          } catch {
+            // Ignore non-JSON websocket noise.
+          }
+        };
+        socket.onclose = () => {
+          if (cancelled) return;
+          reconnectTimer = window.setTimeout(connectDashboardSocket, 1500);
+        };
+      } catch {
+        if (!cancelled) reconnectTimer = window.setTimeout(connectDashboardSocket, 3000);
+      }
+    }
+
+    void connectDashboardSocket();
+    return () => {
+      cancelled = true;
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      socket?.close();
+    };
+  }, [effectiveBranchId]);
 
   function appendLog(action: string, simulator?: string, paymentMethod?: string) {
     setLogs((items) => [{ id: crypto.randomUUID(), time: now(), operator, action, simulator, paymentMethod }, ...items]);
@@ -173,7 +593,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     products: inventory,
     order,
     bookings,
-    branches,
+    branches: branchList,
     selectedBranchId: effectiveBranchId,
     setSelectedBranchId,
     period,
@@ -185,6 +605,18 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     startSession(id, payload) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator || !visibleBranchIds.includes(simulator.branchId) || ["offline", "locked", "broken", "repair_requested", "repair_approved", "fixing", "fixed_waiting_confirmation"].includes(simulator.status)) return;
+      if (simulator.rigId) void unlockAdminRig(simulator.rigId, payload.duration).then(refreshBackendData).catch(() => undefined);
+      const method = toApiPaymentMethod(payload.paymentStatus === "paid" ? "card" : undefined);
+      void backendPost<Record<string, unknown>>("/sessions/start", {
+        simulator_id: simulator.id,
+        branch_id: simulator.branchId,
+        customer_name: payload.customerName,
+        phone: payload.phone,
+        payment_mode: payload.paymentStatus,
+        duration_minutes: payload.duration,
+        paid_amount: payload.paymentStatus === "paid" ? payload.amount : 0,
+        method,
+      }).then(refreshBackendData).catch(() => undefined);
       patchSimulator(id, {
         status: "busy",
         currentUser: payload.customerName || "Guest",
@@ -201,6 +633,14 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     addTime(id, minutes, amount, method) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator) return;
+      if (simulator.rigId) void unlockAdminRig(simulator.rigId, Math.max(simulator.remainingMinutes, 0) + minutes).then(refreshBackendData).catch(() => undefined);
+      if (simulator.currentSessionId) {
+        void backendPost<Record<string, unknown>>(`/sessions/${simulator.currentSessionId}/add-time`, {
+          minutes,
+          amount,
+          method: toApiPaymentMethod(method),
+        }).then(refreshBackendData).catch(() => undefined);
+      }
       patchSimulator(id, { remainingMinutes: simulator.remainingMinutes + minutes, paidAmount: simulator.paidAmount + amount, paymentStatus: "paid", status: "busy" });
       recordRevenue(amount, `added time ${simulator.name}`, simulator.branchId);
       appendLog(`added ${minutes} min to ${simulator.name}`, simulator.name, method);
@@ -208,6 +648,13 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     pay(id, amount, method) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator) return;
+      const apiMethod = toApiPaymentMethod(method);
+      void backendPost<Record<string, unknown>>("/payments", {
+        branch_id: simulator.branchId,
+        session_id: simulator.currentSessionId ?? undefined,
+        method: apiMethod,
+        ...splitPayment(amount, apiMethod),
+      }).then(refreshBackendData).catch(() => undefined);
       patchSimulator(id, { paidAmount: simulator.paidAmount + amount, paymentStatus: "paid", status: simulator.status === "unpaid" ? "busy" : simulator.status });
       recordRevenue(amount, `session payment ${simulator.name}`, simulator.branchId);
       appendLog(`received ${amount.toLocaleString("uz-UZ")} by ${method}`, simulator.name, method);
@@ -215,14 +662,21 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     stopSession(id, override) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator || (simulator.paymentStatus !== "paid" && !override)) return;
+      if (simulator.rigId) void lockAdminRig(simulator.rigId).then(refreshBackendData).catch(() => undefined);
+      if (simulator.currentSessionId) void backendPost<Record<string, unknown>>(`/sessions/${simulator.currentSessionId}/stop`).then(refreshBackendData).catch(() => undefined);
       patchSimulator(id, { status: "ready_to_play", currentUser: undefined, phone: undefined, tariff: undefined, startedAt: undefined, remainingMinutes: 0, paidAmount: 0, paymentStatus: "paid", orderItems: [] });
       appendLog(`stopped session on ${simulator.name}`, simulator.name);
     },
     toggleLock(id) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator) return;
-      const isLocked = simulator.status === "locked";
-      const nextStatus = isLocked ? "ready_to_play" : "locked";
+      const isLocked = simulator.rigId ? Boolean(simulator.rigOnline && simulator.status === "ready_to_play") : simulator.status === "locked";
+      const nextStatus = simulator.rigId ? (isLocked ? "busy" : "ready_to_play") : (isLocked ? "ready_to_play" : "locked");
+      if (simulator.rigId) {
+        void (isLocked ? unlockAdminRig(simulator.rigId) : lockAdminRig(simulator.rigId)).then(refreshBackendData).catch(() => undefined);
+      } else {
+        void backendPatch<Record<string, unknown>>(`/simulators/${simulator.id}/status`, { status: nextStatus }).then(refreshBackendData).catch(() => undefined);
+      }
       patchSimulator(id, { status: nextStatus });
       appendLog(`${isLocked ? "unlocked" : "locked"} ${simulator.name}`, simulator.name);
 
@@ -260,6 +714,14 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         status: "pending",
         affectedRevenue: simulator.status === "busy" ? simulator.paidAmount : 0,
       };
+      void backendPost<Record<string, unknown>>("/repair-requests", {
+        simulator_id: simulator.id,
+        title: payload.title,
+        description: payload.description,
+        error_type: payload.errorType,
+        priority: payload.priority,
+        admin_note: payload.note,
+      }).then(refreshBackendData).catch(() => undefined);
       setRepairRequests((items) => [request, ...items]);
       patchSimulator(id, { status: "repair_requested", repairRequestId: request.id });
       appendLog(`requested fix for ${simulator.name}`, simulator.name);
@@ -267,6 +729,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     approveRepair(requestId) {
       const request = repairRequests.find((item) => item.id === requestId);
       if (!request || role !== "super_admin") return;
+      void backendPost<Record<string, unknown>>(`/repair-requests/${requestId}/approve`).then(refreshBackendData).catch(() => undefined);
       patchRepair(requestId, { status: "approved", approvedAt: new Date().toLocaleString("uz-UZ") });
       patchSimulator(request.simulatorId, { status: "repair_approved" });
       appendLog(`approved repair for ${request.simulatorName}`, request.simulatorName);
@@ -274,6 +737,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     rejectRepair(requestId) {
       const request = repairRequests.find((item) => item.id === requestId);
       if (!request || role !== "super_admin") return;
+      void backendPost<Record<string, unknown>>(`/repair-requests/${requestId}/reject`).then(refreshBackendData).catch(() => undefined);
       patchRepair(requestId, { status: "rejected", rejectedAt: new Date().toLocaleString("uz-UZ") });
       patchSimulator(request.simulatorId, { status: "broken" });
       appendLog(`rejected repair for ${request.simulatorName}`, request.simulatorName);
@@ -281,12 +745,14 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     askRepairDetails(requestId) {
       const request = repairRequests.find((item) => item.id === requestId);
       if (!request || role !== "super_admin") return;
+      void backendPost<Record<string, unknown>>(`/repair-requests/${requestId}/need-more-details`).then(refreshBackendData).catch(() => undefined);
       patchRepair(requestId, { status: "more_details_requested" });
       appendLog(`asked for more details on ${request.simulatorName}`, request.simulatorName);
     },
     startFixing(id) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator || simulator.status !== "repair_approved") return;
+      if (simulator.repairRequestId) void backendPost<Record<string, unknown>>(`/repair-requests/${simulator.repairRequestId}/start-fixing`).then(refreshBackendData).catch(() => undefined);
       patchSimulator(id, { status: "fixing" });
       if (simulator.repairRequestId) patchRepair(simulator.repairRequestId, { status: "fixing", fixingStartedAt: new Date().toLocaleString("uz-UZ") });
       appendLog(`started fixing ${simulator.name}`, simulator.name);
@@ -294,6 +760,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     markFixed(id) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator || simulator.status !== "fixing") return;
+      if (simulator.repairRequestId) void backendPost<Record<string, unknown>>(`/repair-requests/${simulator.repairRequestId}/mark-fixed`).then(refreshBackendData).catch(() => undefined);
       patchSimulator(id, { status: "fixed_waiting_confirmation" });
       if (simulator.repairRequestId) patchRepair(simulator.repairRequestId, { status: "fixed_waiting_confirmation", fixedAt: new Date().toLocaleString("uz-UZ") });
       appendLog(`marked ${simulator.name} fixed and waiting confirmation`, simulator.name);
@@ -301,6 +768,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     confirmFixed(requestId) {
       const request = repairRequests.find((item) => item.id === requestId);
       if (!request || role !== "super_admin") return;
+      void backendPost<Record<string, unknown>>(`/repair-requests/${requestId}/confirm-fixed`).then(refreshBackendData).catch(() => undefined);
       patchRepair(requestId, { status: "confirmed_fixed", confirmedAt: new Date().toLocaleString("uz-UZ") });
       patchSimulator(request.simulatorId, { status: "ready_to_play", repairRequestId: undefined });
       appendLog(`confirmed fixed ${request.simulatorName}`, request.simulatorName);
@@ -308,22 +776,46 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     rejectFix(requestId) {
       const request = repairRequests.find((item) => item.id === requestId);
       if (!request || role !== "super_admin") return;
+      void backendPost<Record<string, unknown>>(`/repair-requests/${requestId}/reject-fix`).then(refreshBackendData).catch(() => undefined);
       patchRepair(requestId, { status: "fixing" });
       patchSimulator(request.simulatorId, { status: "fixing" });
       appendLog(`rejected fix confirmation for ${request.simulatorName}`, request.simulatorName);
     },
     addBooking(booking) {
+      const simulator = allSimulators.find((item) => item.id === booking.simulatorId);
+      void backendPost<Record<string, unknown>>("/bookings", {
+        branch_id: simulator?.branchId ?? firstBackendBranchId,
+        simulator_id: booking.simulatorId,
+        booking_type: booking.simulatorType || "session",
+        customer_name: booking.customerName,
+        phone: booking.phone,
+        start_time: dateTimeFromParts(booking.date, booking.startTime),
+        end_time: dateTimeFromParts(booking.date, booking.endTime),
+        status: booking.status.toLowerCase().replace("-", "_"),
+        note: booking.note,
+      }).then(refreshBackendData).catch(() => undefined);
       setBookings((items) => [booking, ...items]);
       patchSimulator(booking.simulatorId, { status: "reserved", currentUser: booking.customerName, paidAmount: booking.prepayment, paymentStatus: booking.prepayment ? "partial" : "unpaid" });
       appendLog(`created booking for ${booking.simulatorId}`, booking.simulatorId);
     },
     updateBooking(booking) {
+      void backendPatch<Record<string, unknown>>(`/bookings/${booking.id}`, {
+        simulator_id: booking.simulatorId,
+        booking_type: booking.simulatorType || "session",
+        customer_name: booking.customerName,
+        phone: booking.phone,
+        start_time: dateTimeFromParts(booking.date, booking.startTime),
+        end_time: dateTimeFromParts(booking.date, booking.endTime),
+        status: booking.status.toLowerCase().replace("-", "_"),
+        note: booking.note,
+      }).then(refreshBackendData).catch(() => undefined);
       setBookings((items) => items.map((item) => (item.id === booking.id ? booking : item)));
       patchSimulator(booking.simulatorId, { status: booking.status === "Cancelled" ? "ready_to_play" : "reserved", currentUser: booking.status === "Cancelled" ? undefined : booking.customerName, paidAmount: booking.status === "Cancelled" ? 0 : booking.prepayment, paymentStatus: booking.prepayment ? "partial" : "unpaid" });
       appendLog(`updated booking for ${booking.simulatorId}`, booking.simulatorId);
     },
     deleteBooking(id) {
       const booking = bookings.find((item) => item.id === id);
+      void backendPost<Record<string, unknown>>(`/bookings/${id}/cancel`).then(refreshBackendData).catch(() => undefined);
       setBookings((items) => items.filter((item) => item.id !== id));
       if (booking) {
         patchSimulator(booking.simulatorId, { status: "ready_to_play", currentUser: undefined, paidAmount: 0, paymentStatus: "paid" });
@@ -337,7 +829,6 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         if (existing) return items.map((item) => (item.id === product.id ? { ...item, qty: item.qty + 1 } : item));
         return [...items, { ...product, qty: 1 }];
       });
-      setInventory((items) => items.map((item) => (item.id === product.id && item.stock < 999 ? { ...item, stock: Math.max(item.stock - 1, 0) } : item)));
     },
     addProductByQr(code) {
       const normalized = code.trim().toLowerCase();
@@ -349,20 +840,47 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         if (existing) return items.map((item) => (item.id === product.id ? { ...item, qty: item.qty + 1 } : item));
         return [...items, { ...product, qty: 1 }];
       });
-      setInventory((items) => items.map((item) => (item.id === product.id && item.stock < 999 ? { ...item, stock: Math.max(item.stock - 1, 0) } : item)));
       appendLog(`scanned product ${product.name}`);
       return product;
     },
-    createProduct(product) {
-      const created = { ...product, id: crypto.randomUUID() };
-      setInventory((items) => [created, ...items]);
+    async createProduct(product) {
+      const branchId = await writableBranchId();
+      const row = await backendPost<Record<string, unknown>>("/products", {
+        branch_id: branchId,
+        name: product.name,
+        category: product.category,
+        barcode: product.qrCode,
+        price: product.price,
+        cost: 0,
+        is_active: true,
+        stock_quantity: product.stock,
+      });
+      const created = mapProduct(row);
+      setInventory((items) => [created, ...items.filter((item) => item.id !== created.id)]);
       appendLog(`created product ${created.name} with QR ${created.qrCode}`);
+      void refreshBackendData().catch(() => undefined);
       return created;
     },
     updateProduct(id, product) {
       const existing = inventory.find((item) => item.id === id);
       if (!existing) return null;
       const updated = { ...product, id };
+      void backendPatch<Record<string, unknown>>(`/products/${id}`, {
+        name: product.name,
+        category: product.category,
+        barcode: product.qrCode,
+        price: product.price,
+        cost: 0,
+        is_active: true,
+      })
+        .then(() => backendPost<Record<string, unknown>>("/inventory/adjust", {
+          branch_id: effectiveBranchId === "all" ? firstBackendBranchId : effectiveBranchId,
+          product_id: id,
+          quantity: product.stock,
+          reason: "dashboard product update",
+        }))
+        .then(refreshBackendData)
+        .catch(() => undefined);
       setInventory((items) => items.map((item) => (item.id === id ? updated : item)));
       setOrder((items) => items.map((item) => (item.id === id ? { ...updated, qty: item.qty } : item)));
       appendLog(`updated product ${updated.name} with QR ${updated.qrCode}`);
@@ -370,12 +888,19 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     },
     deleteProduct(id) {
       const existing = inventory.find((item) => item.id === id);
+      void backendRequest<Record<string, unknown>>(`/products/${id}`, { method: "DELETE" }).then(refreshBackendData).catch(() => undefined);
       setInventory((items) => items.filter((item) => item.id !== id));
       setOrder((items) => items.filter((item) => item.id !== id));
       if (existing) appendLog(`deleted product ${existing.name}`);
     },
     recordCashierTransaction(action, amount, method) {
       if (!Number.isFinite(amount) || amount <= 0) return;
+      const apiMethod = toApiPaymentMethod(method);
+      void backendPost<Record<string, unknown>>("/payments", {
+        branch_id: effectiveBranchId === "all" ? firstBackendBranchId : effectiveBranchId,
+        method: apiMethod,
+        ...splitPayment(amount, apiMethod),
+      }).then(refreshBackendData).catch(() => undefined);
       recordRevenue(amount, action);
       appendLog(`${action} ${amount.toLocaleString("uz-UZ")}`, undefined, method);
     },
@@ -389,6 +914,18 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       const total = order.reduce((sum, item) => sum + item.price * item.qty, 0);
       if (!total) return;
       const simulator = attachTo ? allSimulators.find((item) => item.id === attachTo) : undefined;
+      const apiMethod = toApiPaymentMethod(paymentMethod);
+      void backendPost<Record<string, unknown>>("/cashier/sales", {
+        branch_id: simulator?.branchId ?? (effectiveBranchId === "all" ? firstBackendBranchId : effectiveBranchId),
+        session_id: simulator?.currentSessionId ?? undefined,
+        items: order.map((item) => ({ product_id: item.id, quantity: item.qty })),
+      })
+        .then((sale) => backendPost<Record<string, unknown>>(`/cashier/sales/${String(sale.id)}/pay`, {
+          method: apiMethod,
+          ...splitPayment(total, apiMethod),
+        }))
+        .then(refreshBackendData)
+        .catch(() => undefined);
       recordRevenue(total, "shop order", simulator?.branchId);
       if (attachTo) {
         const names = order.map((item) => item.name).join(", ");
@@ -414,7 +951,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         })),
         totalAmount: total,
         paymentMethod,
-        branchId: simulator?.branchId ?? branches[0].id,
+        branchId: simulator?.branchId ?? firstBackendBranchId,
         shiftId: activeShift?.id ?? undefined,
       };
       setBarSales((items) => [newSale, ...items]);
@@ -441,6 +978,10 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       const d = new Date();
       const timeStr = d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
       const dateStr = d.toISOString().split("T")[0];
+      void backendPost<Record<string, unknown>>("/shifts/open", {
+        branch_id: effectiveBranchId === "all" ? firstBackendBranchId : effectiveBranchId,
+        starting_cash: startingCash,
+      }).then(refreshBackendData).catch(() => undefined);
       const newShift: Shift = {
         id: crypto.randomUUID(),
         operator: operatorName,
@@ -461,6 +1002,10 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       if (!activeShift) return;
       const d = new Date();
       const timeStr = d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
+      void backendPost<Record<string, unknown>>(`/shifts/${activeShift.id}/close`, {
+        actual_cash: actualCash,
+        notes,
+      }).then(refreshBackendData).catch(() => undefined);
 
       const shiftBarCash = barSales
         .filter((s) => s.shiftId === activeShift.id && s.paymentMethod === "Naqd")
@@ -500,9 +1045,17 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         date: dateStr,
         time: timeStr,
         paymentMethod: method,
-        branchId: effectiveBranchId === "all" ? branches[0].id : effectiveBranchId,
+        branchId: effectiveBranchId === "all" ? firstBackendBranchId : effectiveBranchId,
         shiftId: activeShift?.id ?? undefined,
       };
+      if (type === "income") {
+        const apiMethod = toApiPaymentMethod(method);
+        void backendPost<Record<string, unknown>>("/payments", {
+          branch_id: newTx.branchId,
+          method: apiMethod,
+          ...splitPayment(amount, apiMethod),
+        }).then(refreshBackendData).catch(() => undefined);
+      }
       setCashTransactions((prev) => [newTx, ...prev]);
 
       if (activeShift) {
@@ -532,6 +1085,29 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         ]);
         appendLog(`expense recorded: ${source} - ${amount.toLocaleString()}`, undefined, method);
       }
+    },
+    refreshRigs() {
+      void refreshBackendData();
+    },
+    notifyRig(id, message) {
+      const simulator = allSimulators.find((item) => item.id === id);
+      if (!simulator?.rigId) return;
+      void notifyAdminRig(simulator.rigId, message).catch(() => undefined);
+    },
+    pushRigUpdate(id) {
+      const simulator = allSimulators.find((item) => item.id === id);
+      if (!simulator?.rigId) return;
+      void pushAdminRigUpdate([simulator.rigId]).then(refreshBackendData).catch(() => undefined);
+    },
+    removeOfflineRig(id) {
+      const simulator = allSimulators.find((item) => item.id === id);
+      if (!simulator?.rigId || simulator.rigOnline) return;
+      void removeAdminRig(simulator.rigId)
+        .then(() => {
+          setAllSimulators((items) => items.filter((item) => item.id !== id));
+          return refreshBackendData();
+        })
+        .catch(() => undefined);
     },
   }), [
     allSimulators,

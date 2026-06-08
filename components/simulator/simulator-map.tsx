@@ -61,7 +61,7 @@ function mapTypeLabel(simulator: Simulator) {
 }
 
 function Tile({ simulator, selected, onClick }: { simulator: Simulator; selected: boolean; onClick: () => void }) {
-  const number = Number(simulator.name.split("-")[1] ?? 1);
+  const number = Number(simulator.name.match(/\d+/)?.[0] ?? 1);
   const position: MapPosition = simulator.zone === "Standard"
     ? { col: ((number - 1) % 8) + 1, row: Math.floor((number - 1) / 8) + 1 }
     : { col: 12 + number, row: 1 };

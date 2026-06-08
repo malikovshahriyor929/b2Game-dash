@@ -21,7 +21,7 @@ function simulatorKind(simulator: Simulator) {
 }
 
 export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator; onAction: (action: "start" | "addTime" | "payment" | "stop") => void }) {
-  const { approveRepair, askRepairDetails, confirmFixed, rejectFix, rejectRepair, repairRequests, startFixing, markFixed, toggleLock } = useDashboardStore();
+  const { approveRepair, askRepairDetails, confirmFixed, rejectFix, rejectRepair, repairRequests, startFixing, markFixed, toggleLock, notifyRig, pushRigUpdate, removeOfflineRig } = useDashboardStore();
   const { data } = useSession();
   const [fixOpen, setFixOpen] = useState(false);
   if (!simulator) return null;
@@ -36,13 +36,14 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
   const canAddTime = canOperate && busy;
   const canTakePayment = canOperate && ["busy", "unpaid", "reserved"].includes(simulator.status);
   const canStop = canOperate && busy;
-  const canLock = canOperate && !busy;
-  const canRequestFix = canOperate && !inRepairFlow && simulator.status !== "locked";
+  const canLock = canOperate && (simulator.rigId ? simulator.rigOnline : !busy);
+  const canRequestFix = canOperate && !inRepairFlow && !["locked", "offline"].includes(simulator.status);
   const canStartFix = canOperate && simulator.status === "repair_approved";
   const canMarkFixed = canOperate && simulator.status === "fixing";
   const canReviewRepair = isSuperAdmin && repairRequest?.status === "pending";
   const canConfirmFix = isSuperAdmin && repairRequest?.status === "fixed_waiting_confirmation";
   const showSessionActions = canStartSession || canAddTime || canTakePayment || canStop || canLock || canRequestFix;
+  const showRigActions = Boolean(simulator.rigId);
   const showRepairActions = canStartFix || canMarkFixed || canReviewRepair || canConfirmFix;
 
   return (
@@ -64,6 +65,11 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
           <Field label="Payment" value={simulator.paymentStatus} />
           <Field label="IP address" value={simulator.ipAddress} />
           <Field label="Repair status" value={repairRequest?.status ?? "-"} />
+          {simulator.rigId ? <Field label="Rig ID" value={simulator.rigId} /> : null}
+          {simulator.rigId ? <Field label="Rig version" value={`${simulator.rigVersion ?? "-"} / latest ${simulator.rigLatestVersion ?? "-"}`} /> : null}
+          {simulator.rigId ? <Field label="Rig host" value={simulator.rigHostname ?? "-"} /> : null}
+          {simulator.rigId ? <Field label="Last seen" value={simulator.rigLastSeen ? new Date(simulator.rigLastSeen).toLocaleString("uz-UZ") : "-"} /> : null}
+          {simulator.rigUpdateStatus ? <Field label="Update status" value={simulator.rigUpdateStatus} /> : null}
         </div>
         {repairRequest ? (
           <>
@@ -90,6 +96,16 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
               {canStop ? <Button variant="destructive" onClick={() => onAction("stop")}><FiPower /> Stop</Button> : null}
               {canLock ? <Button variant="secondary" onClick={() => toggleLock(simulator.id)}><FiLock /> Lock / Unlock</Button> : null}
               {canRequestFix ? <Button variant="warning" onClick={() => setFixOpen(true)}><FiTool /> Request Fix</Button> : null}
+            </div>
+          </div>
+        ) : null}
+        {showRigActions ? (
+          <div className="mt-5 space-y-2">
+            <div className="text-xs font-semibold uppercase text-slate-500">Rig admin actions</div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {simulator.rigId && simulator.rigOnline ? <Button variant="secondary" onClick={() => notifyRig(simulator.id, "Hello")}><FiClock /> Notify</Button> : null}
+              {simulator.rigId && simulator.rigOnline ? <Button variant="secondary" onClick={() => pushRigUpdate(simulator.id)}><FiTool /> Push update</Button> : null}
+              {simulator.rigId && !simulator.rigOnline ? <Button variant="destructive" onClick={() => removeOfflineRig(simulator.id)}><FiXCircle /> Remove offline rig</Button> : null}
             </div>
           </div>
         ) : null}

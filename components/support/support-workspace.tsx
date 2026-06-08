@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FiCheckCircle, FiClock, FiMessageCircle, FiPlus, FiSend } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,8 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { supportMessages } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
+import { backendGet, backendPatch } from "@/lib/backend-client";
 
 type TicketPriority = "Low" | "Medium" | "High" | "Critical";
 type TicketStatus = "Open" | "In progress" | "Waiting" | "Solved" | "Closed";
@@ -33,18 +33,6 @@ type Message = {
   ticketId?: string;
 };
 
-const initialTickets: Ticket[] = [
-  {
-    id: "B2-204",
-    title: "LOGITECH-05 wheel calibration",
-    simulator: "LOGITECH-05",
-    priority: "High",
-    status: "Open",
-    description: "Wheel calibration error, session moved to another simulator.",
-    createdAt: "14:04",
-  },
-];
-
 function now() {
   return new Date().toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
 }
@@ -57,9 +45,9 @@ function statusVariant(status: TicketStatus) {
 }
 
 export function SupportWorkspace() {
-  const [tickets, setTickets] = useState<Ticket[]>(initialTickets);
-  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(initialTickets[0]?.id ?? null);
-  const [messages, setMessages] = useState<Message[]>(supportMessages.map((item) => ({ ...item, ticketId: item.text.includes("LOGITECH-05") || item.text.includes("#B2-204") ? "B2-204" : undefined })));
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ title: "", simulator: "", priority: "High" as TicketPriority, status: "Open" as TicketStatus, description: "" });
@@ -68,10 +56,29 @@ export function SupportWorkspace() {
   const visibleMessages = useMemo(() => messages.filter((message) => !selectedTicketId || !message.ticketId || message.ticketId === selectedTicketId), [messages, selectedTicketId]);
   const openCount = tickets.filter((ticket) => ticket.status !== "Closed" && ticket.status !== "Solved").length;
 
+  function persist(nextTickets = tickets, nextMessages = messages) {
+    void backendPatch("/settings", { settings: { support_tickets: nextTickets, support_messages: nextMessages } }).catch(() => undefined);
+  }
+
+  useEffect(() => {
+    void backendGet<Array<{ key: string; value: unknown }>>("/settings?branch_id=all")
+      .then((rows) => {
+        const ticketSetting = rows.find((row) => row.key === "support_tickets");
+        const messageSetting = rows.find((row) => row.key === "support_messages");
+        const nextTickets = Array.isArray(ticketSetting?.value) ? ticketSetting.value as Ticket[] : [];
+        setTickets(nextTickets);
+        setSelectedTicketId(nextTickets[0]?.id ?? null);
+        setMessages(Array.isArray(messageSetting?.value) ? messageSetting.value as Message[] : []);
+      })
+      .catch(() => undefined);
+  }, []);
+
   function sendMessage() {
     const value = text.trim();
     if (!value) return;
-    setMessages((items) => [...items, { from: "Admin", text: value, time: now(), own: true, ticketId: selectedTicketId ?? undefined }]);
+    const nextMessages = [...messages, { from: "Admin", text: value, time: now(), own: true, ticketId: selectedTicketId ?? undefined }];
+    setMessages(nextMessages);
+    persist(tickets, nextMessages);
     setText("");
   }
 
@@ -87,21 +94,27 @@ export function SupportWorkspace() {
       description: form.description.trim(),
       createdAt: now(),
     };
-    setTickets((items) => [ticket, ...items]);
-    setSelectedTicketId(ticket.id);
-    setMessages((items) => [
-      ...items,
+    const nextTickets = [ticket, ...tickets];
+    const nextMessages = [
+      ...messages,
       { from: "Admin", text: `${ticket.simulator}: ${ticket.title}. ${ticket.description}`, time: ticket.createdAt, own: true, ticketId: ticket.id },
       { from: "Support Bot", text: `Ticket #${ticket.id} created and assigned to Super Admin monitoring.`, time: ticket.createdAt, own: false, ticketId: ticket.id },
-    ]);
+    ];
+    setTickets(nextTickets);
+    setSelectedTicketId(ticket.id);
+    setMessages(nextMessages);
+    persist(nextTickets, nextMessages);
     setForm({ title: "", simulator: "", priority: "High", status: "Open", description: "" });
     setCreateOpen(false);
   }
 
   function updateSelectedStatus(status: TicketStatus) {
     if (!selectedTicketId) return;
-    setTickets((items) => items.map((ticket) => (ticket.id === selectedTicketId ? { ...ticket, status } : ticket)));
-    setMessages((items) => [...items, { from: "Support Bot", text: `Ticket status changed to ${status}.`, time: now(), own: false, ticketId: selectedTicketId }]);
+    const nextTickets = tickets.map((ticket) => (ticket.id === selectedTicketId ? { ...ticket, status } : ticket));
+    const nextMessages = [...messages, { from: "Support Bot", text: `Ticket status changed to ${status}.`, time: now(), own: false, ticketId: selectedTicketId }];
+    setTickets(nextTickets);
+    setMessages(nextMessages);
+    persist(nextTickets, nextMessages);
   }
 
   return (

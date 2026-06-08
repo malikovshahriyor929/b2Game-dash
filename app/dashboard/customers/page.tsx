@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { FiCalendar, FiChevronLeft, FiChevronRight, FiEdit2, FiEye, FiPlus, FiSearch, FiTrash2 } from "react-icons/fi";
 import { Badge } from "@/components/ui/badge";
@@ -13,8 +13,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/shared/page-header";
-import { customers as customerSeed } from "@/lib/mock-data";
 import { money } from "@/lib/format";
+import { backendDelete, backendGet, backendPatch, backendPost } from "@/lib/backend-client";
 
 type CustomerStatus = "Active" | "Debt" | "Blocked";
 
@@ -32,13 +32,22 @@ type Customer = {
   note?: string;
 };
 
-const initialCustomers: Customer[] = customerSeed.map((customer) => ({
-  ...customer,
-  id: crypto.randomUUID(),
-  status: customer.status as CustomerStatus,
-  email: "",
-  note: customer.status === "Debt" ? "Post-payment qarzi bor." : "",
-}));
+type CustomerSessionRow = {
+  id: string;
+  simulator_id?: string | null;
+  status?: string | null;
+  duration_minutes?: number | string | null;
+  total_amount?: number | string | null;
+  started_at?: string | null;
+  created_at?: string | null;
+};
+
+type CustomerSaleRow = {
+  id: string;
+  total?: number | string | null;
+  payment_status?: string | null;
+  created_at?: string | null;
+};
 
 const emptyForm = {
   name: "",
@@ -46,12 +55,49 @@ const emptyForm = {
   email: "",
   balance: "",
   bonus: "",
-  lastVisit: "2026-06-03",
+  lastVisit: toIsoDate(new Date()),
   totalSpent: "",
   sessions: "",
   status: "Active" as CustomerStatus,
   note: "",
 };
+
+function toStatus(value: unknown): CustomerStatus {
+  const status = String(value ?? "active").toLowerCase();
+  if (status === "debt") return "Debt";
+  if (status === "blocked") return "Blocked";
+  return "Active";
+}
+
+function mapCustomer(row: Record<string, unknown>): Customer {
+  return {
+    id: String(row.id),
+    name: String(row.name ?? ""),
+    phone: String(row.phone ?? ""),
+    balance: Number(row.balance ?? 0),
+    bonus: Number(row.bonus ?? 0),
+    lastVisit: row.last_visit_at ? String(row.last_visit_at).slice(0, 10) : "",
+    totalSpent: Number(row.total_spent ?? 0),
+    sessions: Number(row.sessions_count ?? 0),
+    status: toStatus(row.status),
+    email: "",
+    note: "",
+  };
+}
+
+function customerBody(customer: Customer, branchId: string) {
+  return {
+    branch_id: branchId,
+    name: customer.name,
+    phone: customer.phone,
+    balance: customer.balance,
+    bonus: customer.bonus,
+    total_spent: customer.totalSpent,
+    sessions_count: customer.sessions,
+    last_visit_at: customer.lastVisit ? new Date(`${customer.lastVisit}T00:00:00`).toISOString() : null,
+    status: customer.status.toLowerCase(),
+  };
+}
 
 function formatNumber(value: string) {
   return value.replace(/\D/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
@@ -171,17 +217,35 @@ function DatePicker({ value, onChange }: { value: string; onChange: (value: stri
 
 export default function CustomersPage() {
   const { data: session } = useSession();
-  const [customers, setCustomers] = useState(initialCustomers);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [branchId, setBranchId] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | CustomerStatus>("all");
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(initialCustomers[0] ?? null);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedSessions, setSelectedSessions] = useState<CustomerSessionRow[]>([]);
+  const [selectedSales, setSelectedSales] = useState<CustomerSaleRow[]>([]);
   const [form, setForm] = useState(emptyForm);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState("5");
   const isSuperAdmin = session?.user?.role === "super_admin";
+
+  async function refreshCustomers() {
+    const [branchRows, rows] = await Promise.all([
+      backendGet<Array<Record<string, unknown>>>("/branches"),
+      backendGet<Array<Record<string, unknown>>>("/customers?branch_id=all"),
+    ]);
+    setBranchId((current) => current || String(branchRows[0]?.id ?? ""));
+    const next = rows.map(mapCustomer);
+    setCustomers(next);
+    setSelectedCustomer((current) => current && next.some((item) => item.id === current.id) ? current : next[0] ?? null);
+  }
+
+  useEffect(() => {
+    void refreshCustomers().catch(() => undefined);
+  }, []);
 
   const stats = useMemo(() => ({
     total: customers.length,
@@ -238,15 +302,27 @@ export default function CustomersPage() {
     setCustomerModalOpen(true);
   }
 
+  async function loadCustomerActivity(customerId: string) {
+    const [sessions, sales] = await Promise.all([
+      backendGet<CustomerSessionRow[]>(`/customers/${customerId}/sessions`),
+      backendGet<CustomerSaleRow[]>(`/customers/${customerId}/sales`),
+    ]);
+    setSelectedSessions(sessions);
+    setSelectedSales(sales);
+  }
+
   function openProfile(customer: Customer) {
     setSelectedCustomer(customer);
+    setSelectedSessions([]);
+    setSelectedSales([]);
     setProfileModalOpen(true);
+    void loadCustomerActivity(customer.id).catch(() => undefined);
   }
 
   function submitCustomer(event: React.FormEvent) {
     event.preventDefault();
     const phone = normalizeUzPhone(form.phone);
-    if (!form.name.trim() || phone.length !== 12 || !phone.startsWith("998")) return;
+    if (!branchId || !form.name.trim() || phone.length !== 12 || !phone.startsWith("998")) return;
     const existing = editingId ? customers.find((item) => item.id === editingId) : null;
     const payload: Customer = {
       id: editingId ?? crypto.randomUUID(),
@@ -255,19 +331,25 @@ export default function CustomersPage() {
       email: form.email.trim(),
       balance: Number(form.balance || 0),
       bonus: Number(form.bonus || 0),
-      lastVisit: form.lastVisit || "2026-06-03",
+      lastVisit: form.lastVisit || toIsoDate(new Date()),
       totalSpent: isSuperAdmin ? Number(form.totalSpent || 0) : existing?.totalSpent ?? 0,
       sessions: Number(form.sessions || 0),
       status: form.status,
       note: form.note.trim(),
     };
 
+    if (editingId) {
+      void backendPatch(`/customers/${editingId}`, customerBody(payload, branchId)).then(refreshCustomers).catch(() => undefined);
+    } else {
+      void backendPost("/customers", customerBody(payload, branchId)).then(refreshCustomers).catch(() => undefined);
+    }
     setCustomers((items) => (editingId ? items.map((item) => (item.id === editingId ? payload : item)) : [payload, ...items]));
     setSelectedCustomer(payload);
     resetForm();
   }
 
   function removeCustomer(customer: Customer) {
+    void backendDelete(`/customers/${customer.id}`).then(refreshCustomers).catch(() => undefined);
     setCustomers((items) => items.filter((item) => item.id !== customer.id));
     if (selectedCustomer?.id === customer.id) setSelectedCustomer(null);
   }
@@ -418,7 +500,7 @@ export default function CustomersPage() {
             <div className="space-y-2 sm:col-span-2"><Label>Note</Label><Input value={form.note} onChange={(event) => setForm((item) => ({ ...item, note: event.target.value }))} placeholder="Izoh" /></div>
             <div className="grid gap-2 sm:col-span-2 sm:grid-cols-2">
               <Button type="button" variant="secondary" onClick={resetForm}>Cancel</Button>
-              <Button type="submit" disabled={!form.name.trim() || normalizeUzPhone(form.phone).length !== 12 || !normalizeUzPhone(form.phone).startsWith("998")}><FiPlus /> {editingId ? "Save customer" : "Create customer"}</Button>
+              <Button type="submit" disabled={!branchId || !form.name.trim() || normalizeUzPhone(form.phone).length !== 12 || !normalizeUzPhone(form.phone).startsWith("998")}><FiPlus /> {editingId ? "Save customer" : "Create customer"}</Button>
             </div>
           </form>
         </DialogContent>
@@ -440,8 +522,24 @@ export default function CustomersPage() {
               </div>
               <div className="grid gap-3 md:grid-cols-3">
                 <Card className="p-4"><div className="font-bold text-white">Profile</div><div className="mt-2 text-sm text-slate-400">Last visit: {selectedCustomer.lastVisit}<br />Status: {selectedCustomer.status}<br />Note: {selectedCustomer.note || "-"}</div></Card>
-                <Card className="p-4"><div className="font-bold text-white">Session history</div><div className="mt-2 text-sm text-slate-400">LOGITECH-01 - 60 min<br />MOZA-02 - 30 min<br />LOGITECH-04 - 90 min</div></Card>
-                <Card className="p-4"><div className="font-bold text-white">Shop purchases</div><div className="mt-2 text-sm text-slate-400">Coca-Cola 0.5<br />Energy Drink<br />Chips</div></Card>
+                <Card className="p-4">
+                  <div className="font-bold text-white">Session history</div>
+                  <div className="mt-2 space-y-1 text-sm text-slate-400">
+                    {selectedSessions.length ? selectedSessions.slice(0, 4).map((session) => (
+                      <div key={session.id}>
+                        {session.simulator_id ?? "Simulator"} - {Number(session.duration_minutes ?? 0)} min - {money(Number(session.total_amount ?? 0))}
+                      </div>
+                    )) : "Session data yo'q"}
+                  </div>
+                </Card>
+                <Card className="p-4">
+                  <div className="font-bold text-white">Shop purchases</div>
+                  <div className="mt-2 space-y-1 text-sm text-slate-400">
+                    {selectedSales.length ? selectedSales.slice(0, 4).map((sale) => (
+                      <div key={sale.id}>{money(Number(sale.total ?? 0))} - {sale.payment_status ?? "pending"}</div>
+                    )) : "Shop sale data yo'q"}
+                  </div>
+                </Card>
               </div>
               <div className="flex justify-end gap-2">
                 <Button variant="secondary" onClick={() => openEdit(selectedCustomer)}><FiEdit2 /> Edit profile</Button>

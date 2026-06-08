@@ -8,8 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
-import { tariffs } from "@/lib/mock-data";
 import { money } from "@/lib/format";
+import { useBackendTariffs } from "@/lib/use-backend-tariffs";
 import { Booking } from "@/types/booking";
 
 type BookingFormState = Omit<Booking, "id" | "status">;
@@ -19,7 +19,7 @@ const emptyForm: BookingFormState = {
   phone: "",
   simulatorType: "Standard",
   simulatorId: "",
-  date: "2026-06-03",
+  date: toIsoDate(new Date()),
   startTime: "16:00",
   endTime: "17:00",
   tariff: "Logitech 60 min",
@@ -117,6 +117,7 @@ function hasConflict(bookings: Booking[], form: BookingFormState, editingId?: st
 
 export function BookingForm({ booking, onSaved }: { booking?: Booking | null; onSaved?: () => void }) {
   const { addBooking, bookings, simulators, updateBooking } = useDashboardStore();
+  const tariffs = useBackendTariffs();
   const [form, setForm] = useState<BookingFormState>(() => booking ? {
     customerName: booking.customerName,
     phone: booking.phone,

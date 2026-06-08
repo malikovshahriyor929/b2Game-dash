@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { money } from "@/lib/format";
-import { products, tariffs } from "@/lib/mock-data";
+import { useBackendTariffs } from "@/lib/use-backend-tariffs";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { Simulator } from "@/types/simulator";
 
@@ -13,7 +13,8 @@ function Row({ label, value, danger }: { label: string; value: React.ReactNode; 
 }
 
 export function StopSessionDialog({ open, onOpenChange, simulator, onTakePayment }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator; onTakePayment?: () => void }) {
-  const { stopSession } = useDashboardStore();
+  const { products, stopSession } = useDashboardStore();
+  const tariffs = useBackendTariffs();
   const tariff = tariffs.find((item) => item.name === simulator?.tariff);
   const shopItems = simulator?.orderItems.flatMap((item) => item.split(",").map((name) => name.trim()).filter(Boolean)) ?? [];
   const shop = shopItems.reduce((sum, name) => sum + (products.find((product) => product.name === name)?.price ?? 0), 0);

@@ -9,14 +9,14 @@ import { RevenueChart } from "@/components/reports/revenue-chart";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 
 export default function DashboardPage() {
-  const { revenue, simulators, activeShift, shifts } = useDashboardStore();
+  const { revenue, simulators, activeShift, shifts, barSales } = useDashboardStore();
   const { data: session } = useSession();
   const activeCount = simulators.filter((s) => ["busy", "unpaid"].includes(s.status)).length;
   const freeCount = simulators.filter((s) => s.status === "ready_to_play").length;
-  
-  // Get shift earnings for today
-  const todayShifts = shifts.filter(s => s.date === "2026-06-04");
+  const today = new Date().toISOString().slice(0, 10);
+  const todayShifts = shifts.filter((s) => s.date === today);
   const totalShiftEarnings = todayShifts.reduce((sum, s) => sum + s.totalIncome, 0);
+  const shopSales = barSales.filter((sale) => sale.date === today).reduce((sum, sale) => sum + sale.totalAmount, 0);
 
   return (
     <div>
@@ -50,7 +50,7 @@ export default function DashboardPage() {
         <ReportCard label="Today revenue" value={revenue} icon={FiCreditCard} />
         <ReportCard label="Active sessions" value={activeCount} icon={FiActivity} format="number" />
         <ReportCard label="Ready simulators" value={freeCount} icon={FiMonitor} format="number" />
-        <ReportCard label="Shop sales" value={128000} icon={FiShoppingBag} />
+        <ReportCard label="Shop sales" value={shopSales} icon={FiShoppingBag} />
       </div>
       <div className="mb-4"><RevenueChart /></div>
       <SimulatorMap />

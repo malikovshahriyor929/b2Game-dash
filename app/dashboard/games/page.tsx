@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FiEdit2, FiImage, FiPlus, FiSearch, FiTrash2 } from "react-icons/fi";
 import { RiGamepadLine } from "react-icons/ri";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/shared/page-header";
+import { backendGet, backendPatch } from "@/lib/backend-client";
 
 type GameStatus = "installed" | "ready" | "updating" | "disabled";
 type GameZone = "Standard" | "VIP" | "Both";
@@ -23,17 +24,6 @@ type Game = {
   version: string;
   imageUrl: string;
 };
-
-const initialGames: Game[] = [
-  { id: "g1", name: "Gran Turismo 7", zone: "Standard", status: "ready", version: "1.54", imageUrl: "https://images.unsplash.com/photo-1542282088-fe8426682b8f?auto=format&fit=crop&w=900&q=80" },
-  { id: "g2", name: "Forza Motorsport", zone: "Standard", status: "ready", version: "2026.1", imageUrl: "https://images.unsplash.com/photo-1503736334956-4c8f8e92946d?auto=format&fit=crop&w=900&q=80" },
-  { id: "g3", name: "Beat Saber", zone: "VIP", status: "installed", version: "1.39", imageUrl: "https://images.unsplash.com/photo-1593508512255-86ab42a8e620?auto=format&fit=crop&w=900&q=80" },
-  { id: "g4", name: "EA FC 26", zone: "Both", status: "ready", version: "26.0", imageUrl: "https://images.unsplash.com/photo-1605901309584-818e25960a8f?auto=format&fit=crop&w=900&q=80" },
-  { id: "g5", name: "Mortal Kombat", zone: "VIP", status: "ready", version: "1.2", imageUrl: "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=900&q=80" },
-  { id: "g6", name: "Tekken 8", zone: "VIP", status: "ready", version: "1.10", imageUrl: "https://images.unsplash.com/photo-1560253023-3ec5d502959f?auto=format&fit=crop&w=900&q=80" },
-  { id: "g7", name: "F1 Arcade Pack", zone: "Standard", status: "installed", version: "3.4", imageUrl: "https://images.unsplash.com/photo-1517524008697-84bbe3c3fd98?auto=format&fit=crop&w=900&q=80" },
-  { id: "g8", name: "Assetto Corsa", zone: "Standard", status: "updating", version: "2.1", imageUrl: "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?auto=format&fit=crop&w=900&q=80" },
-];
 
 const emptyForm = { name: "", zone: "Standard" as GameZone, status: "ready" as GameStatus, version: "", imageUrl: "" };
 
@@ -78,13 +68,28 @@ function GameImage({ src, name, className = "" }: { src: string; name: string; c
 }
 
 export default function GamesPage() {
-  const [games, setGames] = useState(initialGames);
+  const [games, setGames] = useState<Game[]>([]);
   const [query, setQuery] = useState("");
   const [zoneFilter, setZoneFilter] = useState<"all" | GameZone>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | GameStatus>("all");
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
+
+  async function loadGames() {
+    const rows = await backendGet<Array<{ key: string; value: unknown }>>("/settings?branch_id=all");
+    const setting = rows.find((row) => row.key === "games");
+    setGames(Array.isArray(setting?.value) ? setting.value as Game[] : []);
+  }
+
+  function saveGames(next: Game[]) {
+    setGames(next);
+    void backendPatch("/settings", { settings: { games: next } }).catch(() => undefined);
+  }
+
+  useEffect(() => {
+    void loadGames().catch(() => undefined);
+  }, []);
 
   const stats = useMemo(() => ({
     total: games.length,
@@ -117,9 +122,9 @@ export default function GamesPage() {
     event.preventDefault();
     if (!form.name.trim()) return;
     if (editingId) {
-      setGames((items) => items.map((game) => (game.id === editingId ? { ...game, ...form, name: form.name.trim() } : game)));
+      saveGames(games.map((game) => (game.id === editingId ? { ...game, ...form, name: form.name.trim() } : game)));
     } else {
-      setGames((items) => [{ id: crypto.randomUUID(), ...form, name: form.name.trim() }, ...items]);
+      saveGames([{ id: crypto.randomUUID(), ...form, name: form.name.trim() }, ...games]);
     }
     setOpen(false);
     setEditingId(null);
@@ -127,7 +132,7 @@ export default function GamesPage() {
   }
 
   function removeGame(id: string) {
-    setGames((items) => items.filter((game) => game.id !== id));
+    saveGames(games.filter((game) => game.id !== id));
   }
 
   return (

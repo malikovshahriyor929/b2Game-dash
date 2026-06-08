@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FiPlus } from "react-icons/fi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,8 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/shared/page-header";
-import { tariffs as tariffSeed } from "@/lib/mock-data";
 import { money } from "@/lib/format";
+import { backendGet, backendPost } from "@/lib/backend-client";
 
 type Tariff = {
   id: string;
@@ -28,14 +28,42 @@ function formatNumber(value: string) {
 }
 
 export default function TariffsPage() {
-  const [tariffs, setTariffs] = useState<Tariff[]>(tariffSeed);
+  const [tariffs, setTariffs] = useState<Tariff[]>([]);
+  const [branchId, setBranchId] = useState("");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", type: "Time-based", price: "" });
+
+  async function refreshTariffs() {
+    const [branchRows, rows] = await Promise.all([
+      backendGet<Array<Record<string, unknown>>>("/branches"),
+      backendGet<Array<Record<string, unknown>>>("/tariffs?branch_id=all"),
+    ]);
+    setBranchId((current) => current || String(branchRows[0]?.id ?? ""));
+    setTariffs(rows.map((row) => ({
+      id: String(row.id),
+      name: String(row.name ?? ""),
+      type: String(row.type ?? row.simulator_zone ?? "Time-based"),
+      price: Number(row.price ?? 0),
+    })));
+  }
+
+  useEffect(() => {
+    void refreshTariffs().catch(() => undefined);
+  }, []);
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
     const price = Number(form.price.replace(/\D/g, ""));
-    if (!form.name.trim() || !Number.isFinite(price) || price <= 0) return;
+    if (!form.name.trim() || !Number.isFinite(price) || price <= 0 || !branchId) return;
+    void backendPost("/tariffs", {
+      branch_id: branchId,
+      name: form.name.trim(),
+      simulator_zone: form.type === "VIP" ? "vip" : "main",
+      duration_minutes: 60,
+      price,
+      type: form.type,
+      is_active: true,
+    }).then(refreshTariffs).catch(() => undefined);
     setTariffs((items) => [{ id: crypto.randomUUID(), name: form.name.trim(), type: form.type, price }, ...items]);
     setForm({ name: "", type: "Time-based", price: "" });
     setOpen(false);
@@ -89,7 +117,7 @@ export default function TariffsPage() {
                 <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">so'm</span>
               </div>
             </div>
-            <Button className="sm:col-span-2" type="submit" disabled={!form.name.trim() || !form.price.trim()}><FiPlus /> Create tariff</Button>
+            <Button className="sm:col-span-2" type="submit" disabled={!form.name.trim() || !form.price.trim() || !branchId}><FiPlus /> Create tariff</Button>
           </form>
         </DialogContent>
       </Dialog>

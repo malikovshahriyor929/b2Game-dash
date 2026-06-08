@@ -1,8 +1,9 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { authSecret } from "@/lib/auth-env";
-import { mockUsers } from "@/lib/mock-data";
 import type { Role } from "@/types/user";
+
+const BACKEND_URL = process.env.BACKEND_URL ?? "http://127.0.0.1:4000";
 
 function isRole(value: unknown): value is Role {
   return value === "admin" || value === "super_admin";
@@ -14,17 +15,29 @@ export const authOptions: NextAuthOptions = {
   pages: { signIn: "/login" },
   providers: [
     CredentialsProvider({
-      name: "Mock credentials",
+      name: "Backend credentials",
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      authorize(credentials) {
+      async authorize(credentials) {
         const email = credentials?.email?.trim().toLowerCase();
         const password = credentials?.password ?? "";
-        const user = mockUsers.find((item) => item.email.toLowerCase() === email && item.password === password);
-        if (!user) return null;
-        return { id: user.id, name: user.name, email: user.email, role: user.role, branchIds: user.branchIds };
+        if (!email || !password) return null;
+
+        const response = await fetch(`${BACKEND_URL}/api/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+          cache: "no-store",
+        });
+        if (!response.ok) return null;
+
+        const payload = await response.json();
+        const user = payload.data?.user;
+        if (!user || !isRole(user.role)) return null;
+        const branchIds = user.role === "super_admin" ? ["all"] : user.branch_id ? [String(user.branch_id)] : [];
+        return { id: String(user.id), name: String(user.name), email: String(user.email), role: user.role, branchIds };
       },
     }),
   ],

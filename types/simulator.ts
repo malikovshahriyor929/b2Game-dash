@@ -48,4 +48,14 @@ export type Simulator = {
   paymentStatus: PaymentStatus;
   orderItems: string[];
   repairRequestId?: string;
+  rigId?: string;
+  rigHostname?: string;
+  rigVersion?: string;
+  rigLatestVersion?: string;
+  rigNeedsUpdate?: boolean;
+  rigOnline?: boolean;
+  rigUnlockUntil?: string | null;
+  rigUpdateStatus?: string;
+  rigLastSeen?: string | null;
+  currentSessionId?: string | null;
 };

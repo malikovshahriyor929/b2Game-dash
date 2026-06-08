@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { money } from "@/lib/format";
-import { tariffs } from "@/lib/mock-data";
+import { useBackendTariffs } from "@/lib/use-backend-tariffs";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { Simulator } from "@/types/simulator";
 
@@ -15,6 +15,7 @@ const paymentMethods = ["Naqd", "Karta", "QR", "Balans", "Aralash"] as const;
 
 export function PaymentDialog({ open, onOpenChange, simulator }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator }) {
   const { pay } = useDashboardStore();
+  const tariffs = useBackendTariffs();
   const [method, setMethod] = useState<(typeof paymentMethods)[number]>("Karta");
   const [cash, setCash] = useState("0");
   const [card, setCard] = useState("0");

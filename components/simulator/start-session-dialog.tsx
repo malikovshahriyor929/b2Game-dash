@@ -6,8 +6,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { tariffs } from "@/lib/mock-data";
 import { money } from "@/lib/format";
+import { useBackendTariffs } from "@/lib/use-backend-tariffs";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { Simulator } from "@/types/simulator";
 
@@ -30,6 +30,7 @@ function durationFromTariff(name: string) {
 
 export function StartSessionDialog({ open, onOpenChange, simulator }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator }) {
   const { startSession } = useDashboardStore();
+  const tariffs = useBackendTariffs();
   const [customerType, setCustomerType] = useState<(typeof customerTypes)[number]>("Guest");
   const [customerName, setCustomerName] = useState("Guest");
   const [phone, setPhone] = useState("");
@@ -38,24 +39,24 @@ export function StartSessionDialog({ open, onOpenChange, simulator }: { open: bo
   const [paymentStatus, setPaymentStatus] = useState<"paid" | "unpaid" | "partial">("paid");
   const [paymentMethod, setPaymentMethod] = useState<(typeof paymentMethods)[number]>("Karta");
   const selectedTariff = tariffs.find((item) => item.name === tariff) ?? tariffs[0];
-  const canSubmit = Boolean(simulator) && customerName.trim().length > 0 && Number(duration) > 0;
-  const totalAmount = paymentStatus === "unpaid" ? 0 : selectedTariff.price;
+  const canSubmit = Boolean(simulator) && customerName.trim().length > 0 && Number(duration) > 0 && Boolean(selectedTariff);
+  const totalAmount = paymentStatus === "unpaid" ? 0 : selectedTariff?.price ?? 0;
 
   const summary = useMemo(() => {
     const mode = paymentModes.find((item) => item.value === paymentStatus)?.label ?? "Prepaid";
-    return `${duration} min - ${money(selectedTariff.price)} - ${mode}`;
-  }, [duration, paymentStatus, selectedTariff.price]);
+    return `${duration} min - ${money(selectedTariff?.price ?? 0)} - ${mode}`;
+  }, [duration, paymentStatus, selectedTariff?.price]);
 
   useEffect(() => {
     if (!open) return;
     setCustomerType("Guest");
     setCustomerName("Guest");
     setPhone("");
-    setTariff(simulator?.zone === "VIP" ? "Moza VIP 60 min" : "Logitech 60 min");
+    setTariff(tariffs[0]?.name ?? "");
     setDuration("60");
     setPaymentStatus("paid");
     setPaymentMethod("Karta");
-  }, [open, simulator?.id]);
+  }, [open, simulator?.id, tariffs]);
 
   function handleTariffChange(value: string) {
     setTariff(value);

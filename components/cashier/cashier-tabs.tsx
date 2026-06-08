@@ -158,7 +158,7 @@ export function CashierTabs() {
     setProductModalOpen(true);
   }
 
-  function submitProduct(event: React.FormEvent) {
+  async function submitProduct(event: React.FormEvent) {
     event.preventDefault();
     const price = Number(newProduct.price);
     const stock = Number(newProduct.stock);
@@ -177,8 +177,14 @@ export function CashierTabs() {
       const updated = updateProduct(editingProductId, payload);
       if (updated) setScanMessage(`${updated.name} yangilandi. QR: ${updated.qrCode}`);
     } else {
-      const created = createProduct(payload);
-      setScanMessage(`${created.name} yaratildi. QR: ${created.qrCode}`);
+      try {
+        const created = await createProduct(payload);
+        if (!created) return;
+        setScanMessage(`${created.name} yaratildi va backendga saqlandi. QR: ${created.qrCode}`);
+      } catch (error) {
+        setScanMessage(error instanceof Error ? error.message : "Mahsulot backendga saqlanmadi.");
+        return;
+      }
     }
     resetProductForm();
   }
