@@ -113,6 +113,12 @@ function shortTime(value?: string | null) {
   return value ? new Date(value).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" }) : now();
 }
 
+function timestampTime(value?: string | null) {
+  const text = String(value ?? "");
+  const match = text.match(/[T ](\d{2}:\d{2})/);
+  return match?.[1] ?? (value ? shortTime(value) : undefined);
+}
+
 function numberValue(value: unknown) {
   const numeric = Number(value ?? 0);
   return Number.isFinite(numeric) ? numeric : 0;
@@ -198,6 +204,10 @@ function rigRemainingMinutes(unlockUntil: string | null) {
   return diff > 0 ? Math.ceil(diff / 60000) : 0;
 }
 
+function sessionRemainingMinutes(rig: RigRecord) {
+  return Math.ceil(numberValue(rig.active_remaining_seconds) / 60);
+}
+
 function rigStatus(rig: RigRecord): Simulator["status"] {
   if (["ready_to_play", "busy", "reserved", "unpaid", "broken", "repair_requested", "repair_approved", "fixing", "fixed_waiting_confirmation", "offline", "locked"].includes(rig.state)) {
     return rig.state as Simulator["status"];
@@ -230,11 +240,13 @@ function rigsToSimulators(rigs: RigRecord[], branchList: Branch[]) {
       status,
       deviceId: rig.rig_id,
       ipAddress: rig.hostname,
-      currentUser: status === "busy" ? "Active rig" : undefined,
-      tariff: "Rig Admin",
-      remainingMinutes: status === "busy" ? rigRemainingMinutes(rig.unlock_until) : 0,
-      paidAmount: 0,
-      paymentStatus: "paid",
+      currentUser: status === "busy" ? rig.active_customer_name || "Active rig" : undefined,
+      phone: rig.active_phone ?? undefined,
+      tariff: rig.active_tariff_name || "Rig Admin",
+      startedAt: timestampTime(rig.active_started_at),
+      remainingMinutes: status === "busy" ? (sessionRemainingMinutes(rig) || rigRemainingMinutes(rig.unlock_until)) : 0,
+      paidAmount: numberValue(rig.active_paid_amount),
+      paymentStatus: rig.active_payment_mode === "postpaid" ? "unpaid" : "paid",
       orderItems: [],
       rigId: rig.rig_id,
       rigHostname: rig.hostname,
@@ -245,7 +257,7 @@ function rigsToSimulators(rigs: RigRecord[], branchList: Branch[]) {
       rigUnlockUntil: rig.unlock_until,
       rigUpdateStatus: rig.update_status,
       rigLastSeen: rig.last_seen,
-      currentSessionId: rig.current_session_id,
+      currentSessionId: rig.current_session_id ?? rig.active_session_id,
     } satisfies Simulator;
   });
 }

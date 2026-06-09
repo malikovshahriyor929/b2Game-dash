@@ -18,6 +18,14 @@ export type RigRecord = {
   state: "Available" | "In use" | "Updating" | "Offline" | string;
   update_status: string;
   current_session_id?: string | null;
+  active_session_id?: string | null;
+  active_customer_name?: string | null;
+  active_phone?: string | null;
+  active_started_at?: string | null;
+  active_remaining_seconds?: number | string | null;
+  active_paid_amount?: number | string | null;
+  active_payment_mode?: string | null;
+  active_tariff_name?: string | null;
   first_seen: string | null;
   last_seen: string | null;
 };
@@ -43,6 +51,14 @@ export function mapBackendSimulatorRows(rows: Array<Record<string, any>>): RigRe
     state: item.status,
     update_status: item.update_status ?? "",
     current_session_id: item.current_session_id ?? null,
+    active_session_id: item.active_session_id ?? null,
+    active_customer_name: item.active_customer_name ?? null,
+    active_phone: item.active_phone ?? null,
+    active_started_at: item.active_started_at ?? null,
+    active_remaining_seconds: item.active_remaining_seconds ?? null,
+    active_paid_amount: item.active_paid_amount ?? null,
+    active_payment_mode: item.active_payment_mode ?? null,
+    active_tariff_name: item.active_tariff_name ?? null,
     first_seen: item.first_seen ?? null,
     last_seen: item.last_seen_at ?? item.last_seen ?? null,
   }));
