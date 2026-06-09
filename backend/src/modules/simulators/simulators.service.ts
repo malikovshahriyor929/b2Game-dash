@@ -208,6 +208,37 @@ export async function patchStatus(req: Request) {
   return row;
 }
 
+export async function updateMapPosition(req: Request) {
+  const position = req.body?.map_position ?? req.body;
+  if (!position || typeof position !== "object" || Array.isArray(position)) throw new ApiError(400, "map_position is required");
+  const col = Number(position.col);
+  const row = Number(position.row);
+  const colSpan = Number(position.colSpan ?? 1);
+  const rowSpan = Number(position.rowSpan ?? 1);
+  if (![col, row, colSpan, rowSpan].every(Number.isFinite) || col < 1 || row < 1 || colSpan < 1 || rowSpan < 1) {
+    throw new ApiError(400, "map_position must include positive col, row, colSpan and rowSpan values");
+  }
+  const normalized = {
+    floor: String(position.floor ?? "0"),
+    col,
+    row,
+    colSpan,
+    rowSpan,
+  };
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `update simulators
+     set map_position=$1::jsonb, updated_at=now()
+     where id=$2::uuid and ($3::uuid is null or branch_id=$3::uuid)
+     returning *`,
+    JSON.stringify(normalized),
+    req.params.id,
+    req.user?.role === "admin" ? req.user.branch_id : null,
+  );
+  if (!rows.length) throw new ApiError(404, "Simulator not found");
+  broadcastDashboard("simulator_updated", rows[0], rows[0].branch_id);
+  return rows[0];
+}
+
 async function command(req: Request, action: string, work: (rig: RigMvpRig) => Promise<unknown>) {
   const rig = await getRigMvpRig(await rigIdFromParam(String(req.params.id)));
   await work(rig);

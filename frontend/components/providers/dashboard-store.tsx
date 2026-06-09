@@ -172,14 +172,14 @@ function productIcon(name: string) {
   return "snack";
 }
 
-function rigRemainingMinutes(unlockUntil: string | null) {
+function rigRemainingSeconds(unlockUntil: string | null) {
   if (!unlockUntil) return 0;
   const diff = new Date(unlockUntil).getTime() - Date.now();
-  return diff > 0 ? Math.ceil(diff / 60000) : 0;
+  return diff > 0 ? Math.ceil(diff / 1000) : 0;
 }
 
-function sessionRemainingMinutes(rig: RigRecord) {
-  return Math.ceil(numberValue(rig.active_remaining_seconds) / 60);
+function sessionRemainingSeconds(rig: RigRecord) {
+  return Math.max(0, Math.floor(numberValue(rig.active_remaining_seconds)));
 }
 
 function rigStatus(rig: RigRecord): Simulator["status"] {
@@ -199,6 +199,8 @@ function rigsToSimulators(rigs: RigRecord[], branchList: Branch[]) {
   return rigs.map((rig) => {
     const zone = rigType(rig);
     const status = rigStatus(rig);
+    const hasSessionTimer = ["busy", "unpaid"].includes(status);
+    const remainingSeconds = hasSessionTimer ? (sessionRemainingSeconds(rig) || rigRemainingSeconds(rig.unlock_until)) : 0;
     const branch = branchList.find((item) => item.id === rig.branch_id) ?? {
       id: rig.branch_id ?? branchList[0]?.id ?? fallbackBranch.id,
       name: rig.branch_name ?? branchList[0]?.name ?? fallbackBranch.name,
@@ -214,11 +216,12 @@ function rigsToSimulators(rigs: RigRecord[], branchList: Branch[]) {
       status,
       deviceId: rig.rig_id,
       ipAddress: rig.hostname,
-      currentUser: status === "busy" ? rig.active_customer_name || "Active rig" : undefined,
+      currentUser: hasSessionTimer ? rig.active_customer_name || "Active rig" : undefined,
       phone: rig.active_phone ?? undefined,
       tariff: rig.active_tariff_name || "Rig Admin",
       startedAt: timestampTime(rig.active_started_at),
-      remainingMinutes: status === "busy" ? (sessionRemainingMinutes(rig) || rigRemainingMinutes(rig.unlock_until)) : 0,
+      remainingMinutes: Math.ceil(remainingSeconds / 60),
+      remainingSeconds,
       paidAmount: numberValue(rig.active_paid_amount),
       paymentStatus: rig.active_payment_mode === "postpaid" ? "unpaid" : "paid",
       orderItems: [],
@@ -232,6 +235,7 @@ function rigsToSimulators(rigs: RigRecord[], branchList: Branch[]) {
       rigUpdateStatus: rig.update_status,
       rigLastSeen: rig.last_seen,
       currentSessionId: rig.current_session_id ?? rig.active_session_id,
+      mapPosition: rig.map_position ?? undefined,
     } satisfies Simulator;
   });
 }
@@ -401,30 +405,44 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
   const role = data?.user?.role;
   const allowedBranchIds = data?.user?.branchIds ?? [];
   const canUseAllBranches = role === "super_admin";
-  const firstBackendBranchId = branchList[0]?.id ?? fallbackBranch.id;
+  const realBranches = branchList.filter((branch) => branch.id !== fallbackBranch.id);
+  const firstBackendBranchId = realBranches[0]?.id ?? allowedBranchIds[0] ?? fallbackBranch.id;
   const selectedBranchExists = selectedBranchId === "all" || branchList.some((branch) => branch.id === selectedBranchId);
-  const effectiveBranchId = canUseAllBranches ? (selectedBranchExists ? selectedBranchId : "all") : (branchList.find((branch) => allowedBranchIds.includes(branch.id))?.id ?? firstBackendBranchId);
-  const visibleBranchIds = effectiveBranchId === "all" ? branchList.map((branch) => branch.id) : [effectiveBranchId];
+  const effectiveBranchId = canUseAllBranches ? (selectedBranchExists ? selectedBranchId : "all") : (branchList.find((branch) => allowedBranchIds.includes(branch.id))?.id ?? allowedBranchIds[0] ?? fallbackBranch.id);
+  const apiBranchId = effectiveBranchId === fallbackBranch.id ? (canUseAllBranches ? "all" : allowedBranchIds[0] ?? "") : effectiveBranchId;
+  const visibleBranchIds = effectiveBranchId === "all" ? realBranches.map((branch) => branch.id) : [effectiveBranchId];
   const simulators = allSimulators.filter((item) => visibleBranchIds.includes(item.branchId));
   const scopedRepairRequests = repairRequests.filter((item) => visibleBranchIds.includes(item.branchId));
 
   useEffect(() => {
     if (!data?.user) return;
-    const nextBranchId = data.user.role === "super_admin" ? "all" : branchList.find((branch) => data.user.branchIds.includes(branch.id))?.id ?? branchList[0]?.id ?? fallbackBranch.id;
+    const nextBranchId = data.user.role === "super_admin" ? "all" : branchList.find((branch) => data.user.branchIds.includes(branch.id))?.id ?? data.user.branchIds[0] ?? fallbackBranch.id;
     setSelectedBranchIdState((current) => (data.user.role === "super_admin" && current !== fallbackBranch.id ? current : nextBranchId));
   }, [branchList, data?.user]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setAllSimulators((items) => items.map((item) => {
+        if (!["busy", "unpaid"].includes(item.status) || !item.remainingSeconds) return item;
+        const remainingSeconds = Math.max(0, item.remainingSeconds - 1);
+        return { ...item, remainingSeconds, remainingMinutes: Math.ceil(remainingSeconds / 60) };
+      }));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   async function refreshBackendData() {
+    if (!data?.user || !apiBranchId) return;
     try {
       const branchRows = await backendGet<Array<Record<string, unknown>>>("/branches");
       const nextBranches = branchRows.map((row) => ({ id: String(row.id), name: String(row.name) }));
       const branchSource = nextBranches.length ? nextBranches : [fallbackBranch];
-      const dataBranchId = effectiveBranchId === "all" ? "all" : effectiveBranchId;
-      const productBranchId = effectiveBranchId === "all" ? branchSource[0]?.id ?? "all" : effectiveBranchId;
+      const dataBranchId = apiBranchId === "all" ? "all" : apiBranchId;
+      const productBranchId = dataBranchId === "all" ? branchSource[0]?.id ?? "all" : dataBranchId;
       const query = `branch_id=${encodeURIComponent(dataBranchId)}`;
       const productQuery = `branch_id=${encodeURIComponent(productBranchId)}`;
       const [rigs, productRows, bookingRows, repairRows, logRows, shiftRows, saleRows, paymentRows] = await Promise.all([
-        fetchRigList(),
+        fetchRigList(dataBranchId),
         backendGet<Array<Record<string, unknown>>>(`/cashier/products?${productQuery}`),
         backendGet<Array<Record<string, unknown>>>(`/bookings?${query}`),
         backendGet<Array<Record<string, unknown>>>(`/repair-requests?${query}`),
@@ -462,8 +480,23 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       }));
       setSelectedId((current) => (current && nextSimulators.some((item) => item.id === current) ? current : nextSimulators[0]?.id ?? null));
     } catch {
-      setAllSimulators([]);
-      setSelectedId(null);
+      // Keep the last simulator snapshot visible if a secondary dashboard endpoint fails.
+    }
+  }
+
+  async function refreshSimulatorsOnly(branches = branchList) {
+    if (!data?.user || !apiBranchId) return;
+    try {
+      const branchRows = branches.some((branch) => branch.id !== fallbackBranch.id)
+        ? []
+        : await backendGet<Array<Record<string, unknown>>>("/branches");
+      const branchSource = branchRows.length ? branchRows.map((row) => ({ id: String(row.id), name: String(row.name) })) : branches;
+      const nextSimulators = rigsToSimulators(await fetchRigList(apiBranchId), branchSource);
+      if (branchRows.length) setBranchList(branchSource);
+      setAllSimulators(nextSimulators);
+      setSelectedId((current) => (current && nextSimulators.some((item) => item.id === current) ? current : nextSimulators[0]?.id ?? null));
+    } catch {
+      // The websocket snapshot remains the source of truth until the next successful fetch.
     }
   }
 
@@ -481,6 +514,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
   }
 
   useEffect(() => {
+    if (!data?.user || !apiBranchId) return;
     void refreshBackendData();
     let cancelled = false;
     let socket: WebSocket | null = null;
@@ -512,16 +546,25 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         const wsBase = process.env.NEXT_PUBLIC_BACKEND_WS_URL ?? "ws://localhost:4000/ws/dashboard";
         const url = new URL(wsBase);
         url.searchParams.set("token", token);
-        url.searchParams.set("branch_id", effectiveBranchId);
+        url.searchParams.set("branch_id", apiBranchId);
 
         socket = new WebSocket(url);
         socket.onmessage = (event) => {
           try {
             const message = JSON.parse(event.data);
             if (message.type === "simulators_snapshot" && Array.isArray(message.data?.simulators)) {
-              const nextSimulators = rigsToSimulators(mapBackendSimulatorRows(message.data.simulators), branchList);
+              const snapshotBranches = message.data.simulators.reduce((items: Branch[], row: Record<string, unknown>) => {
+                const id = String(row.branch_id ?? "");
+                if (!id || items.some((branch) => branch.id === id)) return items;
+                items.push({ id, name: String(row.branch_name ?? id) });
+                return items;
+              }, branchList.filter((branch) => branch.id !== fallbackBranch.id));
+              const branchSource = snapshotBranches.length ? snapshotBranches : branchList;
+              const nextSimulators = rigsToSimulators(mapBackendSimulatorRows(message.data.simulators), branchSource);
+              if (snapshotBranches.length) setBranchList(snapshotBranches);
               setAllSimulators(nextSimulators);
               setSelectedId((current) => (current && nextSimulators.some((item) => item.id === current) ? current : nextSimulators[0]?.id ?? null));
+              window.setTimeout(() => void refreshSimulatorsOnly(branchSource), 250);
               return;
             }
             if (refreshEvents.has(message.type)) void refreshBackendData();
@@ -544,7 +587,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
       socket?.close();
     };
-  }, [effectiveBranchId]);
+  }, [apiBranchId]);
 
   function appendLog(action: string, simulator?: string, paymentMethod?: string) {
     setLogs((items) => [{ id: crypto.randomUUID(), time: now(), operator, action, simulator, paymentMethod }, ...items]);
@@ -562,6 +605,11 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
 
   function patchRepair(requestId: string, patch: Partial<RepairRequest>) {
     setRepairRequests((items) => items.map((item) => (item.id === requestId ? { ...item, ...patch } : item)));
+  }
+
+  function refreshAfterAction() {
+    void refreshBackendData();
+    window.setTimeout(() => void refreshSimulatorsOnly(), 300);
   }
 
   function setSelectedBranchId(id: string) {
@@ -603,7 +651,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     startSession(id, payload) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator || !visibleBranchIds.includes(simulator.branchId) || ["offline", "locked", "broken", "repair_requested", "repair_approved", "fixing", "fixed_waiting_confirmation"].includes(simulator.status)) return;
-      if (simulator.rigId) void unlockAdminRig(simulator.rigId, payload.duration).then(refreshBackendData).catch(() => undefined);
+      if (simulator.rigId) void unlockAdminRig(simulator.rigId, payload.duration).then(refreshAfterAction).catch(() => undefined);
       const method = toApiPaymentMethod(payload.paymentStatus === "paid" ? payload.paymentMethod : undefined);
       void backendPost<Record<string, unknown>>("/sessions/start", {
         simulator_id: simulator.id,
@@ -614,7 +662,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         duration_minutes: payload.duration,
         paid_amount: payload.paymentStatus === "paid" ? payload.amount : 0,
         method,
-      }).then(refreshBackendData).catch(() => undefined);
+      }).then(refreshAfterAction).catch(() => undefined);
       patchSimulator(id, {
         status: "busy",
         currentUser: payload.customerName || "Guest",
@@ -622,6 +670,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         tariff: payload.tariff,
         startedAt: now(),
         remainingMinutes: payload.duration,
+        remainingSeconds: payload.duration * 60,
         paidAmount: payload.paymentStatus === "paid" ? payload.amount : 0,
         paymentStatus: payload.paymentStatus,
       });
@@ -631,15 +680,15 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     addTime(id, minutes, amount, method) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator) return;
-      if (simulator.rigId) void unlockAdminRig(simulator.rigId, Math.max(simulator.remainingMinutes, 0) + minutes).then(refreshBackendData).catch(() => undefined);
+      if (simulator.rigId) void unlockAdminRig(simulator.rigId, Math.max(simulator.remainingMinutes, 0) + minutes).then(refreshAfterAction).catch(() => undefined);
       if (simulator.currentSessionId) {
         void backendPost<Record<string, unknown>>(`/sessions/${simulator.currentSessionId}/add-time`, {
           minutes,
           amount,
           method: toApiPaymentMethod(method),
-        }).then(refreshBackendData).catch(() => undefined);
+        }).then(refreshAfterAction).catch(() => undefined);
       }
-      patchSimulator(id, { remainingMinutes: simulator.remainingMinutes + minutes, paidAmount: simulator.paidAmount + amount, paymentStatus: "paid", status: "busy" });
+      patchSimulator(id, { remainingMinutes: simulator.remainingMinutes + minutes, remainingSeconds: (simulator.remainingSeconds ?? simulator.remainingMinutes * 60) + minutes * 60, paidAmount: simulator.paidAmount + amount, paymentStatus: "paid", status: "busy" });
       recordRevenue(amount, `added time ${simulator.name}`, simulator.branchId);
       appendLog(`added ${minutes} min to ${simulator.name}`, simulator.name, method);
     },
@@ -652,7 +701,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         session_id: simulator.currentSessionId ?? undefined,
         method: apiMethod,
         ...splitPayment(amount, apiMethod),
-      }).then(refreshBackendData).catch(() => undefined);
+      }).then(refreshAfterAction).catch(() => undefined);
       patchSimulator(id, { paidAmount: simulator.paidAmount + amount, paymentStatus: "paid", status: simulator.status === "unpaid" ? "busy" : simulator.status });
       recordRevenue(amount, `session payment ${simulator.name}`, simulator.branchId);
       appendLog(`received ${amount.toLocaleString("uz-UZ")} by ${method}`, simulator.name, method);
@@ -660,9 +709,9 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     stopSession(id, override) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator || (simulator.paymentStatus !== "paid" && !override)) return;
-      if (simulator.rigId) void lockAdminRig(simulator.rigId).then(refreshBackendData).catch(() => undefined);
-      if (simulator.currentSessionId) void backendPost<Record<string, unknown>>(`/sessions/${simulator.currentSessionId}/stop`).then(refreshBackendData).catch(() => undefined);
-      patchSimulator(id, { status: "ready_to_play", currentUser: undefined, phone: undefined, tariff: undefined, startedAt: undefined, remainingMinutes: 0, paidAmount: 0, paymentStatus: "paid", orderItems: [] });
+      if (simulator.rigId) void lockAdminRig(simulator.rigId).then(refreshAfterAction).catch(() => undefined);
+      if (simulator.currentSessionId) void backendPost<Record<string, unknown>>(`/sessions/${simulator.currentSessionId}/stop`).then(refreshAfterAction).catch(() => undefined);
+      patchSimulator(id, { status: "ready_to_play", currentUser: undefined, phone: undefined, tariff: undefined, startedAt: undefined, remainingMinutes: 0, remainingSeconds: 0, paidAmount: 0, paymentStatus: "paid", orderItems: [] });
       appendLog(`stopped session on ${simulator.name}`, simulator.name);
     },
     toggleLock(id) {

@@ -12,34 +12,49 @@ import { StartSessionDialog } from "@/components/simulator/start-session-dialog"
 import { StopSessionDialog } from "@/components/simulator/stop-session-dialog";
 import { SimulatorCard } from "@/components/simulator/simulator-card";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
-import { minutes } from "@/lib/format";
+import { backendPatch } from "@/server/api";
+import { seconds } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { Simulator, SimulatorStatus } from "@/types/simulator";
+import { Simulator, SimulatorMapPosition, SimulatorStatus } from "@/types/simulator";
 
 const filters = ["All", "Standard", "VIP", "Ready", "Busy", "Reserved", "Unpaid", "Broken", "Repair", "Offline", "Locked"];
-const mapColumns = 16;
-const mapRows = 9;
+const mapColumns = 24;
+const mapRows = 7;
 
-type MapPosition = { col: number; row: number; colSpan?: number; rowSpan?: number };
+type MapPosition = SimulatorMapPosition;
 
 const facilities = [
-  { key: "cashier", label: "Kassa", icon: FiCreditCard, position: { col: 8, row: 6 } },
-  { key: "wc", label: "WC", icon: FiUsers, position: { col: 8, row: 2 } },
-  { key: "shop", label: "Shop", icon: FiCoffee, position: { col: 1, row: 5 } },
+  { key: "cashier", label: "Kassa", icon: FiCreditCard, position: { col: 21, row: 6 } },
+  { key: "wc", label: "WC", icon: FiUsers, position: { col: 22, row: 6 } },
+  { key: "shop", label: "Shop", icon: FiCoffee, position: { col: 23, row: 6 } },
 ];
 
 const statusClass: Record<SimulatorStatus, string> = {
-  ready_to_play: "border-slate-600 bg-slate-800/70 text-slate-200",
-  busy: "border-emerald-400/70 bg-emerald-950/35 text-emerald-50",
-  reserved: "border-amber-400/80 bg-amber-950/30 text-amber-50",
-  unpaid: "border-red-400/80 bg-red-950/35 text-red-50",
-  broken: "border-red-500 bg-red-950/55 text-red-50",
-  repair_requested: "border-amber-400/80 bg-amber-950/35 text-amber-50",
-  repair_approved: "border-fuchsia-400/70 bg-fuchsia-950/35 text-fuchsia-50",
-  fixing: "border-sky-400/70 bg-sky-950/35 text-sky-50",
-  fixed_waiting_confirmation: "border-lime-400/80 bg-lime-950/30 text-lime-50",
-  offline: "border-slate-700 bg-slate-950/80 text-slate-500 opacity-70",
-  locked: "border-slate-600 bg-slate-950/75 text-slate-400 opacity-80",
+  ready_to_play: "border-sky-400/70 bg-slate-900 text-slate-100 shadow-sky-950/40",
+  busy: "border-emerald-400/70 bg-emerald-950/40 text-emerald-50 shadow-emerald-950/30",
+  reserved: "border-amber-400/75 bg-amber-950/35 text-amber-50 shadow-amber-950/30",
+  unpaid: "border-red-400/75 bg-red-950/40 text-red-50 shadow-red-950/30",
+  broken: "border-red-500 bg-red-950/55 text-red-50 shadow-red-950/30",
+  repair_requested: "border-amber-400/75 bg-amber-950/35 text-amber-50 shadow-amber-950/30",
+  repair_approved: "border-fuchsia-400/70 bg-fuchsia-950/40 text-fuchsia-50 shadow-fuchsia-950/30",
+  fixing: "border-sky-400/70 bg-sky-950/40 text-sky-50 shadow-sky-950/30",
+  fixed_waiting_confirmation: "border-lime-400/75 bg-lime-950/35 text-lime-50 shadow-lime-950/30",
+  offline: "border-slate-700 bg-slate-950 text-slate-400 shadow-black/20",
+  locked: "border-slate-600 bg-slate-950/90 text-slate-400 shadow-black/20",
+};
+
+const statusDotClass: Record<SimulatorStatus, string> = {
+  ready_to_play: "bg-sky-300",
+  busy: "bg-emerald-300",
+  reserved: "bg-amber-300",
+  unpaid: "bg-red-300",
+  broken: "bg-red-400",
+  repair_requested: "bg-amber-300",
+  repair_approved: "bg-fuchsia-300",
+  fixing: "bg-sky-300",
+  fixed_waiting_confirmation: "bg-lime-300",
+  offline: "bg-slate-500",
+  locked: "bg-slate-400",
 };
 
 const statusLabels: Record<SimulatorStatus, string> = {
@@ -60,32 +75,65 @@ function mapTypeLabel(simulator: Simulator) {
   return simulator.zone === "Standard" ? "LOGITECH" : "MOZA VIP";
 }
 
-function Tile({ simulator, selected, onClick }: { simulator: Simulator; selected: boolean; onClick: () => void }) {
+function defaultMapPosition(simulator: Simulator): MapPosition {
   const number = Number(simulator.name.match(/\d+/)?.[0] ?? 1);
-  const position: MapPosition = simulator.zone === "Standard"
-    ? { col: ((number - 1) % 8) + 1, row: Math.floor((number - 1) / 8) + 1 }
-    : { col: 12 + number, row: 1 };
+  const vipPositions: MapPosition[] = [
+    { floor: "1", col: 2, row: 1, colSpan: 2 },
+    { floor: "1", col: 5, row: 1, colSpan: 2 },
+    { floor: "1", col: 2, row: 5, colSpan: 2 },
+    { floor: "1", col: 5, row: 5, colSpan: 2 },
+  ];
+  const standardPositions: MapPosition[] = [
+    { floor: "0", col: 9, row: 1, colSpan: 2 },
+    { floor: "0", col: 11, row: 1, colSpan: 2 },
+    { floor: "0", col: 13, row: 1, colSpan: 2 },
+    { floor: "0", col: 15, row: 1, colSpan: 2 },
+    { floor: "0", col: 17, row: 1, colSpan: 2 },
+    { floor: "0", col: 19, row: 1, colSpan: 2 },
+    { floor: "0", col: 21, row: 1, colSpan: 2 },
+    { floor: "0", col: 23, row: 1, colSpan: 2 },
+    { floor: "0", col: 9, row: 5, colSpan: 2 },
+    { floor: "0", col: 11, row: 5, colSpan: 2 },
+    { floor: "0", col: 13, row: 5, colSpan: 2 },
+    { floor: "0", col: 15, row: 5, colSpan: 2 },
+  ];
+  const fallbackPosition = simulator.zone === "Standard"
+    ? { floor: "0", col: 9 + (((number - 1) % 8) * 2), row: number <= 8 ? 1 : 5, colSpan: 2 }
+    : { floor: "1", col: 2 + (((number - 1) % 2) * 3), row: number <= 2 ? 1 : 5, colSpan: 2 };
+  return simulator.zone === "Standard"
+    ? standardPositions[number - 1] ?? fallbackPosition
+    : vipPositions[number - 1] ?? fallbackPosition;
+}
+
+function Tile({ simulator, position, selected, editing, onClick }: { simulator: Simulator; position: MapPosition; selected: boolean; editing: boolean; onClick: () => void }) {
+  const detail = simulator.remainingSeconds && simulator.remainingSeconds > 0
+    ? seconds(simulator.remainingSeconds)
+    : simulator.currentUser ?? (simulator.status === "ready_to_play" ? "Ready" : simulator.deviceId);
 
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "relative z-10 flex min-h-[74px] flex-col justify-between rounded-lg border p-2 text-left shadow-lg shadow-black/20 transition hover:-translate-y-0.5 hover:border-sky-300 hover:ring-2 hover:ring-sky-500/20",
+        "relative z-20 flex h-full min-h-0 min-w-0 flex-col justify-between overflow-hidden rounded-xl border p-3 text-left shadow-lg transition hover:-translate-y-0.5 hover:border-sky-300 hover:ring-2 hover:ring-sky-500/20",
         statusClass[simulator.status],
         selected && "border-sky-300 ring-2 ring-sky-400",
+        editing && selected && "ring-4 ring-sky-400/40",
       )}
       style={{ gridColumn: `${position.col} / span ${position.colSpan ?? 1}`, gridRow: `${position.row} / span ${position.rowSpan ?? 1}` }}
     >
       <div className="min-w-0">
-        <div className="flex items-start justify-between gap-1">
-          <span className="truncate text-[10px] font-bold uppercase tracking-wide text-slate-400">{mapTypeLabel(simulator)}</span>
-          <span className="shrink-0 rounded-full bg-slate-950/45 px-1.5 py-0.5 text-[10px] font-bold">{statusLabels[simulator.status]}</span>
-        </div>
-        <div className="mt-1 truncate text-base font-black text-white">{simulator.name}</div>
+        <div className="truncate text-[10px] font-bold uppercase text-slate-500">{mapTypeLabel(simulator)}</div>
+        <div className="mt-2 truncate text-[15px] font-black leading-5 text-slate-100">{simulator.name}</div>
       </div>
-      <div className="truncate text-[11px] font-semibold text-slate-300">
-        {simulator.remainingMinutes > 0 ? minutes(simulator.remainingMinutes) : simulator.currentUser ?? "Ready"}
+      <div className="mt-2 min-w-0 border-t border-white/10 pt-2">
+        <div className="space-y-1">
+          <span className="flex min-w-0 items-center gap-1 text-xs font-black text-slate-100">
+            <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", statusDotClass[simulator.status])} />
+            <span className="truncate">{statusLabels[simulator.status]}</span>
+          </span>
+          <span className="block truncate text-[11px] font-semibold text-slate-400">{detail}</span>
+        </div>
       </div>
     </button>
   );
@@ -95,6 +143,9 @@ export function SimulatorMap() {
   const { branches, selectedBranchId, simulators, selectedId, selected, setSelectedId } = useDashboardStore();
   const [filter, setFilter] = useState("All");
   const [query, setQuery] = useState("");
+  const [editingLayout, setEditingLayout] = useState(false);
+  const [layoutDraft, setLayoutDraft] = useState<Record<string, MapPosition>>({});
+  const [savingLayout, setSavingLayout] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetAction, setSheetAction] = useState<"start" | "addTime" | "payment" | "stop" | null>(null);
 
@@ -115,10 +166,44 @@ export function SimulatorMap() {
   }), [filter, query, simulators]);
 
   const visibleIds = useMemo(() => new Set(visible.map((item) => item.id)), [visible]);
+  const selectedLayoutSimulator = useMemo(() => simulators.find((item) => item.id === selectedId) ?? visible[0], [selectedId, simulators, visible]);
+
+  function positionFor(item: Simulator) {
+    return layoutDraft[item.id] ?? item.mapPosition ?? defaultMapPosition(item);
+  }
 
   function openCard(item: Simulator) {
+    if (editingLayout) {
+      setSelectedId(item.id);
+      return;
+    }
     setSelectedId(item.id);
     setSheetOpen(true);
+  }
+
+  function moveSelectedTo(col: number, row: number) {
+    if (!editingLayout || !selectedLayoutSimulator) return;
+    const current = positionFor(selectedLayoutSimulator);
+    const colSpan = current.colSpan ?? 2;
+    const rowSpan = current.rowSpan ?? 1;
+    const safeCol = Math.min(Math.max(1, col), mapColumns - colSpan + 1);
+    const floor = safeCol <= 7 ? "1" : "0";
+    setSelectedId(selectedLayoutSimulator.id);
+    setLayoutDraft((items) => ({
+      ...items,
+      [selectedLayoutSimulator.id]: { ...current, floor, col: safeCol, row, colSpan, rowSpan },
+    }));
+  }
+
+  async function saveLayout() {
+    setSavingLayout(true);
+    try {
+      await Promise.all(simulators.map((item) => backendPatch(`/simulators/${item.id}/map-position`, { map_position: positionFor(item) })));
+      setLayoutDraft({});
+      setEditingLayout(false);
+    } finally {
+      setSavingLayout(false);
+    }
   }
 
   const dialogs = (
@@ -171,19 +256,66 @@ export function SimulatorMap() {
               <Badge variant="muted">{simulators.filter((item) => item.status === "ready_to_play").length} ready</Badge>
               <Badge variant="warning">{simulators.filter((item) => item.status === "reserved").length} bron</Badge>
               <span className="ml-auto text-xs font-semibold text-slate-500">{visible.length} / {simulators.length} shown</span>
+              <Button className="ml-2" size="sm" variant={editingLayout ? "default" : "secondary"} disabled={!simulators.length} onClick={() => {
+                setEditingLayout((value) => !value);
+                setSelectedId(selectedId ?? visible[0]?.id ?? null);
+              }}>
+                {editingLayout ? "Editing layout" : "Edit layout"}
+              </Button>
+              <Button className="ml-2" size="sm" variant="outline" disabled={savingLayout || !simulators.length} onClick={() => void saveLayout()}>
+                {savingLayout ? "Saving..." : "Save layout"}
+              </Button>
             </div>
+            {editingLayout ? (
+              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/65 px-3 py-2">
+                <Badge variant="muted">Selected</Badge>
+                <span className="text-sm font-bold text-slate-100">{selectedLayoutSimulator?.name ?? "None"}</span>
+                <span className="text-xs font-semibold text-slate-500">click any map cell to move</span>
+              </div>
+            ) : null}
 
             <div
-              className="operator-grid relative grid min-w-[1320px] gap-1.5 rounded-xl border border-slate-800/80 bg-[#080d18] p-2"
+              className="operator-grid relative grid min-w-[1580px] gap-2 rounded-xl border border-slate-800/80 bg-[#080d18] p-3 shadow-inner shadow-black/30"
               style={{
-                gridTemplateColumns: `repeat(${mapColumns}, minmax(72px, 1fr))`,
-                gridTemplateRows: `repeat(${mapRows}, 76px)`,
+                gridTemplateColumns: `repeat(${mapColumns}, minmax(58px, 1fr))`,
+                gridTemplateRows: `repeat(${mapRows}, 112px)`,
+                backgroundImage: "radial-gradient(circle, rgba(148,163,184,0.16) 1px, transparent 1px)",
+                backgroundSize: "28px 28px",
               }}
             >
+              <div
+                className="pointer-events-none z-0 flex items-center justify-center rounded-[30px] border border-slate-700/80 bg-slate-900/80 text-sm font-black uppercase text-slate-500 shadow-xl shadow-black/20"
+                style={{ gridColumn: "1 / span 7", gridRow: "1 / span 7" }}
+              >
+                1 floor
+              </div>
+              <div
+                className="pointer-events-none z-0 flex items-center justify-center rounded-[30px] border border-slate-700/80 bg-slate-900/80 text-sm font-black uppercase text-slate-500 shadow-xl shadow-black/20"
+                style={{ gridColumn: "8 / span 17", gridRow: "1 / span 7" }}
+              >
+                0 floor
+              </div>
+              <div
+                className="pointer-events-none z-20 flex items-center justify-center gap-2 rounded-xl border border-slate-700/60 bg-slate-950/55 px-3 text-xs font-bold text-slate-300"
+                style={{ gridColumn: "22 / span 3", gridRow: "3 / span 2" }}
+              >
+                <div className="grid h-full w-full grid-cols-4 gap-2">
+                  {[0, 1, 2, 3].map((item) => <span key={item} className="rounded-sm bg-slate-600/80 shadow-inner shadow-black/30" />)}
+                </div>
+                <span className="absolute rounded-full bg-slate-950/80 px-2 py-1">Entrance</span>
+              </div>
+
               {Array.from({ length: mapColumns * mapRows }).map((_, index) => (
-                <div
+                <button
+                  type="button"
                   key={`empty-${index}`}
-                  className="rounded-lg border border-dashed border-slate-800/80 bg-slate-900/25"
+                  aria-label={`Move selected simulator to column ${(index % mapColumns) + 1}, row ${Math.floor(index / mapColumns) + 1}`}
+                  disabled={!editingLayout}
+                  onClick={() => moveSelectedTo((index % mapColumns) + 1, Math.floor(index / mapColumns) + 1)}
+                  className={cn(
+                    "z-10 rounded-xl border border-dashed border-slate-800/70 bg-slate-950/10 transition",
+                    editingLayout && "cursor-crosshair hover:border-sky-400/60 hover:bg-sky-500/10",
+                  )}
                   style={{ gridColumn: (index % mapColumns) + 1, gridRow: Math.floor(index / mapColumns) + 1 }}
                 />
               ))}
@@ -193,7 +325,7 @@ export function SimulatorMap() {
                 return (
                   <div
                     key={facility.key}
-                    className="z-10 flex flex-col items-center justify-center rounded-lg border border-sky-500/50 bg-sky-500/25 text-xs font-bold text-sky-100 shadow-lg shadow-black/20"
+                    className="z-20 flex flex-col items-center justify-center rounded-xl border border-slate-700 bg-slate-800/85 text-xs font-bold text-slate-200 shadow-lg shadow-black/20"
                     style={{ gridColumn: facility.position.col, gridRow: facility.position.row }}
                   >
                     <Icon className="mb-1 text-lg" />
@@ -203,7 +335,7 @@ export function SimulatorMap() {
               })}
 
               {simulators.map((item) => (
-                visibleIds.has(item.id) ? <Tile key={item.id} simulator={item} selected={selectedId === item.id} onClick={() => openCard(item)} /> : null
+                visibleIds.has(item.id) ? <Tile key={item.id} simulator={item} position={positionFor(item)} selected={selectedId === item.id} editing={editingLayout} onClick={() => openCard(item)} /> : null
               ))}
             </div>
           </div>

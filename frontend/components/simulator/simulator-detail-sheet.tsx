@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { money, minutes } from "@/lib/format";
+import { money, seconds } from "@/lib/format";
 import { backendDateTime } from "@/lib/datetime";
 import { Simulator } from "@/types/simulator";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
@@ -63,7 +63,7 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
           <Field label="Current user" value={simulator.currentUser ?? "No session"} />
           <Field label="Tariff" value={simulator.tariff ?? "Not selected"} />
           <Field label="Started" value={simulator.startedAt ?? "-"} />
-          <Field label="Remaining" value={minutes(simulator.remainingMinutes)} />
+          <Field label="Remaining" value={seconds(simulator.remainingSeconds ?? simulator.remainingMinutes * 60)} />
           <Field label="Paid" value={money(simulator.paidAmount)} />
           <Field label="Payment" value={simulator.paymentStatus} />
           <Field label="IP address" value={simulator.ipAddress} />

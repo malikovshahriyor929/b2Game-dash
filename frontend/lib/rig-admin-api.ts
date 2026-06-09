@@ -1,4 +1,5 @@
 import { backendGet, backendPatch, backendPost } from "@/server/api";
+import { SimulatorMapPosition } from "@/types/simulator";
 
 export type RigRecord = {
   rig_id: string;
@@ -28,9 +29,21 @@ export type RigRecord = {
   active_paid_amount?: number | string | null;
   active_payment_mode?: string | null;
   active_tariff_name?: string | null;
+  map_position?: SimulatorMapPosition | null;
   first_seen: string | null;
   last_seen: string | null;
 };
+
+function mapPosition(value: unknown): SimulatorMapPosition | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const item = value as Record<string, unknown>;
+  const col = Number(item.col);
+  const row = Number(item.row);
+  const colSpan = Number(item.colSpan ?? 1);
+  const rowSpan = Number(item.rowSpan ?? 1);
+  if (![col, row, colSpan, rowSpan].every(Number.isFinite)) return null;
+  return { floor: item.floor == null ? undefined : String(item.floor), col, row, colSpan, rowSpan };
+}
 
 export function mapBackendSimulatorRows(rows: Array<Record<string, any>>): RigRecord[] {
   return rows.map((item) => ({
@@ -61,13 +74,15 @@ export function mapBackendSimulatorRows(rows: Array<Record<string, any>>): RigRe
     active_paid_amount: item.active_paid_amount ?? null,
     active_payment_mode: item.active_payment_mode ?? null,
     active_tariff_name: item.active_tariff_name ?? null,
+    map_position: mapPosition(item.map_position),
     first_seen: item.first_seen ?? null,
     last_seen: item.last_seen_at ?? item.last_seen ?? null,
   }));
 }
 
-export function listRigs() {
-  return backendGet<Array<Record<string, any>>>("/simulators/map").then(mapBackendSimulatorRows);
+export function listRigs(branchId?: string) {
+  const query = branchId ? `?branch_id=${encodeURIComponent(branchId)}` : "";
+  return backendGet<Array<Record<string, any>>>(`/simulators/map${query}`).then(mapBackendSimulatorRows);
 }
 
 export function getLatestRigVersion() {

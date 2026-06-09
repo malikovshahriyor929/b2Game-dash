@@ -25,7 +25,9 @@ async function getBackendToken() {
 
 async function proxy(request: NextRequest, context: RouteContext) {
   const { path } = await context.params;
-  const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.text();
+  const rawBody = request.method === "GET" || request.method === "HEAD" ? "" : await request.text();
+  const body = rawBody.length ? rawBody : undefined;
+  const contentType = request.headers.get("content-type");
 
   try {
     const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || await getBackendToken();
@@ -33,7 +35,7 @@ async function proxy(request: NextRequest, context: RouteContext) {
       url: `/${path.join("/")}${request.nextUrl.search}`,
       method: request.method,
       headers: {
-        "Content-Type": request.headers.get("content-type") ?? "application/json",
+        ...(body ? { "Content-Type": contentType ?? "application/json" } : {}),
         Authorization: `Bearer ${token}`,
       },
       data: body,

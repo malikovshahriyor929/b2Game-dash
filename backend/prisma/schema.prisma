@@ -8,15 +8,15 @@ datasource db {
 }
 
 model User {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name          String
-  email         String   @unique
-  passwordHash  String   @map("password_hash")
-  role          String
-  branchId      String?  @map("branch_id") @db.Uuid
-  isActive      Boolean  @default(true) @map("is_active")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         String
+  branchId     String?  @map("branch_id") @db.Uuid
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("users")
 }
@@ -47,6 +47,7 @@ model Simulator {
   wsRigId          String?   @map("ws_rig_id")
   isOnline         Boolean   @default(false) @map("is_online")
   currentSessionId String?   @map("current_session_id") @db.Uuid
+  mapPosition      Json?     @map("map_position")
   lastSeenAt       DateTime? @map("last_seen_at")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
@@ -92,52 +93,52 @@ model Customer {
 }
 
 model Session {
-  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  branchId        String    @map("branch_id") @db.Uuid
-  simulatorId     String    @map("simulator_id") @db.Uuid
-  customerId      String?   @map("customer_id") @db.Uuid
-  customerName    String?   @map("customer_name")
-  phone           String?
-  tariffId        String?   @map("tariff_id") @db.Uuid
-  status          String
-  paymentMode     String    @map("payment_mode")
-  startedAt       DateTime  @default(now()) @map("started_at")
-  endedAt         DateTime? @map("ended_at")
-  durationMinutes Int       @map("duration_minutes")
-  addedMinutes    Int       @default(0) @map("added_minutes")
-  remainingSeconds Int      @default(0) @map("remaining_seconds")
-  sessionAmount   Decimal   @default(0) @map("session_amount")
-  addedTimeAmount Decimal   @default(0) @map("added_time_amount")
-  shopAmount      Decimal   @default(0) @map("shop_amount")
-  totalAmount     Decimal   @default(0) @map("total_amount")
-  paidAmount      Decimal   @default(0) @map("paid_amount")
-  debtAmount      Decimal   @default(0) @map("debt_amount")
-  createdBy       String    @map("created_by") @db.Uuid
-  stoppedBy       String?   @map("stopped_by") @db.Uuid
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  branchId         String    @map("branch_id") @db.Uuid
+  simulatorId      String    @map("simulator_id") @db.Uuid
+  customerId       String?   @map("customer_id") @db.Uuid
+  customerName     String?   @map("customer_name")
+  phone            String?
+  tariffId         String?   @map("tariff_id") @db.Uuid
+  status           String
+  paymentMode      String    @map("payment_mode")
+  startedAt        DateTime  @default(now()) @map("started_at")
+  endedAt          DateTime? @map("ended_at")
+  durationMinutes  Int       @map("duration_minutes")
+  addedMinutes     Int       @default(0) @map("added_minutes")
+  remainingSeconds Int       @default(0) @map("remaining_seconds")
+  sessionAmount    Decimal   @default(0) @map("session_amount")
+  addedTimeAmount  Decimal   @default(0) @map("added_time_amount")
+  shopAmount       Decimal   @default(0) @map("shop_amount")
+  totalAmount      Decimal   @default(0) @map("total_amount")
+  paidAmount       Decimal   @default(0) @map("paid_amount")
+  debtAmount       Decimal   @default(0) @map("debt_amount")
+  createdBy        String    @map("created_by") @db.Uuid
+  stoppedBy        String?   @map("stopped_by") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
 
   @@map("sessions")
 }
 
 model Payment {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  branchId      String   @map("branch_id") @db.Uuid
-  sessionId     String?  @map("session_id") @db.Uuid
-  saleId        String?  @map("sale_id") @db.Uuid
-  customerId    String?  @map("customer_id") @db.Uuid
-  amount        Decimal
-  method        String
-  cashAmount    Decimal  @default(0) @map("cash_amount")
-  cardAmount    Decimal  @default(0) @map("card_amount")
-  qrAmount      Decimal  @default(0) @map("qr_amount")
-  balanceAmount Decimal  @default(0) @map("balance_amount")
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  branchId       String   @map("branch_id") @db.Uuid
+  sessionId      String?  @map("session_id") @db.Uuid
+  saleId         String?  @map("sale_id") @db.Uuid
+  customerId     String?  @map("customer_id") @db.Uuid
+  amount         Decimal
+  method         String
+  cashAmount     Decimal  @default(0) @map("cash_amount")
+  cardAmount     Decimal  @default(0) @map("card_amount")
+  qrAmount       Decimal  @default(0) @map("qr_amount")
+  balanceAmount  Decimal  @default(0) @map("balance_amount")
   receivedAmount Decimal? @map("received_amount")
   changeAmount   Decimal  @default(0) @map("change_amount")
-  status        String   @default("paid")
-  paidByAdminId String   @map("paid_by_admin_id") @db.Uuid
-  paidAt        DateTime @default(now()) @map("paid_at")
-  createdAt     DateTime @default(now()) @map("created_at")
+  status         String   @default("paid")
+  paidByAdminId  String   @map("paid_by_admin_id") @db.Uuid
+  paidAt         DateTime @default(now()) @map("paid_at")
+  createdAt      DateTime @default(now()) @map("created_at")
 
   @@map("payments")
 }
@@ -241,27 +242,27 @@ model Booking {
 }
 
 model RepairRequest {
-  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  branchId         String    @map("branch_id") @db.Uuid
-  simulatorId      String    @map("simulator_id") @db.Uuid
-  requestedBy      String    @map("requested_by") @db.Uuid
-  approvedBy       String?   @map("approved_by") @db.Uuid
-  confirmedBy      String?   @map("confirmed_by") @db.Uuid
-  title            String
-  description      String
-  errorType        String    @map("error_type")
-  priority         String
-  status           String    @default("requested")
-  adminNote        String?   @map("admin_note")
-  superAdminNote   String?   @map("super_admin_note")
-  requestedAt      DateTime  @default(now()) @map("requested_at")
-  approvedAt       DateTime? @map("approved_at")
-  fixingStartedAt  DateTime? @map("fixing_started_at")
-  markedFixedAt    DateTime? @map("marked_fixed_at")
-  confirmedAt      DateTime? @map("confirmed_at")
-  revenueImpact    Decimal   @default(0) @map("revenue_impact")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  branchId        String    @map("branch_id") @db.Uuid
+  simulatorId     String    @map("simulator_id") @db.Uuid
+  requestedBy     String    @map("requested_by") @db.Uuid
+  approvedBy      String?   @map("approved_by") @db.Uuid
+  confirmedBy     String?   @map("confirmed_by") @db.Uuid
+  title           String
+  description     String
+  errorType       String    @map("error_type")
+  priority        String
+  status          String    @default("requested")
+  adminNote       String?   @map("admin_note")
+  superAdminNote  String?   @map("super_admin_note")
+  requestedAt     DateTime  @default(now()) @map("requested_at")
+  approvedAt      DateTime? @map("approved_at")
+  fixingStartedAt DateTime? @map("fixing_started_at")
+  markedFixedAt   DateTime? @map("marked_fixed_at")
+  confirmedAt     DateTime? @map("confirmed_at")
+  revenueImpact   Decimal   @default(0) @map("revenue_impact")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
 
   @@map("repair_requests")
 }

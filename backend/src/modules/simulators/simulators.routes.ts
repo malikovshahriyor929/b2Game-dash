@@ -5,6 +5,7 @@ simulatorsRoutes.get("/map", c.map);
 simulatorsRoutes.get("/", c.list);
 simulatorsRoutes.post("/push-update", c.pushUpdate);
 simulatorsRoutes.get("/:id", c.get);
+simulatorsRoutes.patch("/:id/map-position", c.updateMapPosition);
 simulatorsRoutes.patch("/:id/status", c.patchStatus);
 simulatorsRoutes.post("/:id/notify", c.notify);
 simulatorsRoutes.post("/:id/lock", c.lock);

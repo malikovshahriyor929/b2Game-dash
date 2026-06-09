@@ -5,6 +5,7 @@ export const list = asyncHandler(async (req, res) => ok(res, await service.list(
 export const map = asyncHandler(async (req, res) => ok(res, await service.map(req)));
 export const get = asyncHandler(async (req, res) => ok(res, await service.get(req)));
 export const patchStatus = asyncHandler(async (req, res) => ok(res, await service.patchStatus(req)));
+export const updateMapPosition = asyncHandler(async (req, res) => ok(res, await service.updateMapPosition(req)));
 export const notify = asyncHandler(async (req, res) => ok(res, await service.notify(req)));
 export const lock = asyncHandler(async (req, res) => ok(res, await service.lock(req)));
 export const unlock = asyncHandler(async (req, res) => ok(res, await service.unlock(req)));

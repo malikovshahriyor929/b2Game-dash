@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { money, minutes } from "@/lib/format";
+import { money, seconds } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { usePaymentMethods } from "@/lib/use-payment-methods";
 import { useBackendTariffs } from "@/lib/use-backend-tariffs";
@@ -60,7 +60,7 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
       <DialogContent className="max-h-[92vh] w-[min(94vw,860px)] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle>Add time</DialogTitle>
-          <DialogDescription>{simulator?.name ?? "No simulator selected"} - current remaining {minutes(simulator?.remainingMinutes ?? 0)}</DialogDescription>
+          <DialogDescription>{simulator?.name ?? "No simulator selected"} - current remaining {seconds(simulator?.remainingSeconds ?? (simulator?.remainingMinutes ?? 0) * 60)}</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-3 sm:grid-cols-2">
