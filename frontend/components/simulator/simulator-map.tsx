@@ -19,14 +19,14 @@ import { Simulator, SimulatorMapPosition, SimulatorStatus } from "@/types/simula
 
 const filters = ["All", "Standard", "VIP", "Ready", "Busy", "Reserved", "Unpaid", "Broken", "Repair", "Offline", "Locked"];
 const mapColumns = 24;
-const mapRows = 7;
+const mapRows = 5;
 
 type MapPosition = SimulatorMapPosition;
 
 const facilities = [
-  { key: "cashier", label: "Kassa", icon: FiCreditCard, position: { col: 21, row: 6 } },
-  { key: "wc", label: "WC", icon: FiUsers, position: { col: 22, row: 6 } },
-  { key: "shop", label: "Shop", icon: FiCoffee, position: { col: 23, row: 6 } },
+  { key: "cashier", label: "Kassa", icon: FiCreditCard, position: { col: 21, row: 5 } },
+  { key: "wc", label: "WC", icon: FiUsers, position: { col: 22, row: 5 } },
+  { key: "shop", label: "Shop", icon: FiCoffee, position: { col: 23, row: 5 } },
 ];
 
 const statusClass: Record<SimulatorStatus, string> = {
@@ -78,28 +78,32 @@ function mapTypeLabel(simulator: Simulator) {
 function defaultMapPosition(simulator: Simulator): MapPosition {
   const number = Number(simulator.name.match(/\d+/)?.[0] ?? 1);
   const vipPositions: MapPosition[] = [
-    { floor: "1", col: 2, row: 1, colSpan: 2 },
-    { floor: "1", col: 5, row: 1, colSpan: 2 },
-    { floor: "1", col: 2, row: 5, colSpan: 2 },
-    { floor: "1", col: 5, row: 5, colSpan: 2 },
+    { floor: "2", col: 2, row: 1, colSpan: 2 },
+    { floor: "2", col: 5, row: 1, colSpan: 2 },
+    { floor: "2", col: 2, row: 5, colSpan: 2 },
+    { floor: "2", col: 5, row: 5, colSpan: 2 },
   ];
   const standardPositions: MapPosition[] = [
-    { floor: "0", col: 9, row: 1, colSpan: 2 },
-    { floor: "0", col: 11, row: 1, colSpan: 2 },
-    { floor: "0", col: 13, row: 1, colSpan: 2 },
-    { floor: "0", col: 15, row: 1, colSpan: 2 },
-    { floor: "0", col: 17, row: 1, colSpan: 2 },
-    { floor: "0", col: 19, row: 1, colSpan: 2 },
-    { floor: "0", col: 21, row: 1, colSpan: 2 },
-    { floor: "0", col: 23, row: 1, colSpan: 2 },
-    { floor: "0", col: 9, row: 5, colSpan: 2 },
-    { floor: "0", col: 11, row: 5, colSpan: 2 },
-    { floor: "0", col: 13, row: 5, colSpan: 2 },
-    { floor: "0", col: 15, row: 5, colSpan: 2 },
+    { floor: "1", col: 9, row: 1, colSpan: 2 },
+    { floor: "1", col: 11, row: 1, colSpan: 2 },
+    { floor: "1", col: 13, row: 1, colSpan: 2 },
+    { floor: "1", col: 15, row: 1, colSpan: 2 },
+    { floor: "1", col: 17, row: 1, colSpan: 2 },
+    { floor: "1", col: 19, row: 1, colSpan: 2 },
+    { floor: "1", col: 21, row: 1, colSpan: 2 },
+    { floor: "1", col: 23, row: 1, colSpan: 2 },
+    { floor: "1", col: 9, row: 5, colSpan: 2 },
+    { floor: "1", col: 11, row: 5, colSpan: 2 },
+    { floor: "1", col: 13, row: 5, colSpan: 2 },
+    { floor: "1", col: 15, row: 5, colSpan: 2 },
+    { floor: "1", col: 17, row: 5, colSpan: 2 },
+    { floor: "1", col: 19, row: 5, colSpan: 2 },
+    { floor: "1", col: 21, row: 5, colSpan: 2 },
+    { floor: "1", col: 23, row: 5, colSpan: 2 },
   ];
   const fallbackPosition = simulator.zone === "Standard"
-    ? { floor: "0", col: 9 + (((number - 1) % 8) * 2), row: number <= 8 ? 1 : 5, colSpan: 2 }
-    : { floor: "1", col: 2 + (((number - 1) % 2) * 3), row: number <= 2 ? 1 : 5, colSpan: 2 };
+    ? { floor: "1", col: 9 + (((number - 1) % 8) * 2), row: number <= 8 ? 1 : 5, colSpan: 2 }
+    : { floor: "2", col: 2 + (((number - 1) % 2) * 3), row: number <= 2 ? 1 : 5, colSpan: 2 };
   return simulator.zone === "Standard"
     ? standardPositions[number - 1] ?? fallbackPosition
     : vipPositions[number - 1] ?? fallbackPosition;
@@ -169,7 +173,9 @@ export function SimulatorMap() {
   const selectedLayoutSimulator = useMemo(() => simulators.find((item) => item.id === selectedId) ?? visible[0], [selectedId, simulators, visible]);
 
   function positionFor(item: Simulator) {
-    return layoutDraft[item.id] ?? item.mapPosition ?? defaultMapPosition(item);
+    const position = layoutDraft[item.id] ?? item.mapPosition ?? defaultMapPosition(item);
+    const floor = position.floor === "0" ? "1" : position.floor === "1" && position.col <= 7 ? "2" : position.floor;
+    return { ...position, floor };
   }
 
   function openCard(item: Simulator) {
@@ -187,7 +193,7 @@ export function SimulatorMap() {
     const colSpan = current.colSpan ?? 2;
     const rowSpan = current.rowSpan ?? 1;
     const safeCol = Math.min(Math.max(1, col), mapColumns - colSpan + 1);
-    const floor = safeCol <= 7 ? "1" : "0";
+    const floor = safeCol <= 7 ? "2" : "1";
     setSelectedId(selectedLayoutSimulator.id);
     setLayoutDraft((items) => ({
       ...items,
@@ -204,6 +210,12 @@ export function SimulatorMap() {
     } finally {
       setSavingLayout(false);
     }
+  }
+
+  function resetDefaultLayout() {
+    setEditingLayout(true);
+    setLayoutDraft(Object.fromEntries(simulators.map((item) => [item.id, defaultMapPosition(item)])));
+    setSelectedId(selectedId ?? visible[0]?.id ?? null);
   }
 
   const dialogs = (
@@ -262,6 +274,9 @@ export function SimulatorMap() {
               }}>
                 {editingLayout ? "Editing layout" : "Edit layout"}
               </Button>
+              <Button size="sm" variant="secondary" disabled={!simulators.length || savingLayout} onClick={resetDefaultLayout}>
+                Reset default
+              </Button>
               <Button className="ml-2" size="sm" variant="outline" disabled={savingLayout || !simulators.length} onClick={() => void saveLayout()}>
                 {savingLayout ? "Saving..." : "Save layout"}
               </Button>
@@ -285,15 +300,15 @@ export function SimulatorMap() {
             >
               <div
                 className="pointer-events-none z-0 flex items-center justify-center rounded-[30px] border border-slate-700/80 bg-slate-900/80 text-sm font-black uppercase text-slate-500 shadow-xl shadow-black/20"
-                style={{ gridColumn: "1 / span 7", gridRow: "1 / span 7" }}
+                style={{ gridColumn: "1 / span 7", gridRow: "1 / span 5" }}
               >
-                1 floor
+                2 floor
               </div>
               <div
                 className="pointer-events-none z-0 flex items-center justify-center rounded-[30px] border border-slate-700/80 bg-slate-900/80 text-sm font-black uppercase text-slate-500 shadow-xl shadow-black/20"
-                style={{ gridColumn: "8 / span 17", gridRow: "1 / span 7" }}
+                style={{ gridColumn: "8 / span 17", gridRow: "1 / span 5" }}
               >
-                0 floor
+                1 floor
               </div>
               <div
                 className="pointer-events-none z-20 flex items-center justify-center gap-2 rounded-xl border border-slate-700/60 bg-slate-950/55 px-3 text-xs font-bold text-slate-300"
