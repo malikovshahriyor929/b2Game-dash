@@ -1,3 +1,5 @@
+import { backendGet, backendPatch, backendPost } from "@/server/api";
+
 export type RigRecord = {
   rig_id: string;
   simulator_id?: string;
@@ -48,28 +50,8 @@ export function mapBackendSimulatorRows(rows: Array<Record<string, any>>): RigRe
   }));
 }
 
-async function requestRigAdmin<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api/backend${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Rig admin request failed: ${response.status}`);
-  }
-
-  return response.json() as Promise<T>;
-}
-
 export function listRigs() {
-  return requestRigAdmin<{ success: boolean; data: Array<Record<string, any>> }>("/simulators/map").then((response) =>
-    mapBackendSimulatorRows(response.data),
-  );
+  return backendGet<Array<Record<string, any>>>("/simulators/map").then(mapBackendSimulatorRows);
 }
 
 export function getLatestRigVersion() {
@@ -77,36 +59,21 @@ export function getLatestRigVersion() {
 }
 
 export function notifyRig(rigId: string, message: string) {
-  return requestRigAdmin<{ success: true }>(`/simulators/${encodeURIComponent(rigId)}/notify`, {
-    method: "POST",
-    body: JSON.stringify({ message }),
-  });
+  return backendPost<unknown>(`/simulators/${encodeURIComponent(rigId)}/notify`, { message });
 }
 
 export function lockRig(rigId: string, message = "LOCKED - see staff") {
-  return requestRigAdmin<{ success: true }>(`/simulators/${encodeURIComponent(rigId)}/lock`, {
-    method: "POST",
-    body: JSON.stringify({ message }),
-  });
+  return backendPost<unknown>(`/simulators/${encodeURIComponent(rigId)}/lock`, { message });
 }
 
 export function unlockRig(rigId: string, minutes?: number) {
-  return requestRigAdmin<{ success: true; data: unknown }>(`/simulators/${encodeURIComponent(rigId)}/${minutes && minutes > 0 ? "timed-unlock" : "unlock"}`, {
-    method: "POST",
-    body: JSON.stringify(minutes && minutes > 0 ? { minutes } : {}),
-  });
+  return backendPost<unknown>(`/simulators/${encodeURIComponent(rigId)}/${minutes && minutes > 0 ? "timed-unlock" : "unlock"}`, minutes && minutes > 0 ? { minutes } : {});
 }
 
 export function pushRigUpdate(rigIds: string[]) {
-  return requestRigAdmin<{ success: true; data: unknown }>("/simulators/push-update", {
-    method: "POST",
-    body: JSON.stringify({ simulator_ids: rigIds }),
-  });
+  return backendPost<unknown>("/simulators/push-update", { simulator_ids: rigIds });
 }
 
 export function removeRig(rigId: string) {
-  return requestRigAdmin<{ success: true }>(`/simulators/${encodeURIComponent(rigId)}/status`, {
-    method: "PATCH",
-    body: JSON.stringify({ status: "offline" }),
-  });
+  return backendPatch<unknown>(`/simulators/${encodeURIComponent(rigId)}/status`, { status: "offline" });
 }

@@ -8,6 +8,8 @@ import { OrderItem, Product, BarSale } from "@/types/product";
 import { RepairErrorType, RepairPriority, RepairRequest, Simulator } from "@/types/simulator";
 import { CashTransaction, Shift } from "@/types/report";
 import { Branch } from "@/types/user";
+import { backendDate, backendDateTime, backendTime, localDate, localDateTimeWithOffset } from "@/lib/datetime";
+import { backendDelete, backendGet, backendPatch, backendPost, getBackendWsToken } from "@/server/api";
 import {
   listRigs as fetchRigList,
   lockRig as lockAdminRig,
@@ -23,7 +25,6 @@ type StartPayload = { customerName: string; phone: string; tariff: string; durat
 type PeriodFilter = "today" | "yesterday" | "week" | "month" | "year" | "custom";
 type RepairPayload = { title: string; description: string; errorType: RepairErrorType; priority: RepairPriority; note?: string };
 type RevenueEvent = { id: string; time: string; date?: string; amount: number; source: string; branchId?: string };
-type ApiResponse<T> = { success: boolean; data: T; message?: string };
 type PaymentMethod = "cash" | "card" | "qr" | "balance" | "mixed";
 type PaymentPayload = {
   cash_amount: number;
@@ -106,11 +107,11 @@ function now() {
 }
 
 function shortDate(value?: string | null) {
-  return value ? new Date(value).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+  return backendDate(value);
 }
 
 function shortTime(value?: string | null) {
-  return value ? new Date(value).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" }) : now();
+  return value ? backendTime(value) : now();
 }
 
 function numberValue(value: unknown) {
@@ -119,34 +120,7 @@ function numberValue(value: unknown) {
 }
 
 function dateTimeFromParts(date: string, time: string) {
-  return new Date(`${date}T${time || "00:00"}:00`).toISOString();
-}
-
-async function backendRequest<T>(path: string, init?: RequestInit) {
-  const response = await fetch(`/api/backend${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-    cache: "no-store",
-  });
-
-  if (!response.ok) throw new Error(await response.text());
-  const payload = (await response.json()) as ApiResponse<T>;
-  return payload.data;
-}
-
-function backendGet<T>(path: string) {
-  return backendRequest<T>(path);
-}
-
-function backendPost<T>(path: string, body: Record<string, unknown> = {}) {
-  return backendRequest<T>(path, { method: "POST", body: JSON.stringify(body) });
-}
-
-function backendPatch<T>(path: string, body: Record<string, unknown> = {}) {
-  return backendRequest<T>(path, { method: "PATCH", body: JSON.stringify(body) });
+  return localDateTimeWithOffset(date, time);
 }
 
 function toApiPaymentMethod(method?: string): PaymentMethod {
@@ -309,7 +283,7 @@ function mapRepair(row: Record<string, unknown>): RepairRequest {
     branchId: String(row.branch_id ?? ""),
     branchName: String(row.branch_name ?? ""),
     requestedBy: String(row.requested_by ?? ""),
-    requestedAt: String(row.requested_at ? new Date(String(row.requested_at)).toLocaleString("uz-UZ") : ""),
+    requestedAt: backendDateTime(String(row.requested_at ?? "")),
     title: String(row.title ?? ""),
     description: String(row.description ?? ""),
     errorType: String(row.error_type ?? "other") as RepairErrorType,
@@ -398,8 +372,8 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
   const [barSales, setBarSales] = useState<BarSale[]>([]);
   const [cashTransactions, setCashTransactions] = useState<CashTransaction[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
-  const [customStartDate, setCustomStartDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [customEndDate, setCustomEndDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [customStartDate, setCustomStartDate] = useState(() => localDate());
+  const [customEndDate, setCustomEndDate] = useState(() => localDate());
   const [revenueEvents, setRevenueEvents] = useState<RevenueEvent[]>([]);
   const [repairRequests, setRepairRequests] = useState<RepairRequest[]>([]);
   const [revenue, setRevenue] = useState(0);
@@ -520,9 +494,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
 
     async function connectDashboardSocket() {
       try {
-        const tokenResponse = await fetch("/api/backend-ws-token", { cache: "no-store" });
-        const tokenJson = await tokenResponse.json();
-        const token = tokenJson.data?.token;
+        const token = await getBackendWsToken();
         if (!token || cancelled) return;
 
         const wsBase = process.env.NEXT_PUBLIC_BACKEND_WS_URL ?? "ws://localhost:4000/ws/dashboard";
@@ -696,7 +668,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
 
       const d = new Date();
       const timeStr = d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
-      const dateStr = d.toISOString().split("T")[0];
+      const dateStr = localDate(d);
       setLockUnlockLogs((items) => [
         {
           id: crypto.randomUUID(),
@@ -908,7 +880,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     },
     deleteProduct(id) {
       const existing = inventory.find((item) => item.id === id);
-      void backendRequest<Record<string, unknown>>(`/products/${id}`, { method: "DELETE" }).then(refreshBackendData).catch(() => undefined);
+      void backendDelete<Record<string, unknown>>(`/products/${id}`).then(refreshBackendData).catch(() => undefined);
       setInventory((items) => items.filter((item) => item.id !== id));
       setOrder((items) => items.filter((item) => item.id !== id));
       if (existing) appendLog(`deleted product ${existing.name}`);
@@ -958,7 +930,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       // Record a detailed BarSale
       const d = new Date();
       const timeStr = d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
-      const dateStr = d.toISOString().split("T")[0];
+      const dateStr = localDate(d);
 
       const newSale: BarSale = {
         id: crypto.randomUUID(),
@@ -999,7 +971,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     openShift(operatorName, shiftType, startingCash) {
       const d = new Date();
       const timeStr = d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
-      const dateStr = d.toISOString().split("T")[0];
+      const dateStr = localDate(d);
       void backendPost<Record<string, unknown>>("/shifts/open", {
         branch_id: effectiveBranchId === "all" ? firstBackendBranchId : effectiveBranchId,
         starting_cash: startingCash,
@@ -1057,7 +1029,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     addCashTransaction(type, amount, source, method) {
       const d = new Date();
       const timeStr = d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
-      const dateStr = d.toISOString().split("T")[0];
+      const dateStr = localDate(d);
       const newTx: CashTransaction = {
         id: crypto.randomUUID(),
         type,

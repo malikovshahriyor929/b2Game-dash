@@ -5,7 +5,7 @@ import { FiGift } from "react-icons/fi";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/shared/page-header";
-import { backendGet } from "@/lib/backend-client";
+import { backendGet } from "@/server/api";
 
 type Promo = { id: string; name: string; status: "Active" | "Inactive" };
 

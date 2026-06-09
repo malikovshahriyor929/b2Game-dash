@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/shared/page-header";
 import { money } from "@/lib/format";
-import { backendGet, backendPost } from "@/lib/backend-client";
+import { backendGet, backendPost } from "@/server/api";
 
 type Tariff = {
   id: string;

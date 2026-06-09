@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
+import { backendServerAxios } from "@/server/api";
 
-const BACKEND_URL = process.env.BACKEND_URL ?? "http://127.0.0.1:4000";
 const BACKEND_PROXY_EMAIL = process.env.BACKEND_PROXY_EMAIL ?? "superadmin@b2game.uz";
 const BACKEND_PROXY_PASSWORD = process.env.BACKEND_PROXY_PASSWORD ?? "12345678";
 
@@ -12,26 +12,15 @@ export async function GET() {
       return NextResponse.json({ success: true, data: { token: tokenCache.token } });
     }
 
-    const response = await fetch(`${BACKEND_URL}/api/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: BACKEND_PROXY_EMAIL, password: BACKEND_PROXY_PASSWORD }),
-      cache: "no-store",
-    });
+    const response = await backendServerAxios.post("/auth/login", { email: BACKEND_PROXY_EMAIL, password: BACKEND_PROXY_PASSWORD });
 
-    if (!response.ok) {
+    if (response.status < 200 || response.status >= 300) {
       return NextResponse.json({ success: false, message: `Backend login failed: ${response.status}`, errors: [] }, { status: 502 });
     }
 
-    const text = await response.text();
-    if (!text) {
+    const json = response.data;
+    if (!json) {
       return NextResponse.json({ success: false, message: "Backend login returned an empty response", errors: [] }, { status: 502 });
-    }
-    let json: any;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      return NextResponse.json({ success: false, message: "Backend login returned a non-JSON response", errors: [] }, { status: 502 });
     }
     const token = json.data?.access_token;
     if (!token) {

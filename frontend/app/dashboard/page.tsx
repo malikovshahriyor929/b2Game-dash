@@ -7,13 +7,14 @@ import { SimulatorMap } from "@/components/simulator/simulator-map";
 import { ReportCard } from "@/components/reports/report-card";
 import { RevenueChart } from "@/components/reports/revenue-chart";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
+import { localDate } from "@/lib/datetime";
 
 export default function DashboardPage() {
   const { revenue, simulators, activeShift, shifts, barSales } = useDashboardStore();
   const { data: session } = useSession();
   const activeCount = simulators.filter((s) => ["busy", "unpaid"].includes(s.status)).length;
   const freeCount = simulators.filter((s) => s.status === "ready_to_play").length;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDate();
   const todayShifts = shifts.filter((s) => s.date === today);
   const totalShiftEarnings = todayShifts.reduce((sum, s) => sum + s.totalIncome, 0);
   const shopSales = barSales.filter((sale) => sale.date === today).reduce((sum, sale) => sum + sale.totalAmount, 0);

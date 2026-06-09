@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const RIG_ADMIN_URL = process.env.RIG_ADMIN_URL ?? "http://127.0.0.1:8000";
+import { rigAdminServerAxios } from "@/server/api";
 
 type RouteContext = {
   params: Promise<{ path: string[] }>;
@@ -8,26 +7,24 @@ type RouteContext = {
 
 async function proxy(request: NextRequest, context: RouteContext) {
   const { path } = await context.params;
-  const target = new URL(`/api/${path.join("/")}`, RIG_ADMIN_URL);
-  target.search = request.nextUrl.search;
-
   const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.text();
 
   try {
-    const response = await fetch(target, {
+    const response = await rigAdminServerAxios.request({
+      url: `/${path.join("/")}${request.nextUrl.search}`,
       method: request.method,
       headers: {
         "Content-Type": request.headers.get("content-type") ?? "application/json",
       },
-      body,
-      cache: "no-store",
+      data: body,
+      responseType: "text",
     });
 
-    const text = await response.text();
+    const text = typeof response.data === "string" ? response.data : JSON.stringify(response.data);
     return new NextResponse(text, {
       status: response.status,
       headers: {
-        "Content-Type": response.headers.get("content-type") ?? "application/json",
+        "Content-Type": String(response.headers["content-type"] ?? "application/json"),
       },
     });
   } catch (error) {

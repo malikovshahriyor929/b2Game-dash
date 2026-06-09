@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { backendGet } from "@/lib/backend-client";
+import { backendGet } from "@/server/api";
 
 export type BackendTariff = {
   id: string;

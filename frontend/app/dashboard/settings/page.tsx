@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { backendGet } from "@/lib/backend-client";
+import { backendGet } from "@/server/api";
 
 const sections = [
   ["Club information", FiSliders], ["Zones", FiMap], ["Simulator types", FiTool], ["Payment methods", FiCreditCard], ["Employees", FiUsers], ["Roles and permissions", FiShield], ["Printer", FiPrinter], ["Notifications", FiBell], ["Theme", FiSliders],

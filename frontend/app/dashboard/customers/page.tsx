@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/shared/page-header";
 import { money } from "@/lib/format";
-import { backendDelete, backendGet, backendPatch, backendPost } from "@/lib/backend-client";
+import { backendDelete, backendGet, backendPatch, backendPost } from "@/server/api";
 
 type CustomerStatus = "Active" | "Debt" | "Blocked";
 

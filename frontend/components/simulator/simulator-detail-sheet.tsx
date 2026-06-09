@@ -8,6 +8,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { money, minutes } from "@/lib/format";
+import { backendDateTime } from "@/lib/datetime";
 import { Simulator } from "@/types/simulator";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { RequestFixDialog } from "@/components/simulator/request-fix-dialog";
@@ -70,7 +71,7 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
           {simulator.rigId ? <Field label="Rig ID" value={simulator.rigId} /> : null}
           {simulator.rigId ? <Field label="Rig version" value={`${simulator.rigVersion ?? "-"} / latest ${simulator.rigLatestVersion ?? "-"}`} /> : null}
           {simulator.rigId ? <Field label="Rig host" value={simulator.rigHostname ?? "-"} /> : null}
-          {simulator.rigId ? <Field label="Last seen" value={simulator.rigLastSeen ? new Date(simulator.rigLastSeen).toLocaleString("uz-UZ") : "-"} /> : null}
+          {simulator.rigId ? <Field label="Last seen" value={simulator.rigLastSeen ? backendDateTime(simulator.rigLastSeen) : "-"} /> : null}
           {simulator.rigUpdateStatus ? <Field label="Update status" value={simulator.rigUpdateStatus} /> : null}
         </div>
         {repairRequest ? (
