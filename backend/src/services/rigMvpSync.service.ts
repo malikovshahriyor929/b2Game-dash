@@ -5,6 +5,8 @@ import { listRigMvpRigs } from "./rigMvp.service";
 
 let timer: NodeJS.Timeout | null = null;
 let lastSnapshot = "";
+let lastPersistedSnapshot = "";
+let lastPersistedAt = 0;
 
 export function startRigMvpSync() {
   if (timer) return;
@@ -12,7 +14,7 @@ export function startRigMvpSync() {
   const tick = async () => {
     try {
       const rigs = await listRigMvpRigs();
-      const rows = await Promise.all(rigs.map(rigToSimulatorRow));
+      const rows = await Promise.all(rigs.map((rig) => rigToSimulatorRow(rig, { persist: false })));
       const snapshot = JSON.stringify(rigs.map((rig) => ({
         rig_id: rig.rig_id,
         online: rig.online,
@@ -23,6 +25,12 @@ export function startRigMvpSync() {
         unlock_until: rig.unlock_until,
         last_seen: rig.last_seen,
       })));
+      const now = Date.now();
+      if (snapshot !== lastPersistedSnapshot && now - lastPersistedAt >= env.RIG_MVP_DB_SYNC_INTERVAL_MS) {
+        await Promise.all(rigs.map((rig) => rigToSimulatorRow(rig, { persist: true })));
+        lastPersistedSnapshot = snapshot;
+        lastPersistedAt = now;
+      }
       if (lastSnapshot && snapshot !== lastSnapshot) {
         broadcastDashboard("simulator_updated", { source: "rig_mvp", rigs, simulators: rows }, null);
       }

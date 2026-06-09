@@ -31,69 +31,102 @@ function statusFromRig(rig: RigMvpRig) {
   return "busy";
 }
 
-export async function rigToSimulatorRow(rig: RigMvpRig) {
+export async function rigToSimulatorRow(rig: RigMvpRig, options: { persist?: boolean } = {}) {
+  const persist = options.persist ?? true;
   const branch = await defaultBranch();
   const zone = zoneFromRig(rig);
   const status = statusFromRig(rig);
   const name = rig.label || rig.hostname || rig.rig_id;
-  const rows = await prisma.$queryRawUnsafe<any[]>(
-    `insert into simulators(branch_id,name,code,zone,simulator_type,status,device_id,ip_address,ws_rig_id,is_online,last_seen_at)
-     values($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::timestamptz)
-     on conflict(branch_id,code) do update set
-       name=excluded.name,
-       zone=excluded.zone,
-       simulator_type=excluded.simulator_type,
-       status=excluded.status,
-       device_id=excluded.device_id,
-       ip_address=excluded.ip_address,
-       ws_rig_id=excluded.ws_rig_id,
-       is_online=excluded.is_online,
-       last_seen_at=excluded.last_seen_at,
-       updated_at=now()
-     returning *`,
-    branch.id,
+  const rows = persist
+    ? await prisma.$queryRawUnsafe<any[]>(
+      `insert into simulators(branch_id,name,code,zone,simulator_type,status,device_id,ip_address,ws_rig_id,is_online,last_seen_at)
+       values($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::timestamptz)
+       on conflict(branch_id,code) do update set
+         name=excluded.name,
+         zone=excluded.zone,
+         simulator_type=excluded.simulator_type,
+         status=excluded.status,
+         device_id=excluded.device_id,
+         ip_address=excluded.ip_address,
+         ws_rig_id=excluded.ws_rig_id,
+         is_online=excluded.is_online,
+         last_seen_at=excluded.last_seen_at,
+         updated_at=now()
+       returning *`,
+      branch.id,
+      name,
+      rig.rig_id,
+      zone,
+      zone,
+      status,
+      rig.rig_id,
+      rig.hostname,
+      rig.rig_id,
+      rig.online,
+      rig.last_seen,
+    )
+    : await prisma.$queryRawUnsafe<any[]>(
+      "select * from simulators where branch_id=$1::uuid and code=$2 limit 1",
+      branch.id,
+      rig.rig_id,
+    );
+  const row = rows[0] ?? {
+    id: rig.rig_id,
+    branch_id: branch.id,
     name,
-    rig.rig_id,
+    code: rig.rig_id,
     zone,
-    zone,
+    simulator_type: zone,
     status,
-    rig.rig_id,
-    rig.hostname,
-    rig.rig_id,
-    rig.online,
-    rig.last_seen,
-  );
-  await prisma.$executeRawUnsafe(
-    `insert into rig_connections(rig_id,simulator_id,branch_id,hostname,label,version,latest_version,locked,online,update_status,first_seen_at,last_seen_at)
-     values($1,$2::uuid,$3::uuid,$4,$5,$6,$7,$8,$9,$10,$11::timestamptz,$12::timestamptz)
-     on conflict(rig_id) do update set
-       simulator_id=excluded.simulator_id,
-       branch_id=excluded.branch_id,
-       hostname=excluded.hostname,
-       label=excluded.label,
-       version=excluded.version,
-       latest_version=excluded.latest_version,
-       locked=excluded.locked,
-       online=excluded.online,
-       update_status=excluded.update_status,
-       first_seen_at=coalesce(rig_connections.first_seen_at, excluded.first_seen_at),
-       last_seen_at=excluded.last_seen_at,
-       updated_at=now()`,
-    rig.rig_id,
-    rows[0].id,
-    branch.id,
-    rig.hostname,
-    name,
-    rig.version,
-    rig.latest_version,
-    rig.locked,
-    rig.online,
-    rig.update_status,
-    rig.first_seen,
-    rig.last_seen,
-  );
+    device_id: rig.rig_id,
+    ip_address: rig.hostname,
+    ws_rig_id: rig.rig_id,
+    is_online: rig.online,
+    last_seen_at: rig.last_seen,
+  };
+  if (persist) {
+    await prisma.$executeRawUnsafe(
+      `insert into rig_connections(rig_id,simulator_id,branch_id,hostname,label,version,latest_version,locked,online,update_status,first_seen_at,last_seen_at)
+       values($1,$2::uuid,$3::uuid,$4,$5,$6,$7,$8,$9,$10,$11::timestamptz,$12::timestamptz)
+       on conflict(rig_id) do update set
+         simulator_id=excluded.simulator_id,
+         branch_id=excluded.branch_id,
+         hostname=excluded.hostname,
+         label=excluded.label,
+         version=excluded.version,
+         latest_version=excluded.latest_version,
+         locked=excluded.locked,
+         online=excluded.online,
+         update_status=excluded.update_status,
+         first_seen_at=coalesce(rig_connections.first_seen_at, excluded.first_seen_at),
+         last_seen_at=excluded.last_seen_at,
+         updated_at=now()`,
+      rig.rig_id,
+      row.id,
+      branch.id,
+      rig.hostname,
+      name,
+      rig.version,
+      rig.latest_version,
+      rig.locked,
+      rig.online,
+      rig.update_status,
+      rig.first_seen,
+      rig.last_seen,
+    );
+  }
   return {
-    ...rows[0],
+    ...row,
+    name,
+    code: rig.rig_id,
+    zone,
+    simulator_type: zone,
+    status,
+    device_id: rig.rig_id,
+    ip_address: rig.hostname,
+    ws_rig_id: rig.rig_id,
+    is_online: rig.online,
+    last_seen_at: rig.last_seen,
     branch_name: branch.name,
     branch_code: branch.code,
     rig_online: rig.online,
@@ -169,7 +202,7 @@ export async function listRows(requestedBranchId?: unknown, user?: Request["user
   if (canUseRigMvp) {
     try {
       const rigs = await listRigMvpRigs();
-      if (rigs.length) return Promise.all(rigs.map(rigToSimulatorRow));
+      if (rigs.length) return Promise.all(rigs.map((rig) => rigToSimulatorRow(rig, { persist: false })));
     } catch {
       // Keep the dashboard usable from the seeded PostgreSQL data when Rig-MVP is down.
     }
@@ -186,7 +219,7 @@ export const map = list;
 
 export async function get(req: Request) {
   const rig = await getRigMvpRig(await rigIdFromParam(String(req.params.id)));
-  return rigToSimulatorRow(rig);
+  return rigToSimulatorRow(rig, { persist: false });
 }
 
 export async function patchStatus(req: Request) {

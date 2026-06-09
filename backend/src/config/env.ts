@@ -18,6 +18,7 @@ const envSchema = z.object({
   LATEST_AGENT_VERSION: z.string().default("1.0.17"),
   RIG_MVP_API_URL: z.string().default("http://127.0.0.1:8000"),
   RIG_MVP_SYNC_INTERVAL_MS: z.coerce.number().default(2000),
+  RIG_MVP_DB_SYNC_INTERVAL_MS: z.coerce.number().default(60000),
 });
 
 export const env = envSchema.parse(process.env);
