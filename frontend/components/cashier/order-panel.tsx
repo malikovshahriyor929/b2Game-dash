@@ -12,7 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { money } from "@/lib/format";
 import { usePaymentMethods } from "@/lib/use-payment-methods";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
-import { backendGet } from "@/lib/backend-client";
+import { backendGet } from "@/server/api";
 
 type CustomerRow = {
   id: string;

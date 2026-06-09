@@ -5,6 +5,13 @@ export type PaymentStatus = "paid" | "unpaid" | "partial";
 export type RepairErrorType = "game_error" | "device_error" | "network_error" | "payment_error" | "hardware_error" | "other";
 export type RepairPriority = "low" | "medium" | "high" | "critical";
 export type RepairApprovalStatus = "pending" | "approved" | "rejected" | "more_details_requested" | "fixing" | "fixed_waiting_confirmation" | "confirmed_fixed";
+export type SimulatorMapPosition = {
+  floor?: string;
+  col: number;
+  row: number;
+  colSpan?: number;
+  rowSpan?: number;
+};
 
 export type RepairRequest = {
   id: string;
@@ -44,6 +51,7 @@ export type Simulator = {
   tariff?: string;
   startedAt?: string;
   remainingMinutes: number;
+  remainingSeconds?: number;
   paidAmount: number;
   paymentStatus: PaymentStatus;
   orderItems: string[];
@@ -58,4 +66,5 @@ export type Simulator = {
   rigUpdateStatus?: string;
   rigLastSeen?: string | null;
   currentSessionId?: string | null;
+  mapPosition?: SimulatorMapPosition;
 };

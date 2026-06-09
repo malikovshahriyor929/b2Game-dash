@@ -27,10 +27,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
 import { money } from "@/lib/format";
+import { localDate } from "@/lib/datetime";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 
 function isoDate(date: Date) {
-  return date.toISOString().split("T")[0];
+  return localDate(date);
 }
 
 function addDays(date: Date, days: number) {
@@ -72,8 +73,8 @@ export default function ReportsPage() {
     if (dateFilter === "month") return dateStr.startsWith(currentMonth);
     if (dateFilter === "custom") {
       if (!startDate || !endDate) return false;
-      const start = startDate.toISOString().split("T")[0];
-      const end = endDate.toISOString().split("T")[0];
+      const start = localDate(startDate);
+      const end = localDate(endDate);
       return dateStr >= start && dateStr <= end;
     }
     return true;

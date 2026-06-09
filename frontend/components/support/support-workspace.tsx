@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { backendGet, backendPatch } from "@/lib/backend-client";
+import { backendGet, backendPatch } from "@/server/api";
 
 type TicketPriority = "Low" | "Medium" | "High" | "Critical";
 type TicketStatus = "Open" | "In progress" | "Waiting" | "Solved" | "Closed";

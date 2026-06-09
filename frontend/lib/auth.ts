@@ -1,9 +1,8 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { authSecret } from "@/lib/auth-env";
+import { backendServerAxios } from "@/server/api";
 import type { Role } from "@/types/user";
-
-const BACKEND_URL = process.env.BACKEND_URL ?? "http://127.0.0.1:4000";
 
 function isRole(value: unknown): value is Role {
   return value === "admin" || value === "super_admin";
@@ -25,22 +24,16 @@ export const authOptions: NextAuthOptions = {
         const password = credentials?.password ?? "";
         if (!email || !password) return null;
 
-        const response = await fetch(`${BACKEND_URL}/api/auth/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-          cache: "no-store",
-        });
-
-        const text = await response.text();
+        const response = await backendServerAxios.post("/auth/login", { email, password }, { responseType: "text" });
+        const text = typeof response.data === "string" ? response.data : JSON.stringify(response.data);
         console.log("[auth] backend login response", {
-          url: `${BACKEND_URL}/api/auth/login`,
+          url: "/api/auth/login",
           status: response.status,
-          ok: response.ok,
-          contentType: response.headers.get("content-type"),
+          ok: response.status >= 200 && response.status < 300,
+          contentType: response.headers["content-type"],
           body: text,
         });
-        if (!response.ok) return null;
+        if (response.status < 200 || response.status >= 300) return null;
         if (!text) return null;
         let payload: any;
         try {

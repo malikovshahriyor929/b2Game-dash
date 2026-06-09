@@ -6,6 +6,7 @@ simulatorsRoutes.get("/map", c.map);
 simulatorsRoutes.get("/", c.list);
 simulatorsRoutes.post("/push-update", requireRole(["super_admin"]), c.pushUpdate);
 simulatorsRoutes.get("/:id", c.get);
+simulatorsRoutes.patch("/:id/map-position", c.updateMapPosition);
 simulatorsRoutes.patch("/:id/status", requireRole(["super_admin"]), c.patchStatus);
 simulatorsRoutes.post("/:id/notify", requireRole(["super_admin"]), c.notify);
 simulatorsRoutes.post("/:id/lock", requireRole(["super_admin"]), c.lock);

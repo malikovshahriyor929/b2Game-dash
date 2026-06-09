@@ -1,10 +1,13 @@
-import { Pool } from "pg";
+import { Pool, types } from "pg";
 import { env } from "../config/env";
 
 const databaseUrlRequiresSsl = /[?&]sslmode=(require|verify-ca|verify-full)\b/i.test(env.DATABASE_URL);
 
+types.setTypeParser(1114, (value) => new Date(`${value.replace(" ", "T")}Z`));
+
 export const pool = new Pool({
   connectionString: env.DATABASE_URL,
+  options: "-c timezone=UTC",
   ssl: env.NODE_ENV === "production" || env.DATABASE_SSL || databaseUrlRequiresSsl ? { rejectUnauthorized: false } : undefined,
 });
 
