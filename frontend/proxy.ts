@@ -35,7 +35,10 @@ function redirectToLogin(request: NextRequest) {
 }
 
 export async function proxy(request: NextRequest) {
-  const token = await getToken({ req: request, secret: authSecret });
+  const secureCookie = request.nextUrl.protocol === "https:";
+  const token =
+    await getToken({ req: request, secret: authSecret, secureCookie }) ??
+    await getToken({ req: request, secret: authSecret, secureCookie: !secureCookie });
 
   if (isValidDashboardToken(token)) {
     return NextResponse.next();

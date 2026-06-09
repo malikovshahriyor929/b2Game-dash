@@ -1,9 +1,11 @@
 import { Pool } from "pg";
 import { env } from "../config/env";
 
+const databaseUrlRequiresSsl = /[?&]sslmode=(require|verify-ca|verify-full)\b/i.test(env.DATABASE_URL);
+
 export const pool = new Pool({
   connectionString: env.DATABASE_URL,
-  ssl: env.NODE_ENV === "production" || env.DATABASE_SSL ? { rejectUnauthorized: false } : undefined,
+  ssl: env.NODE_ENV === "production" || env.DATABASE_SSL || databaseUrlRequiresSsl ? { rejectUnauthorized: false } : undefined,
 });
 
 export async function tx<T>(fn: (client: import("pg").PoolClient) => Promise<T>) {
