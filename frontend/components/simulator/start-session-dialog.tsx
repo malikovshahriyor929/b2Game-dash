@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { money } from "@/lib/format";
-import { useBackendTariffs } from "@/lib/use-backend-tariffs";
+import { formatTariffOptionLabel, useBackendTariffs } from "@/lib/use-backend-tariffs";
 import { usePaymentMethods } from "@/lib/use-payment-methods";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { Simulator } from "@/types/simulator";
@@ -19,8 +19,9 @@ const paymentModes = [
   { value: "partial", label: "Balance" },
 ] as const;
 export function StartSessionDialog({ open, onOpenChange, simulator }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator }) {
-  const { startSession } = useDashboardStore();
-  const tariffs = useBackendTariffs();
+  const { startSession, selectedBranchId } = useDashboardStore();
+  const tariffBranchId = simulator?.branchId ?? (selectedBranchId === "all" ? undefined : selectedBranchId);
+  const tariffs = useBackendTariffs(tariffBranchId);
   const paymentMethods = usePaymentMethods();
   const zoneTariffs = useMemo(() => {
     const zone = simulator?.zone === "VIP" ? "vip" : "main";
@@ -72,6 +73,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator }: { open: bo
       customerName: customerName.trim(),
       phone,
       tariff,
+      tariffId: selectedTariff.id,
       duration: Number(duration),
       amount: totalAmount,
       paymentStatus,
@@ -122,9 +124,15 @@ export function StartSessionDialog({ open, onOpenChange, simulator }: { open: bo
             <Select value={tariff} onValueChange={handleTariffChange}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {zoneTariffs.map((item) => <SelectItem key={item.id} value={item.name}>{item.name} - {money(item.price)}{item.bonus ? ` + ${item.bonus}` : ""}</SelectItem>)}
+                {zoneTariffs.map((item) => <SelectItem key={item.id} value={item.name}>{formatTariffOptionLabel(item)}</SelectItem>)}
               </SelectContent>
             </Select>
+            {selectedTariff ? (
+              <p className="text-xs font-semibold text-slate-500">
+                Bugun to'lov: {money(selectedTariff.price)}
+                {selectedTariff.isWeekend ? " (dam olish)" : " (PN–CHT)"}
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-2">

@@ -16,7 +16,7 @@ import { Simulator } from "@/types/simulator";
 export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator }) {
   const { addTime } = useDashboardStore();
   const paymentMethods = usePaymentMethods();
-  const tariffs = useBackendTariffs();
+  const tariffs = useBackendTariffs(simulator?.branchId);
   const presets = useMemo(() => {
     const zone = simulator?.zone === "VIP" ? "vip" : "main";
     return tariffs

@@ -1,5 +1,5 @@
 import { env } from "../config/env";
-import { rigToSimulatorRow } from "../modules/simulators/simulators.service";
+import { deleteRigFromDb, rigToSimulatorRow } from "../modules/simulators/simulators.service";
 import { broadcastDashboard } from "../websocket/dashboardConnection.manager";
 import { listRigMvpRigs } from "./rigMvp.service";
 
@@ -7,6 +7,7 @@ let timer: NodeJS.Timeout | null = null;
 let lastSnapshot = "";
 let lastPersistedSnapshot = "";
 let lastPersistedAt = 0;
+let lastKnownRigIds = new Set<string>();
 
 export function startRigMvpSync() {
   if (timer) return;
@@ -14,6 +15,19 @@ export function startRigMvpSync() {
   const tick = async () => {
     try {
       const rigs = await listRigMvpRigs();
+      const currentIds = new Set(rigs.map((rig) => rig.rig_id));
+      const removedRigIds: string[] = [];
+
+      if (lastKnownRigIds.size > 0) {
+        for (const rigId of lastKnownRigIds) {
+          if (!currentIds.has(rigId)) {
+            await deleteRigFromDb(rigId);
+            removedRigIds.push(rigId);
+          }
+        }
+      }
+      lastKnownRigIds = currentIds;
+
       const rows = await Promise.all(rigs.map((rig) => rigToSimulatorRow(rig, { persist: false })));
       const snapshot = JSON.stringify(rigs.map((rig) => ({
         rig_id: rig.rig_id,
@@ -31,7 +45,9 @@ export function startRigMvpSync() {
         lastPersistedSnapshot = snapshot;
         lastPersistedAt = now;
       }
-      if (lastSnapshot && snapshot !== lastSnapshot) {
+      if (removedRigIds.length) {
+        broadcastDashboard("simulator_offline", { source: "rig_mvp", removed_rig_ids: removedRigIds }, null);
+      } else if (lastSnapshot && snapshot !== lastSnapshot) {
         broadcastDashboard("simulator_updated", { source: "rig_mvp", rigs, simulators: rows }, null);
       }
       lastSnapshot = snapshot;

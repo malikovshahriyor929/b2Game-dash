@@ -116,8 +116,8 @@ function hasConflict(bookings: Booking[], form: BookingFormState, editingId?: st
 }
 
 export function BookingForm({ booking, onSaved }: { booking?: Booking | null; onSaved?: () => void }) {
-  const { addBooking, bookings, simulators, updateBooking } = useDashboardStore();
-  const tariffs = useBackendTariffs();
+  const { addBooking, bookings, simulators, updateBooking, selectedBranchId } = useDashboardStore();
+  const tariffs = useBackendTariffs(selectedBranchId === "all" ? undefined : selectedBranchId);
   const [form, setForm] = useState<BookingFormState>(() => booking ? {
     customerName: booking.customerName,
     phone: booking.phone,

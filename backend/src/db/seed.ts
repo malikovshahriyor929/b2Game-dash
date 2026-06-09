@@ -23,11 +23,11 @@ const tariffs = [
   ["Logitech 1 soat", "main", 60, 40000, 50000, null, null, "time"],
   ["Logitech 3 soat", "main", 180, 100000, 130000, null, null, "package"],
   ["Logitech 5 soat", "main", 300, 150000, 200000, null, "energetik", "package"],
-  ["Logitech night", "main", 480, 250000, 350000, null, "energetik", "night"],
-  ["Moza VIP 1 soat", "vip", 60, 80000, 100000, null, null, "vip"],
-  ["Moza VIP 3 soat", "vip", 180, 200000, 250000, null, "energetik", "vip"],
-  ["Moza VIP 5 soat", "vip", 300, 300000, 300000, null, "energetik + chips", "vip"],
-  ["Moza VIP night", "vip", 480, 500000, 500000, "energetik", "energetik", "night"],
+  ["Logitech tungi zaezd", "main", 480, 250000, 350000, null, "energetik", "night"],
+  ["Moza 1 soat", "vip", 60, 80000, 100000, null, null, "time"],
+  ["Moza 3 soat", "vip", 180, 200000, 250000, null, "energetik", "package"],
+  ["Moza 5 soat", "vip", 300, 300000, 300000, null, "energetik + chips", "package"],
+  ["Moza tungi zaezd", "vip", 480, 500000, 500000, "energetik", "energetik", "night"],
 ] as const;
 
 async function upsertUser(name: string, email: string, password: string, role: "admin" | "super_admin", branchId: string | null) {

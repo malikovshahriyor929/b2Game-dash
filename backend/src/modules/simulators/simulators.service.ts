@@ -146,6 +146,22 @@ async function rigIdFromParam(id: string) {
   return rows[0]?.ws_rig_id ?? id;
 }
 
+export async function deleteRigFromDb(rigId: string) {
+  const connections = await prisma.$queryRawUnsafe<Array<{ simulator_id: string | null; branch_id: string | null }>>(
+    "select simulator_id, branch_id from rig_connections where rig_id=$1",
+    rigId,
+  );
+  const branchId = connections[0]?.branch_id ?? null;
+  await prisma.$executeRawUnsafe("delete from rig_connections where rig_id=$1", rigId);
+  for (const connection of connections) {
+    if (connection.simulator_id) {
+      await prisma.$executeRawUnsafe("delete from simulators where id=$1::uuid", connection.simulator_id);
+    }
+  }
+  await prisma.$executeRawUnsafe("delete from simulators where ws_rig_id=$1", rigId);
+  return { rig_id: rigId, branch_id: branchId };
+}
+
 async function listDbSimulatorRows(requestedBranchId?: unknown, user?: Request["user"]) {
   const branchId = user?.role === "admin"
     ? user.branch_id
@@ -202,7 +218,7 @@ export async function listRows(requestedBranchId?: unknown, user?: Request["user
   if (canUseRigMvp) {
     try {
       const rigs = await listRigMvpRigs();
-      if (rigs.length) return Promise.all(rigs.map((rig) => rigToSimulatorRow(rig, { persist: false })));
+      return Promise.all(rigs.map((rig) => rigToSimulatorRow(rig, { persist: false })));
     } catch {
       // Keep the dashboard usable from the seeded PostgreSQL data when Rig-MVP is down.
     }
@@ -230,7 +246,15 @@ export async function patchStatus(req: Request) {
   } else if (["ready_to_play", "busy"].includes(nextStatus)) {
     await unlockRigMvp(rig.rig_id);
   } else if (nextStatus === "offline") {
+    const branchId = (await prisma.$queryRawUnsafe<Array<{ branch_id: string | null }>>(
+      "select branch_id from rig_connections where rig_id=$1 limit 1",
+      rig.rig_id,
+    ))[0]?.branch_id ?? null;
     await removeRigMvp(rig.rig_id);
+    const removed = await deleteRigFromDb(rig.rig_id);
+    await auditLog({ actor: req.user, branch_id: removed.branch_id ?? branchId, action_type: "rig_removed", entity_type: "rig_mvp", entity_id: null, details: { rig_id: rig.rig_id } });
+    broadcastDashboard("simulator_offline", { rig_id: rig.rig_id, removed: true }, removed.branch_id);
+    return { ok: true, rig_id: rig.rig_id, removed: true };
   } else {
     throw new ApiError(400, "Rig-MVP simulator status can only be locked, ready_to_play, busy, or offline");
   }

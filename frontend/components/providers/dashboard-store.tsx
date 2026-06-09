@@ -21,7 +21,7 @@ import {
   unlockRig as unlockAdminRig,
 } from "@/lib/rig-admin-api";
 
-type StartPayload = { customerName: string; phone: string; tariff: string; duration: number; amount: number; paymentStatus: "paid" | "unpaid" | "partial"; paymentMethod?: string };
+type StartPayload = { customerName: string; phone: string; tariff: string; tariffId?: string; duration: number; amount: number; paymentStatus: "paid" | "unpaid" | "partial"; paymentMethod?: string };
 type PeriodFilter = "today" | "yesterday" | "week" | "month" | "year" | "custom";
 type RepairPayload = { title: string; description: string; errorType: RepairErrorType; priority: RepairPriority; note?: string };
 type RevenueEvent = { id: string; time: string; date?: string; amount: number; source: string; branchId?: string };
@@ -658,6 +658,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         branch_id: simulator.branchId,
         customer_name: payload.customerName,
         phone: payload.phone,
+        tariff_id: payload.tariffId,
         payment_mode: payload.paymentStatus,
         duration_minutes: payload.duration,
         paid_amount: payload.paymentStatus === "paid" ? payload.amount : 0,
