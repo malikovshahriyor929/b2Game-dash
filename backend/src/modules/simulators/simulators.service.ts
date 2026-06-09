@@ -98,6 +98,20 @@ async function listDbSimulatorRows(requestedBranchId?: unknown, user?: Request["
        s.*,
        b.name as branch_name,
        b.code as branch_code,
+       sess.id as active_session_id,
+       sess.customer_name as active_customer_name,
+       sess.phone as active_phone,
+       sess.started_at as active_started_at,
+       sess.duration_minutes as active_duration_minutes,
+       sess.added_minutes as active_added_minutes,
+       case
+         when sess.id is null then null
+         when sess.status = 'paused' then sess.remaining_seconds
+         else greatest(((sess.duration_minutes + sess.added_minutes) * 60 - extract(epoch from (now() - sess.started_at)))::int, 0)
+       end as active_remaining_seconds,
+       sess.paid_amount as active_paid_amount,
+       sess.payment_mode as active_payment_mode,
+       t.name as active_tariff_name,
        s.is_online as rig_online,
        'backend' as rig_version,
        'backend' as latest_version,
@@ -109,6 +123,8 @@ async function listDbSimulatorRows(requestedBranchId?: unknown, user?: Request["
        'database' as source
      from simulators s
      join branches b on b.id = s.branch_id
+     left join sessions sess on sess.id = s.current_session_id and sess.status in ('active','paused','unpaid')
+     left join tariffs t on t.id = sess.tariff_id
      where ($1::uuid is null or s.branch_id = $1::uuid)
      order by b.created_at asc, s.zone asc, s.code asc`,
     branchId,
