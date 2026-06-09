@@ -31,7 +31,7 @@ function statusFromRig(rig: RigMvpRig) {
   return "busy";
 }
 
-async function rigToSimulatorRow(rig: RigMvpRig) {
+export async function rigToSimulatorRow(rig: RigMvpRig) {
   const branch = await defaultBranch();
   const zone = zoneFromRig(rig);
   const status = statusFromRig(rig);
@@ -61,6 +61,35 @@ async function rigToSimulatorRow(rig: RigMvpRig) {
     rig.hostname,
     rig.rig_id,
     rig.online,
+    rig.last_seen,
+  );
+  await prisma.$executeRawUnsafe(
+    `insert into rig_connections(rig_id,simulator_id,branch_id,hostname,label,version,latest_version,locked,online,update_status,first_seen_at,last_seen_at)
+     values($1,$2::uuid,$3::uuid,$4,$5,$6,$7,$8,$9,$10,$11::timestamptz,$12::timestamptz)
+     on conflict(rig_id) do update set
+       simulator_id=excluded.simulator_id,
+       branch_id=excluded.branch_id,
+       hostname=excluded.hostname,
+       label=excluded.label,
+       version=excluded.version,
+       latest_version=excluded.latest_version,
+       locked=excluded.locked,
+       online=excluded.online,
+       update_status=excluded.update_status,
+       first_seen_at=coalesce(rig_connections.first_seen_at, excluded.first_seen_at),
+       last_seen_at=excluded.last_seen_at,
+       updated_at=now()`,
+    rig.rig_id,
+    rows[0].id,
+    branch.id,
+    rig.hostname,
+    name,
+    rig.version,
+    rig.latest_version,
+    rig.locked,
+    rig.online,
+    rig.update_status,
+    rig.first_seen,
     rig.last_seen,
   );
   return {

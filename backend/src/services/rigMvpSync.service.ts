@@ -1,4 +1,5 @@
 import { env } from "../config/env";
+import { rigToSimulatorRow } from "../modules/simulators/simulators.service";
 import { broadcastDashboard } from "../websocket/dashboardConnection.manager";
 import { listRigMvpRigs } from "./rigMvp.service";
 
@@ -11,6 +12,7 @@ export function startRigMvpSync() {
   const tick = async () => {
     try {
       const rigs = await listRigMvpRigs();
+      const rows = await Promise.all(rigs.map(rigToSimulatorRow));
       const snapshot = JSON.stringify(rigs.map((rig) => ({
         rig_id: rig.rig_id,
         online: rig.online,
@@ -22,7 +24,7 @@ export function startRigMvpSync() {
         last_seen: rig.last_seen,
       })));
       if (lastSnapshot && snapshot !== lastSnapshot) {
-        broadcastDashboard("simulator_updated", { source: "rig_mvp", rigs }, null);
+        broadcastDashboard("simulator_updated", { source: "rig_mvp", rigs, simulators: rows }, null);
       }
       lastSnapshot = snapshot;
     } catch {
