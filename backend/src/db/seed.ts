@@ -90,20 +90,17 @@ async function run() {
 
     await upsertUser("Super Admin", "superadmin@b2game.uz", "12345678", "super_admin", null);
     await upsertUser("Main Admin", "admin.main@b2game.uz", "admin123", "admin", branchRows.MAIN);
-    await upsertUser("Yunusabad Admin", "admin.yunusabad@b2game.uz", "admin123", "admin", branchRows.YUNUSABAD);
-    await upsertUser("Chilonzor Admin", "admin.chilonzor@b2game.uz", "admin123", "admin", branchRows.CHILONZOR);
-    await upsertUser("Sergeli Admin", "admin.sergeli@b2game.uz", "admin123", "admin", branchRows.SERGELI);
-    const samarqandAdmin = await upsertUser("Samarqand Admin", "admin.samarqand@b2game.uz", "admin123", "admin", branchRows.SAMARQAND);
 
-    for (const [code, branchId] of Object.entries(branchRows)) {
-      await client.query("update tariffs set is_active=false where branch_id=$1", [branchId]);
-      for (const [name, zone, duration, weekdayPrice, weekendPrice, weekdayBonus, weekendBonus, type] of tariffs) {
-        await client.query(
-          `insert into tariffs(branch_id,name,simulator_zone,duration_minutes,price,weekday_price,weekend_price,weekday_bonus,weekend_bonus,type,is_active)
-           values($1,$2,$3,$4,$5,$5,$6,$7,$8,$9,true)`,
-          [branchId, name, zone, duration, weekdayPrice, weekendPrice, weekdayBonus, weekendBonus, type],
-        );
-      }
+    const mainBranchId = branchRows.MAIN;
+
+    await client.query("update tariffs set is_active=false where branch_id=$1", [mainBranchId]);
+    for (const [name, zone, duration, weekdayPrice, weekendPrice, weekdayBonus, weekendBonus, type] of tariffs) {
+      await client.query(
+        `insert into tariffs(branch_id,name,simulator_zone,duration_minutes,price,weekday_price,weekend_price,weekday_bonus,weekend_bonus,type,is_active)
+         values($1,$2,$3,$4,$5,$5,$6,$7,$8,$9,true)`,
+        [mainBranchId, name, zone, duration, weekdayPrice, weekendPrice, weekdayBonus, weekendBonus, type],
+      );
+    }
 
     for (let i = 1; i <= 16; i++) {
       const n = String(i).padStart(2, "0");
