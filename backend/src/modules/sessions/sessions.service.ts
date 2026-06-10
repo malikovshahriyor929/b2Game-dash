@@ -3,8 +3,7 @@ import { prisma } from "../../db/prisma";
 import { ApiError } from "../../utils/apiError";
 import { auditLog } from "../../services/auditLog.service";
 import { broadcastDashboard } from "../../websocket/dashboardConnection.manager";
-import { sendRigCommand } from "../../websocket/rigCommand.service";
-import { getRigMvpRig, unlockRigMvp } from "../../services/rigMvp.service";
+import { getRigMvpRig, sendRigMvpCommand, unlockRigMvp } from "../../services/rigMvp.service";
 import { isUuid } from "../../utils/ids";
 
 async function getSessionScoped(req: Request) {
@@ -26,7 +25,8 @@ export async function start(req: Request) {
   if (!isUuid(req.body.simulator_id)) {
     const rig = await getRigMvpRig(String(req.body.simulator_id));
     if (!rig.online) throw new ApiError(409, `Rig '${rig.rig_id}' is offline`);
-    await unlockRigMvp(rig.rig_id, Number(req.body.duration_minutes));
+    const durationMinutes = Number(req.body.duration_minutes ?? 0);
+    await unlockRigMvp(rig.rig_id, durationMinutes);
     const session = {
       id: `rig-mvp:${rig.rig_id}:${Date.now()}`,
       branch_id: req.user?.branch_id ?? req.body.branch_id ?? null,
@@ -35,11 +35,18 @@ export async function start(req: Request) {
       phone: req.body.phone ?? null,
       status: "active",
       payment_mode: req.body.payment_mode ?? "unpaid",
-      duration_minutes: Number(req.body.duration_minutes ?? 0),
+      duration_minutes: durationMinutes,
       total_amount: Number(req.body.paid_amount ?? 0),
       paid_amount: Number(req.body.paid_amount ?? 0),
       source: "rig_mvp",
     };
+    await sendRigMvpCommand(rig.rig_id, {
+      type: "start_session",
+      session_id: session.id,
+      customer_name: req.body.customer_name ?? "Guest",
+      phone: req.body.phone ?? null,
+      duration_minutes: durationMinutes,
+    });
     await auditLog({ actor: req.user, branch_id: null, action_type: "start_session", entity_type: "rig_mvp", details: { rig_id: rig.rig_id, duration_minutes: session.duration_minutes } });
     broadcastDashboard("session_started", session, null);
     return session;
@@ -58,12 +65,86 @@ export async function start(req: Request) {
   const session = rows[0];
   await prisma.$executeRawUnsafe("update simulators set status='busy', current_session_id=$1::uuid where id=$2::uuid", session.id, sim.id);
   if (amount > 0) await prisma.$executeRawUnsafe("insert into payments(branch_id,session_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,paid_by_admin_id) values($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8,$9,$10::uuid)", sim.branch_id, session.id, req.body.customer_id ?? null, amount, req.body.method, req.body.method === "cash" ? amount : 0, req.body.method === "card" ? amount : 0, req.body.method === "qr" ? amount : 0, req.body.method === "balance" ? amount : 0, req.user!.user_id);
-  if (sim.ws_rig_id) try { await unlockRigMvp(sim.ws_rig_id, Number(req.body.duration_minutes)); sendRigCommand(sim.ws_rig_id, { type: "start_session", session_id: session.id, customer_name: req.body.customer_name, duration_minutes: req.body.duration_minutes }); } catch {}
+  if (sim.ws_rig_id) {
+    const durationMinutes = Number(req.body.duration_minutes);
+    await unlockRigMvp(sim.ws_rig_id, durationMinutes);
+    await sendRigMvpCommand(sim.ws_rig_id, {
+      type: "start_session",
+      session_id: session.id,
+      customer_name: req.body.customer_name ?? "Guest",
+      phone: req.body.phone ?? null,
+      duration_minutes: durationMinutes,
+      tariff_id: req.body.tariff_id ?? null,
+    });
+  }
   await auditLog({ actor: req.user, branch_id: sim.branch_id, action_type: "start_session", entity_type: "session", entity_id: session.id, simulator_id: sim.id, session_id: session.id, amount });
   broadcastDashboard("session_started", session, sim.branch_id);
   return session;
 }
-export async function addTime(req: Request) { const s = await getSessionScoped(req); await prisma.$executeRawUnsafe("update sessions set added_minutes=added_minutes+$1, remaining_seconds=remaining_seconds+$2, added_time_amount=added_time_amount+$3, total_amount=total_amount+$3, paid_amount=paid_amount+$3 where id=$4::uuid", req.body.minutes, req.body.minutes * 60, req.body.amount, s.id); await auditLog({ actor: req.user, branch_id: s.branch_id, action_type: "add_time", entity_type: "session", entity_id: s.id, session_id: s.id, amount: req.body.amount }); broadcastDashboard("simulator_updated", { session_id: s.id }, s.branch_id); return getSessionScoped(req); }
+async function extendRigSessionTime(simulatorId: string, addedMinutes: number, remainingSeconds: number) {
+  const simRows = await prisma.$queryRawUnsafe<Array<{ ws_rig_id: string | null }>>(
+    "select ws_rig_id from simulators where id=$1::uuid limit 1",
+    simulatorId,
+  );
+  const rigId = simRows[0]?.ws_rig_id;
+  if (!rigId) return;
+
+  const remainingMinutes = Math.max(1, Math.ceil(remainingSeconds / 60));
+  await unlockRigMvp(rigId, remainingMinutes);
+  await sendRigMvpCommand(rigId, {
+    type: "add_time",
+    minutes: addedMinutes,
+    remaining_minutes: remainingMinutes,
+  });
+}
+
+export async function addTime(req: Request) {
+  const s = await getSessionScoped(req);
+  const minutes = Number(req.body.minutes);
+  const amount = Number(req.body.amount ?? 0);
+  if (!Number.isFinite(minutes) || minutes <= 0) throw new ApiError(400, "minutes must be positive");
+
+  await prisma.$executeRawUnsafe(
+    "update sessions set added_minutes=added_minutes+$1, remaining_seconds=remaining_seconds+$2, added_time_amount=added_time_amount+$3, total_amount=total_amount+$3, paid_amount=paid_amount+$3 where id=$4::uuid",
+    minutes,
+    minutes * 60,
+    amount,
+    s.id,
+  );
+
+  const updated = await getSessionScoped(req);
+  const remainingSeconds = Number(updated.remaining_seconds ?? 0);
+  await extendRigSessionTime(String(updated.simulator_id), minutes, remainingSeconds);
+
+  if (amount > 0) {
+    await prisma.$executeRawUnsafe(
+      "insert into payments(branch_id,session_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,paid_by_admin_id) values($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8,$9,$10::uuid)",
+      updated.branch_id,
+      updated.id,
+      updated.customer_id ?? null,
+      amount,
+      req.body.method ?? "cash",
+      req.body.method === "cash" ? amount : 0,
+      req.body.method === "card" ? amount : 0,
+      req.body.method === "qr" ? amount : 0,
+      req.body.method === "balance" ? amount : 0,
+      req.user!.user_id,
+    );
+  }
+
+  await auditLog({
+    actor: req.user,
+    branch_id: updated.branch_id,
+    action_type: "add_time",
+    entity_type: "session",
+    entity_id: updated.id,
+    session_id: updated.id,
+    simulator_id: updated.simulator_id,
+    amount,
+  });
+  broadcastDashboard("simulator_updated", { session_id: updated.id }, updated.branch_id);
+  return updated;
+}
 export async function pause(req: Request) { const s = await getSessionScoped(req); await prisma.$executeRawUnsafe("update sessions set status='paused' where id=$1::uuid", s.id); await auditLog({ actor: req.user, branch_id: s.branch_id, action_type: "pause_session", entity_type: "session", entity_id: s.id, session_id: s.id }); return { ok: true }; }
 export async function resume(req: Request) { const s = await getSessionScoped(req); await prisma.$executeRawUnsafe("update sessions set status='active' where id=$1::uuid", s.id); await auditLog({ actor: req.user, branch_id: s.branch_id, action_type: "resume_session", entity_type: "session", entity_id: s.id, session_id: s.id }); return { ok: true }; }
 export async function stop(req: Request) { const s = await getSessionScoped(req); const nextStatus = Number(s.debt_amount) > 0 ? "unpaid" : "stopped"; await prisma.$executeRawUnsafe("update sessions set status=$1, ended_at=now(), stopped_by=$2::uuid where id=$3::uuid", nextStatus, req.user!.user_id, s.id); await prisma.$executeRawUnsafe("update simulators set status=$1, current_session_id=null where id=$2::uuid", nextStatus === "unpaid" ? "unpaid" : "ready_to_play", s.simulator_id); await auditLog({ actor: req.user, branch_id: s.branch_id, action_type: "stop_session", entity_type: "session", entity_id: s.id, simulator_id: s.simulator_id, session_id: s.id }); broadcastDashboard("session_stopped", { id: s.id }, s.branch_id); return getSessionScoped(req); }
