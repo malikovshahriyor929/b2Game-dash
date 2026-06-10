@@ -1,4 +1,5 @@
 import { env } from "../config/env";
+import { expireElapsedSessions } from "../modules/sessions/sessions.service";
 import { deleteRigFromDb, rigToSimulatorRow } from "../modules/simulators/simulators.service";
 import { broadcastDashboard } from "../websocket/dashboardConnection.manager";
 import { listRigMvpRigs } from "./rigMvp.service";
@@ -13,6 +14,7 @@ let syncInFlight: Promise<void> | null = null;
 type SyncOptions = { forcePersist?: boolean };
 
 async function runRigMvpSyncTick(options: SyncOptions = {}) {
+  await expireElapsedSessions().catch(() => undefined);
   try {
     const rigs = await listRigMvpRigs();
     const currentIds = new Set(rigs.map((rig) => rig.rig_id));

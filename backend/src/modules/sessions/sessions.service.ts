@@ -3,7 +3,7 @@ import { prisma } from "../../db/prisma";
 import { ApiError } from "../../utils/apiError";
 import { auditLog } from "../../services/auditLog.service";
 import { broadcastDashboard } from "../../websocket/dashboardConnection.manager";
-import { getRigMvpRig, sendRigMvpCommand, unlockRigMvp } from "../../services/rigMvp.service";
+import { getRigMvpRig, lockRigMvp, sendRigMvpCommand, unlockRigMvp } from "../../services/rigMvp.service";
 import { isUuid } from "../../utils/ids";
 
 async function getSessionScoped(req: Request) {
@@ -81,6 +81,73 @@ export async function start(req: Request) {
   broadcastDashboard("session_started", session, sim.branch_id);
   return session;
 }
+async function lockRigForSession(simulatorId: string, message = "Session ended") {
+  const simRows = await prisma.$queryRawUnsafe<Array<{ ws_rig_id: string | null }>>(
+    "select ws_rig_id from simulators where id=$1::uuid limit 1",
+    simulatorId,
+  );
+  const rigId = simRows[0]?.ws_rig_id;
+  if (!rigId) return;
+  try {
+    await lockRigMvp(rigId, message);
+  } catch {
+    // Rig-MVP unreachable or rig offline — DB session still stops.
+  }
+}
+
+async function finalizeSessionStop(
+  session: { id: string; simulator_id: string; branch_id: string; debt_amount?: unknown },
+  options: { stoppedBy?: string | null; expired?: boolean } = {},
+) {
+  const nextStatus = Number(session.debt_amount) > 0 ? "unpaid" : "stopped";
+  await prisma.$executeRawUnsafe(
+    "update sessions set status=$1, ended_at=now(), stopped_by=$2::uuid where id=$3::uuid",
+    nextStatus,
+    options.stoppedBy ?? null,
+    session.id,
+  );
+  await prisma.$executeRawUnsafe(
+    "update simulators set status=$1, current_session_id=null where id=$2::uuid",
+    nextStatus === "unpaid" ? "unpaid" : "ready_to_play",
+    session.simulator_id,
+  );
+  await lockRigForSession(String(session.simulator_id));
+  broadcastDashboard("session_stopped", { id: session.id, expired: Boolean(options.expired) }, session.branch_id);
+}
+
+export async function expireElapsedSessions() {
+  const rows = await prisma.$queryRawUnsafe<Array<{
+    id: string;
+    simulator_id: string;
+    branch_id: string;
+    debt_amount: unknown;
+  }>>(
+    `select s.id, s.simulator_id, s.branch_id, s.debt_amount
+     from sessions s
+     where s.status = 'active'
+       and greatest(
+         ((s.duration_minutes + s.added_minutes) * 60)
+         - extract(epoch from (now() - s.started_at))::int,
+         0
+       ) <= 0`,
+  );
+
+  for (const session of rows) {
+    await finalizeSessionStop(session, { expired: true });
+    await auditLog({
+      branch_id: session.branch_id,
+      action_type: "stop_session",
+      entity_type: "session",
+      entity_id: session.id,
+      session_id: session.id,
+      simulator_id: session.simulator_id,
+      details: { expired: true, source: "system" },
+    });
+  }
+
+  return rows.length;
+}
+
 async function extendRigSessionTime(simulatorId: string, addedMinutes: number, remainingSeconds: number) {
   const simRows = await prisma.$queryRawUnsafe<Array<{ ws_rig_id: string | null }>>(
     "select ws_rig_id from simulators where id=$1::uuid limit 1",
@@ -147,4 +214,17 @@ export async function addTime(req: Request) {
 }
 export async function pause(req: Request) { const s = await getSessionScoped(req); await prisma.$executeRawUnsafe("update sessions set status='paused' where id=$1::uuid", s.id); await auditLog({ actor: req.user, branch_id: s.branch_id, action_type: "pause_session", entity_type: "session", entity_id: s.id, session_id: s.id }); return { ok: true }; }
 export async function resume(req: Request) { const s = await getSessionScoped(req); await prisma.$executeRawUnsafe("update sessions set status='active' where id=$1::uuid", s.id); await auditLog({ actor: req.user, branch_id: s.branch_id, action_type: "resume_session", entity_type: "session", entity_id: s.id, session_id: s.id }); return { ok: true }; }
-export async function stop(req: Request) { const s = await getSessionScoped(req); const nextStatus = Number(s.debt_amount) > 0 ? "unpaid" : "stopped"; await prisma.$executeRawUnsafe("update sessions set status=$1, ended_at=now(), stopped_by=$2::uuid where id=$3::uuid", nextStatus, req.user!.user_id, s.id); await prisma.$executeRawUnsafe("update simulators set status=$1, current_session_id=null where id=$2::uuid", nextStatus === "unpaid" ? "unpaid" : "ready_to_play", s.simulator_id); await auditLog({ actor: req.user, branch_id: s.branch_id, action_type: "stop_session", entity_type: "session", entity_id: s.id, simulator_id: s.simulator_id, session_id: s.id }); broadcastDashboard("session_stopped", { id: s.id }, s.branch_id); return getSessionScoped(req); }
+export async function stop(req: Request) {
+  const s = await getSessionScoped(req);
+  await finalizeSessionStop(s, { stoppedBy: req.user!.user_id });
+  await auditLog({
+    actor: req.user,
+    branch_id: s.branch_id,
+    action_type: "stop_session",
+    entity_type: "session",
+    entity_id: s.id,
+    simulator_id: s.simulator_id,
+    session_id: s.id,
+  });
+  return getSessionScoped(req);
+}
