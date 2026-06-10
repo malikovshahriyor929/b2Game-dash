@@ -672,7 +672,6 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     startSession(id, payload) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator || !visibleBranchIds.includes(simulator.branchId) || ["offline", "locked", "broken", "repair_requested", "repair_approved", "fixing", "fixed_waiting_confirmation"].includes(simulator.status)) return;
-      if (simulator.rigId) void unlockAdminRig(simulator.rigId, payload.duration).then(refreshAfterAction).catch(() => undefined);
       const isPaid = payload.paymentStatus === "paid";
       const method = toApiPaymentMethod(isPaid ? payload.paymentMethod : undefined);
       void backendPost<Record<string, unknown>>("/sessions/start", {

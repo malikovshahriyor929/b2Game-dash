@@ -2,6 +2,7 @@ import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { authSecret } from "@/lib/auth-env";
 import { backendServerAxios } from "@/server/api";
+import { readBackendTokens, refreshBackendTokens } from "@/server/backend-auth";
 import type { Role } from "@/types/user";
 
 function isRole(value: unknown): value is Role {
@@ -26,13 +27,6 @@ export const authOptions: NextAuthOptions = {
 
         const response = await backendServerAxios.post("/auth/login", { email, password }, { responseType: "text" });
         const text = typeof response.data === "string" ? response.data : JSON.stringify(response.data);
-        console.log("[auth] backend login response", {
-          url: "/api/auth/login",
-          status: response.status,
-          ok: response.status >= 200 && response.status < 300,
-          contentType: response.headers["content-type"],
-          body: text,
-        });
         if (response.status < 200 || response.status >= 300) return null;
         if (!text) return null;
         let payload: any;
@@ -42,7 +36,8 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
         const user = payload.data?.user;
-        if (!user || !isRole(user.role)) return null;
+        const tokens = readBackendTokens(payload);
+        if (!user || !isRole(user.role) || !tokens) return null;
         const branchIds = user.role === "super_admin" ? ["all"] : user.branch_id ? [String(user.branch_id)] : [];
         return {
           id: String(user.id),
@@ -50,13 +45,15 @@ export const authOptions: NextAuthOptions = {
           email: String(user.email),
           role: user.role,
           branchIds,
-          backendToken: payload.data?.access_token ? String(payload.data.access_token) : undefined,
+          backendToken: tokens.accessToken,
+          backendRefreshToken: tokens.refreshToken,
+          backendTokenExpiresAt: tokens.accessTokenExpiresAt,
         };
       },
     }),
   ],
   callbacks: {
-    jwt({ token, user }) {
+    async jwt({ token, user }) {
       if (user) {
         token.sub = user.id;
         token.name = user.name;
@@ -64,6 +61,26 @@ export const authOptions: NextAuthOptions = {
         token.role = user.role;
         token.branchIds = user.branchIds;
         token.backendToken = user.backendToken;
+        token.backendRefreshToken = user.backendRefreshToken;
+        token.backendTokenExpiresAt = user.backendTokenExpiresAt;
+        delete token.authError;
+        return token;
+      }
+
+      if (token.backendToken && token.backendTokenExpiresAt && Date.now() < token.backendTokenExpiresAt - 60_000) return token;
+      if (!token.backendRefreshToken) {
+        token.authError = "RefreshAccessTokenError";
+        return token;
+      }
+
+      try {
+        const refreshed = await refreshBackendTokens(token.backendRefreshToken);
+        token.backendToken = refreshed.accessToken;
+        token.backendRefreshToken = refreshed.refreshToken;
+        token.backendTokenExpiresAt = refreshed.accessTokenExpiresAt;
+        delete token.authError;
+      } catch {
+        token.authError = "RefreshAccessTokenError";
       }
       return token;
     },
@@ -73,6 +90,7 @@ export const authOptions: NextAuthOptions = {
       session.user.email = token.email ?? "";
       session.user.role = isRole(token.role) ? token.role : "admin";
       session.user.branchIds = Array.isArray(token.branchIds) ? token.branchIds : [];
+      session.authError = token.authError;
       return session;
     },
   },

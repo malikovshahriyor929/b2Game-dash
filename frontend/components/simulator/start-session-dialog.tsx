@@ -23,6 +23,44 @@ type CustomerRow = {
 };
 const customerPageSize = 20;
 
+function normalizeUzPhone(value: string) {
+  let digits = value.replace(/\D/g, "");
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (digits.startsWith("998")) return digits.slice(0, 12);
+  if (digits.length === 9) digits = `998${digits}`;
+  if (digits.startsWith("8") && digits.length === 11) digits = `99${digits}`;
+  return digits.slice(0, 12);
+}
+
+function formatUzPhone(value: string) {
+  const digits = normalizeUzPhone(value);
+  if (!digits) return "";
+  if (!digits.startsWith("998")) return digits;
+  const local = digits.slice(3);
+  const area = local.slice(0, 2);
+  const prefix = local.slice(2, 5);
+  const line = local.slice(5, 9);
+  if (!area) return "+998";
+  if (!prefix) return `+998 (${area}`;
+  return `+998 (${area}) ${prefix}${line ? ` ${line}` : ""}`;
+}
+
+function formatUzLocalPhone(value: string) {
+  const digits = normalizeUzPhone(value);
+  const local = digits.startsWith("998") ? digits.slice(3) : digits.slice(0, 9);
+  const area = local.slice(0, 2);
+  const prefix = local.slice(2, 5);
+  const line = local.slice(5, 9);
+  if (!area) return "";
+  if (!prefix) return `(${area}`;
+  return `(${area}) ${prefix}${line ? ` ${line}` : ""}`;
+}
+
+function localPhoneDigits(value: string) {
+  const digits = value.replace(/\D/g, "");
+  return digits.startsWith("998") ? digits.slice(3, 12) : digits.slice(0, 9);
+}
+
 export function StartSessionDialog({ open, onOpenChange, simulator }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator }) {
   const { startSession, selectedBranchId } = useDashboardStore();
   const tariffBranchId = simulator?.branchId ?? (selectedBranchId === "all" ? undefined : selectedBranchId);
@@ -145,8 +183,8 @@ export function StartSessionDialog({ open, onOpenChange, simulator }: { open: bo
   function selectCustomer(customer: CustomerRow) {
     setSelectedCustomerId(customer.id);
     setCustomerName(customer.name);
-    setPhone(String(customer.phone ?? ""));
-    setCustomerQuery(`${customer.name}${customer.phone ? ` - ${customer.phone}` : ""}`);
+    setPhone(normalizeUzPhone(String(customer.phone ?? "")));
+    setCustomerQuery(`${customer.name}${customer.phone ? ` - ${formatUzPhone(String(customer.phone))}` : ""}`);
     setCustomerPopoverOpen(false);
   }
 
@@ -239,7 +277,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator }: { open: bo
                         onClick={() => selectCustomer(customer)}
                       >
                         <span className="block truncate font-bold">{customer.name}</span>
-                        <span className="block truncate text-xs opacity-75">{customer.phone ?? "Telefon yo'q"} · Balans: {money(Number(customer.balance ?? 0))}</span>
+                        <span className="block truncate text-xs opacity-75">{customer.phone ? formatUzPhone(String(customer.phone)) : "Telefon yo'q"} · Balans: {money(Number(customer.balance ?? 0))}</span>
                       </button>
                     ))}
                     {loadingCustomers ? <div className="px-3 py-2 text-sm font-semibold text-slate-500">Mijozlar yuklanmoqda...</div> : null}
@@ -255,7 +293,20 @@ export function StartSessionDialog({ open, onOpenChange, simulator }: { open: bo
 
           <div className="space-y-2">
             <Label htmlFor="start-phone">Phone</Label>
-            <Input id="start-phone" inputMode="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="998..." disabled={customerType === "Registered" && Boolean(selectedCustomer)} />
+            <div className="grid grid-cols-[88px_1fr] gap-2">
+              <div className="flex h-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-950/70 text-sm font-bold text-slate-300">+998</div>
+              <Input
+                id="start-phone"
+                inputMode="tel"
+                value={formatUzLocalPhone(phone)}
+                onChange={(event) => {
+                  const local = localPhoneDigits(event.target.value);
+                  setPhone(local ? `998${local}` : "");
+                }}
+                placeholder="Phone number"
+                disabled={customerType === "Registered" && Boolean(selectedCustomer)}
+              />
+            </div>
           </div>
 
           <div className="space-y-2">

@@ -90,6 +90,7 @@ async function run() {
 
     await upsertUser("Super Admin", "superadmin@b2game.uz", "12345678", "super_admin", null);
     await upsertUser("Main Admin", "admin.main@b2game.uz", "admin123", "admin", branchRows.MAIN);
+    await upsertUser("Main Admin", "admin@b2game.uz", "admin123", "admin", branchRows.MAIN);
 
     const mainBranchId = branchRows.MAIN;
 

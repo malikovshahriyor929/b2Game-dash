@@ -52,7 +52,7 @@ function TariffCard({ item }: { item: BackendTariff }) {
   const weekendPrice = item.weekendPrice ?? item.price;
 
   return (
-    <Card className="p-4">
+    <Card className="p-4 w-full min-w-[220px]">
       <div className="flex flex-wrap gap-2">
         <Badge variant={item.simulatorZone === "vip" ? "vip" : "muted"}>
           {zoneLabels[item.simulatorZone] ?? item.simulatorZone}
@@ -159,7 +159,7 @@ export default function TariffsPage() {
           {groupedTariffs.main.length ? (
             <section>
               <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Logitech / Middle</h2>
-              <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
                 {groupedTariffs.main.map((item) => <TariffCard key={item.id} item={item} />)}
               </div>
             </section>
@@ -167,7 +167,7 @@ export default function TariffsPage() {
           {groupedTariffs.vip.length ? (
             <section>
               <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Moza / VIP</h2>
-              <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
                 {groupedTariffs.vip.map((item) => <TariffCard key={item.id} item={item} />)}
               </div>
             </section>

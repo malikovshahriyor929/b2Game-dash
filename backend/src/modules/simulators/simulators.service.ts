@@ -417,6 +417,8 @@ export async function updateMapPosition(req: Request) {
 
 async function command(req: Request, action: string, work: (rig: RigMvpRig) => Promise<unknown>) {
   const rig = await getRigMvpRig(await rigIdFromParam(String(req.params.id)));
+  const currentRow = await rigToSimulatorRow(rig);
+  if (req.user?.role === "admin" && currentRow.branch_id !== req.user.branch_id) throw new ApiError(403, "Branch scope violation");
   await work(rig);
   const row = await rigToSimulatorRow(await getRigMvpRig(rig.rig_id));
   await auditLog({ actor: req.user, branch_id: row.branch_id, action_type: action, entity_type: "rig_mvp", entity_id: null, details: { rig_id: rig.rig_id } });

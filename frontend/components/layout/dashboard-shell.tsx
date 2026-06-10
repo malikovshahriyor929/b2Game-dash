@@ -37,13 +37,13 @@ function ShellInner({ children }: { children: React.ReactNode }) {
 }
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
 
   useEffect(() => {
-    if (status === "unauthenticated") {
+    if (status === "unauthenticated" || session?.authError === "RefreshAccessTokenError") {
       void signOut({ callbackUrl: "/login" });
     }
-  }, [status]);
+  }, [session?.authError, status]);
 
   if (status === "loading" || status === "unauthenticated") {
     return <main className="flex h-dvh items-center justify-center bg-[#070b15] text-sm font-semibold text-slate-400">Session tekshirilmoqda...</main>;

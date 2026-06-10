@@ -21,6 +21,15 @@ function paymentMode(value: unknown) {
   return "postpaid";
 }
 
+async function sendRigMvpCommandIfSupported(rigId: string, payload: Record<string, unknown>) {
+  try {
+    await sendRigMvpCommand(rigId, payload);
+  } catch (error) {
+    if (error instanceof ApiError && error.statusCode === 404) return;
+    throw error;
+  }
+}
+
 export async function start(req: Request) {
   if (!isUuid(req.body.simulator_id)) {
     const rig = await getRigMvpRig(String(req.body.simulator_id));
@@ -40,7 +49,7 @@ export async function start(req: Request) {
       paid_amount: Number(req.body.paid_amount ?? 0),
       source: "rig_mvp",
     };
-    await sendRigMvpCommand(rig.rig_id, {
+    await sendRigMvpCommandIfSupported(rig.rig_id, {
       type: "start_session",
       session_id: session.id,
       customer_name: req.body.customer_name ?? "Guest",
@@ -68,7 +77,7 @@ export async function start(req: Request) {
   if (sim.ws_rig_id) {
     const durationMinutes = Number(req.body.duration_minutes);
     await unlockRigMvp(sim.ws_rig_id, durationMinutes);
-    await sendRigMvpCommand(sim.ws_rig_id, {
+    await sendRigMvpCommandIfSupported(sim.ws_rig_id, {
       type: "start_session",
       session_id: session.id,
       customer_name: req.body.customer_name ?? "Guest",

@@ -3,6 +3,7 @@ import { Role } from "./user";
 
 declare module "next-auth" {
   interface Session {
+    authError?: "RefreshAccessTokenError";
     user: {
       id: string;
       name: string;
@@ -17,6 +18,8 @@ declare module "next-auth" {
     role: Role;
     branchIds: string[];
     backendToken?: string;
+    backendRefreshToken?: string;
+    backendTokenExpiresAt?: number;
   }
 }
 
@@ -26,5 +29,8 @@ declare module "next-auth/jwt" {
     role: Role;
     branchIds: string[];
     backendToken?: string;
+    backendRefreshToken?: string;
+    backendTokenExpiresAt?: number;
+    authError?: "RefreshAccessTokenError";
   }
 }
