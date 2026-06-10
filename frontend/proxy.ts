@@ -1,6 +1,5 @@
-import { getToken } from "next-auth/jwt";
 import { NextResponse, type NextRequest } from "next/server";
-import { authSecret } from "@/lib/auth-env";
+import { getSessionToken } from "@/lib/session-token";
 
 const authCookieNames = [
   "next-auth.session-token",
@@ -11,7 +10,7 @@ const authCookieNames = [
   "__Host-next-auth.csrf-token",
 ];
 
-function isValidDashboardToken(token: Awaited<ReturnType<typeof getToken>>) {
+function isValidDashboardToken(token: Awaited<ReturnType<typeof getSessionToken>>) {
   if (!token || typeof token === "string") return false;
 
   return Boolean(token?.sub && (token.role === "admin" || token.role === "super_admin") && Array.isArray(token.branchIds));
@@ -35,10 +34,7 @@ function redirectToLogin(request: NextRequest) {
 }
 
 export async function proxy(request: NextRequest) {
-  const secureCookie = request.nextUrl.protocol === "https:";
-  const token =
-    await getToken({ req: request, secret: authSecret, secureCookie }) ??
-    await getToken({ req: request, secret: authSecret, secureCookie: !secureCookie });
+  const token = await getSessionToken(request);
 
   if (isValidDashboardToken(token)) {
     return NextResponse.next();

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
-import { authSecret } from "@/lib/auth-env";
+import { getSessionToken } from "@/lib/session-token";
 import { backendServerAxios } from "@/server/api";
 import { refreshBackendTokens } from "@/server/backend-auth";
 
@@ -12,7 +11,7 @@ async function getRequestBackendToken(request: NextRequest) {
   const headerToken = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (headerToken) return { accessToken: headerToken };
 
-  const sessionToken = await getToken({ req: request, secret: authSecret });
+  const sessionToken = await getSessionToken(request);
   if (!sessionToken?.backendToken) return null;
   if (!sessionToken.backendTokenExpiresAt || sessionToken.backendTokenExpiresAt > Date.now() + 30_000) {
     return { accessToken: sessionToken.backendToken, refreshToken: sessionToken.backendRefreshToken };
