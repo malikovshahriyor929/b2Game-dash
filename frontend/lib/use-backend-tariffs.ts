@@ -17,6 +17,8 @@ export type BackendTariff = {
   weekendBonus?: string;
   bonus?: string;
   isWeekend?: boolean;
+  isEvening?: boolean;
+  pricePeriod?: "weekday" | "evening" | "weekend";
 };
 
 export function mapTariffRow(row: Record<string, unknown>): BackendTariff {
@@ -35,17 +37,25 @@ export function mapTariffRow(row: Record<string, unknown>): BackendTariff {
     weekendBonus: row.weekend_bonus == null ? undefined : String(row.weekend_bonus),
     bonus: row.bonus == null ? undefined : String(row.bonus),
     isWeekend: Boolean(row.is_weekend),
+    isEvening: Boolean(row.is_evening),
+    pricePeriod: row.price_period == null ? undefined : String(row.price_period) as BackendTariff["pricePeriod"],
   };
 }
 
 export function dedupeTariffs(tariffs: BackendTariff[]) {
   const seen = new Set<string>();
   return tariffs.filter((item) => {
-    const key = `${item.simulatorZone}:${item.name}:${item.durationMinutes}`;
+    const key = `${item.simulatorZone}:${item.type}:${item.name.trim().toLowerCase()}:${item.durationMinutes}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+}
+
+export function tariffPricePeriodLabel(item: BackendTariff) {
+  if (item.pricePeriod === "weekend" || item.isWeekend) return "Juma-Yakshanba";
+  if (item.pricePeriod === "evening" || item.isEvening) return "Kechki";
+  return "PN-CHT";
 }
 
 export function formatTariffOptionLabel(item: BackendTariff) {
@@ -56,19 +66,20 @@ export function formatTariffOptionLabel(item: BackendTariff) {
   return `${item.name} — ${money(item.price)}${bonus}`;
 }
 
-export function useBackendTariffs(branchId?: string) {
+export function useBackendTariffs(branchId?: string, enabled = true) {
   const queryBranchId = branchId && branchId !== "all" ? branchId : "all";
   const [tariffs, setTariffs] = useState<BackendTariff[]>([]);
 
   useEffect(() => {
+    if (!enabled) return;
     const query = `branch_id=${encodeURIComponent(queryBranchId)}`;
     void backendGet<Array<Record<string, unknown>>>(`/tariffs?${query}`)
       .then((rows) => {
         const mapped = rows.map(mapTariffRow);
-        setTariffs(queryBranchId === "all" ? dedupeTariffs(mapped) : mapped);
+        setTariffs(dedupeTariffs(mapped));
       })
       .catch(() => undefined);
-  }, [queryBranchId]);
+  }, [enabled, queryBranchId]);
 
   return tariffs;
 }

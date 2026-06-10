@@ -25,23 +25,23 @@ export default function DashboardPage() {
       
       {/* Active Session Info */}
       {activeShift && (
-        <div className="mb-4 rounded-lg border border-slate-700 bg-slate-900 p-4">
-          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
-            <div>
+        <div className="mb-4 overflow-hidden rounded-lg border border-slate-700 bg-slate-900 p-4">
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="min-w-0">
               <p className="text-xs text-muted-foreground">Operator</p>
-              <p className="text-lg font-semibold">{activeShift.operator}</p>
+              <p className="break-words text-lg font-semibold leading-snug">{activeShift.operator}</p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-muted-foreground">Shift Type</p>
-              <p className="text-lg font-semibold">{activeShift.shiftType}</p>
+              <p className="break-words text-lg font-semibold leading-snug">{activeShift.shiftType}</p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-muted-foreground">Start Cash</p>
-              <p className="text-lg font-semibold">{activeShift.startingCash.toLocaleString()} UZS</p>
+              <p className="break-words text-lg font-semibold leading-snug">{activeShift.startingCash.toLocaleString()} UZS</p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-muted-foreground">Today Earnings</p>
-              <p className="text-lg font-semibold text-green-400">{(activeShift.totalIncome).toLocaleString()} UZS</p>
+              <p className="break-words text-lg font-semibold leading-snug text-green-400">{(activeShift.totalIncome).toLocaleString()} UZS</p>
             </div>
           </div>
         </div>

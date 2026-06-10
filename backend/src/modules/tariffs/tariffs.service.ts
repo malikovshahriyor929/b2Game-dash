@@ -16,14 +16,30 @@ export const tariffsService = {
   async list(req: Request) {
     const s = branchScope(req);
     return prisma.$queryRawUnsafe(
-      `select *,
-        price as base_price,
-        extract(isodow from now())::int in (5,6,7) as is_weekend,
-        case when extract(isodow from now())::int in (5,6,7) then coalesce(weekend_price, price) else coalesce(weekday_price, price) end as price,
-        case when extract(isodow from now())::int in (5,6,7) then weekend_bonus else weekday_bonus end as bonus
-       from tariffs
-       where ${s.where} and is_active=true
-       order by simulator_zone, duration_minutes, type, name`,
+      `with tariff_time as (
+         select
+           extract(isodow from now() at time zone 'Asia/Tashkent')::int in (5,6,7) as is_weekend,
+           extract(hour from now() at time zone 'Asia/Tashkent')::int >= 18 as is_evening
+       ),
+       scoped as (
+         select
+           t.*,
+           t.price as base_price,
+           tt.is_weekend,
+           tt.is_evening,
+           case when tt.is_weekend or tt.is_evening then coalesce(t.weekend_price, t.price) else coalesce(t.weekday_price, t.price) end as current_price,
+           case when tt.is_weekend or tt.is_evening then t.weekend_bonus else t.weekday_bonus end as current_bonus,
+           case when tt.is_weekend then 'weekend' when tt.is_evening then 'evening' else 'weekday' end as price_period
+         from tariffs t
+         cross join tariff_time tt
+         where ${s.where} and t.is_active=true
+       )
+       select distinct on (branch_id, simulator_zone, lower(trim(name)), duration_minutes, type)
+         *,
+         current_price as price,
+         current_bonus as bonus
+       from scoped
+       order by branch_id, simulator_zone, lower(trim(name)), duration_minutes, type, updated_at desc, id`,
       ...s.values,
     );
   },

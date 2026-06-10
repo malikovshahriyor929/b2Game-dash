@@ -53,8 +53,8 @@ export function OrderPanel() {
   const attachId = active.some((item) => item.id === attachTarget) ? attachTarget : undefined;
   const selectedCustomer = customers.find((item) => item.id === selectedCustomerId);
   const selectedCustomerBalance = Number(selectedCustomer?.balance ?? 0);
-  const registeredBalanceInvalid = paymentMethod === "Balans" && selectedCustomerBalance < total;
   const paymentValue = paymentMethods.find((item) => item.label === paymentMethod)?.value ?? "card";
+  const registeredBalanceInvalid = paymentValue === "balance" && selectedCustomerBalance < total;
   const cashReceivedAmount = Number(cashReceived || 0);
   const cashChange = Math.max(cashReceivedAmount - total, 0);
   const mixedCashAmount = Number(mixedCash || 0);
@@ -128,9 +128,12 @@ export function OrderPanel() {
 
   function submitPayment(customerId?: string) {
     if (paymentInvalid) return;
+    if (paymentValue === "balance" && !customerId) return;
     const payload =
       paymentValue === "cash"
         ? { cash_amount: total, card_amount: 0, qr_amount: 0, balance_amount: 0, received_amount: cashReceivedAmount, change_amount: cashChange }
+        : paymentValue === "balance"
+          ? { cash_amount: 0, card_amount: 0, qr_amount: 0, balance_amount: total }
         : paymentValue === "mixed"
           ? { cash_amount: mixedCashAmount, card_amount: mixedCardAmount, qr_amount: 0, balance_amount: mixedBalanceAmount, received_amount: mixedReceivedAmount || mixedCashAmount, change_amount: mixedChange }
           : undefined;
@@ -220,10 +223,12 @@ export function OrderPanel() {
               <button
                 className="rounded-2xl border border-slate-700 bg-slate-950/70 p-4 text-left transition hover:border-sky-400 hover:bg-sky-500/10"
                 onClick={() => submitPayment()}
+                disabled={paymentValue === "balance"}
               >
                 <div className="flex items-center gap-3 text-lg font-black text-white"><FiUser /> Guest</div>
                 <div className="mt-2 text-sm text-slate-400">Mijoz ro'yxatidan tanlanmaydi. To'lov darhol yakunlanadi.</div>
                 <div className="mt-3 text-xs font-semibold text-slate-500">Payment: {paymentMethod}</div>
+                {paymentValue === "balance" ? <div className="mt-2 text-xs font-semibold text-red-300">Balans bilan to'lash uchun registered mijoz tanlang.</div> : null}
                 {paymentValue === "cash" ? <div className="mt-2 text-xs font-semibold text-emerald-200">Berdi: {money(cashReceivedAmount)} · Qaytim: {money(cashChange)}</div> : null}
                 <div className="mt-4 text-2xl font-black text-sky-200">{money(total)}</div>
               </button>
@@ -285,7 +290,7 @@ export function OrderPanel() {
               </div>
               <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
                 <Button variant="secondary" onClick={() => setPayStep("type")}>Back</Button>
-                <Button variant="outline" onClick={() => submitPayment()} disabled={paymentInvalid}>Pay as guest</Button>
+                <Button variant="outline" onClick={() => submitPayment()} disabled={paymentInvalid || paymentValue === "balance"}>Pay as guest</Button>
                 <Button onClick={() => selectedCustomerId && submitPayment(selectedCustomerId)} disabled={!selectedCustomerId || registeredBalanceInvalid || paymentInvalid}>
                   <FiCheckCircle /> Pay{selectedCustomer ? ` - ${selectedCustomer.name}` : ""}
                 </Button>

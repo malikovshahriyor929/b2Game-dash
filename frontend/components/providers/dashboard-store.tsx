@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Booking } from "@/types/booking";
 import { LogEntry, LockUnlockEntry } from "@/types/log";
@@ -21,7 +21,7 @@ import {
   unlockRig as unlockAdminRig,
 } from "@/lib/rig-admin-api";
 
-type StartPayload = { customerName: string; phone: string; tariff: string; tariffId?: string; duration: number; amount: number; paymentStatus: "paid" | "unpaid" | "partial"; paymentMethod?: string };
+type StartPayload = { customerName: string; phone: string; tariff: string; tariffId?: string; customerId?: string; duration: number; amount: number; paymentStatus: "paid" | "unpaid"; paymentMethod?: string };
 type PeriodFilter = "today" | "yesterday" | "week" | "month" | "year" | "custom";
 type RepairPayload = { title: string; description: string; errorType: RepairErrorType; priority: RepairPriority; note?: string };
 type RevenueEvent = { id: string; time: string; date?: string; amount: number; source: string; branchId?: string };
@@ -396,6 +396,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
   const [order, setOrder] = useState<OrderItem[]>([]);
   const [inventory, setInventory] = useState<Product[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const refreshInFlightRef = useRef<Promise<void> | null>(null);
   const defaultBranchId = data?.user?.role === "super_admin" ? "all" : data?.user?.branchIds?.[0] ?? fallbackBranch.id;
   const [selectedBranchId, setSelectedBranchIdState] = useState(defaultBranchId);
   const [period, setPeriod] = useState<PeriodFilter>("today");
@@ -433,7 +434,10 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
 
   async function refreshBackendData() {
     if (!data?.user || !apiBranchId) return;
-    try {
+    if (refreshInFlightRef.current) return refreshInFlightRef.current;
+
+    const task = (async () => {
+      try {
       const branchRows = await backendGet<Array<Record<string, unknown>>>("/branches");
       const nextBranches = branchRows.map((row) => ({ id: String(row.id), name: String(row.name) }));
       const branchSource = nextBranches.length ? nextBranches : [fallbackBranch];
@@ -479,9 +483,16 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         };
       }));
       setSelectedId((current) => (current && nextSimulators.some((item) => item.id === current) ? current : nextSimulators[0]?.id ?? null));
-    } catch {
+      } catch {
       // Keep the last simulator snapshot visible if a secondary dashboard endpoint fails.
-    }
+      }
+    })();
+
+    refreshInFlightRef.current = task;
+    task.finally(() => {
+      if (refreshInFlightRef.current === task) refreshInFlightRef.current = null;
+    });
+    return task;
   }
 
   async function refreshSimulatorsOnly(branches = branchList) {
@@ -519,6 +530,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     let cancelled = false;
     let socket: WebSocket | null = null;
     let reconnectTimer: number | null = null;
+    let refreshTimer: number | null = null;
 
     const refreshEvents = new Set([
       "simulator_updated",
@@ -537,6 +549,14 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       "shift_closed",
       "log_created",
     ]);
+
+    function scheduleBackendRefresh(delay = 200) {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        void refreshBackendData();
+      }, delay);
+    }
 
     async function connectDashboardSocket() {
       try {
@@ -567,7 +587,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
               window.setTimeout(() => void refreshSimulatorsOnly(branchSource), 250);
               return;
             }
-            if (refreshEvents.has(message.type)) void refreshBackendData();
+            if (refreshEvents.has(message.type)) scheduleBackendRefresh();
           } catch {
             // Ignore non-JSON websocket noise.
           }
@@ -585,6 +605,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     return () => {
       cancelled = true;
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      if (refreshTimer) window.clearTimeout(refreshTimer);
       socket?.close();
     };
   }, [apiBranchId]);
@@ -652,16 +673,18 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator || !visibleBranchIds.includes(simulator.branchId) || ["offline", "locked", "broken", "repair_requested", "repair_approved", "fixing", "fixed_waiting_confirmation"].includes(simulator.status)) return;
       if (simulator.rigId) void unlockAdminRig(simulator.rigId, payload.duration).then(refreshAfterAction).catch(() => undefined);
-      const method = toApiPaymentMethod(payload.paymentStatus === "paid" ? payload.paymentMethod : undefined);
+      const isPaid = payload.paymentStatus === "paid";
+      const method = toApiPaymentMethod(isPaid ? payload.paymentMethod : undefined);
       void backendPost<Record<string, unknown>>("/sessions/start", {
         simulator_id: simulator.id,
         branch_id: simulator.branchId,
         customer_name: payload.customerName,
+        customer_id: payload.customerId,
         phone: payload.phone,
         tariff_id: payload.tariffId,
-        payment_mode: payload.paymentStatus,
+        payment_mode: isPaid ? "prepaid" : "postpaid",
         duration_minutes: payload.duration,
-        paid_amount: payload.paymentStatus === "paid" ? payload.amount : 0,
+        paid_amount: isPaid ? payload.amount : 0,
         method,
       }).then(refreshAfterAction).catch(() => undefined);
       patchSimulator(id, {
@@ -672,10 +695,10 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         startedAt: now(),
         remainingMinutes: payload.duration,
         remainingSeconds: payload.duration * 60,
-        paidAmount: payload.paymentStatus === "paid" ? payload.amount : 0,
+        paidAmount: isPaid ? payload.amount : 0,
         paymentStatus: payload.paymentStatus,
       });
-      if (payload.paymentStatus === "paid") recordRevenue(payload.amount, `session started ${simulator.name}`, simulator.branchId);
+      if (isPaid) recordRevenue(payload.amount, `session started ${simulator.name}`, simulator.branchId);
       appendLog(`started session on ${simulator.name}`, simulator.name);
     },
     addTime(id, minutes, amount, method) {

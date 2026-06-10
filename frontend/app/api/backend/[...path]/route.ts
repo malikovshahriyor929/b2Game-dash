@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getToken } from "next-auth/jwt";
+import { authSecret } from "@/lib/auth-env";
 import { backendServerAxios } from "@/server/api";
 
 const BACKEND_PROXY_EMAIL = process.env.BACKEND_PROXY_EMAIL ?? "superadmin@b2game.uz";
@@ -23,6 +25,16 @@ async function getBackendToken() {
   return token;
 }
 
+async function getRequestBackendToken(request: NextRequest) {
+  const headerToken = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  if (headerToken) return headerToken;
+
+  const sessionToken = await getToken({ req: request, secret: authSecret });
+  if (sessionToken?.backendToken) return sessionToken.backendToken;
+
+  return getBackendToken();
+}
+
 async function proxy(request: NextRequest, context: RouteContext) {
   const { path } = await context.params;
   const rawBody = request.method === "GET" || request.method === "HEAD" ? "" : await request.text();
@@ -30,7 +42,7 @@ async function proxy(request: NextRequest, context: RouteContext) {
   const contentType = request.headers.get("content-type");
 
   try {
-    const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || await getBackendToken();
+    const token = await getRequestBackendToken(request);
     const response = await backendServerAxios.request({
       url: `/${path.join("/")}${request.nextUrl.search}`,
       method: request.method,

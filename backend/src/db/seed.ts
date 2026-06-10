@@ -30,6 +30,24 @@ const tariffs = [
   ["Moza tungi zaezd", "vip", 480, 500000, 500000, "energetik", "energetik", "night"],
 ] as const;
 
+const defaultPaymentMethods = [
+  { label: "Naqd", value: "cash", enabled: true },
+  { label: "Karta", value: "card", enabled: true },
+  { label: "Balans", value: "balance", enabled: true },
+  { label: "Aralash", value: "mixed", enabled: true },
+];
+
+const defaultStartSessionOptions = {
+  customerTypes: [
+    { label: "Guest", value: "Guest", enabled: true },
+    { label: "Registered user", value: "Registered", enabled: true },
+  ],
+  paymentModes: [
+    { label: "Prepaid", value: "paid", enabled: true },
+    { label: "Postpaid", value: "unpaid", enabled: true },
+  ],
+};
+
 async function upsertUser(name: string, email: string, password: string, role: "admin" | "super_admin", branchId: string | null) {
   const hash = await bcrypt.hash(password, 10);
   const { rows } = await pool.query(
@@ -65,6 +83,13 @@ async function run() {
     const samarqandAdmin = await upsertUser("Samarqand Admin", "admin.samarqand@b2game.uz", "admin123", "admin", branchRows.SAMARQAND);
 
     for (const [code, branchId] of Object.entries(branchRows)) {
+      await client.query(
+        `insert into settings(branch_id,key,value)
+         values($1,'payment_methods',$2::jsonb),($1,'start_session_options',$3::jsonb)
+         on conflict(branch_id,key) do update set value=excluded.value, updated_at=now()`,
+        [branchId, JSON.stringify(defaultPaymentMethods), JSON.stringify(defaultStartSessionOptions)],
+      );
+
       await client.query("update tariffs set is_active=false where branch_id=$1", [branchId]);
       for (const [name, zone, duration, weekdayPrice, weekendPrice, weekdayBonus, weekendBonus, type] of tariffs) {
         await client.query(

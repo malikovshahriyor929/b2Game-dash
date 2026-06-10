@@ -16,15 +16,28 @@ const fallbackPaymentMethods: PaymentMethodOption[] = [
   { label: "Aralash", value: "mixed", enabled: true },
 ];
 
-export function usePaymentMethods() {
+function uniquePaymentMethods(methods: PaymentMethodOption[]) {
+  const seen = new Set<string>();
+  return methods.filter((item) => {
+    if (item.enabled === false || item.value === "qr") return false;
+    const key = item.value;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function usePaymentMethods(branchId?: string, enabled = true) {
   const [methods, setMethods] = useState<PaymentMethodOption[]>(fallbackPaymentMethods);
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
-    backendGet<PaymentMethodOption[]>("/settings/payment-methods")
+    const query = branchId && branchId !== "all" ? `?branch_id=${encodeURIComponent(branchId)}` : "";
+    backendGet<PaymentMethodOption[]>(`/settings/payment-methods${query}`)
       .then((rows) => {
         if (cancelled) return;
-        const active = rows.filter((item) => item.enabled !== false && item.value !== "qr");
+        const active = uniquePaymentMethods(rows);
         setMethods(active.length ? active : fallbackPaymentMethods);
       })
       .catch(() => {
@@ -33,7 +46,7 @@ export function usePaymentMethods() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [branchId, enabled]);
 
   return methods;
 }

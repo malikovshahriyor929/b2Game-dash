@@ -16,6 +16,7 @@ declare module "next-auth" {
     email: string;
     role: Role;
     branchIds: string[];
+    backendToken?: string;
   }
 }
 
@@ -24,5 +25,6 @@ declare module "next-auth/jwt" {
     email: string;
     role: Role;
     branchIds: string[];
+    backendToken?: string;
   }
 }

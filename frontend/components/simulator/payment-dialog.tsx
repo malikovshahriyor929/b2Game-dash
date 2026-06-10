@@ -14,8 +14,8 @@ import { Simulator } from "@/types/simulator";
 
 export function PaymentDialog({ open, onOpenChange, simulator }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator }) {
   const { pay } = useDashboardStore();
-  const tariffs = useBackendTariffs(simulator?.branchId);
-  const paymentMethods = usePaymentMethods();
+  const tariffs = useBackendTariffs(simulator?.branchId, open);
+  const paymentMethods = usePaymentMethods(simulator?.branchId, open);
   const [method, setMethod] = useState("Karta");
   const [cash, setCash] = useState("0");
   const [card, setCard] = useState("0");

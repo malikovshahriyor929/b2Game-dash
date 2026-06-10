@@ -44,7 +44,14 @@ export const authOptions: NextAuthOptions = {
         const user = payload.data?.user;
         if (!user || !isRole(user.role)) return null;
         const branchIds = user.role === "super_admin" ? ["all"] : user.branch_id ? [String(user.branch_id)] : [];
-        return { id: String(user.id), name: String(user.name), email: String(user.email), role: user.role, branchIds };
+        return {
+          id: String(user.id),
+          name: String(user.name),
+          email: String(user.email),
+          role: user.role,
+          branchIds,
+          backendToken: payload.data?.access_token ? String(payload.data.access_token) : undefined,
+        };
       },
     }),
   ],
@@ -56,6 +63,7 @@ export const authOptions: NextAuthOptions = {
         token.email = user.email;
         token.role = user.role;
         token.branchIds = user.branchIds;
+        token.backendToken = user.backendToken;
       }
       return token;
     },

@@ -14,7 +14,7 @@ function Row({ label, value, danger }: { label: string; value: React.ReactNode; 
 
 export function StopSessionDialog({ open, onOpenChange, simulator, onTakePayment }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator; onTakePayment?: () => void }) {
   const { products, stopSession } = useDashboardStore();
-  const tariffs = useBackendTariffs(simulator?.branchId);
+  const tariffs = useBackendTariffs(simulator?.branchId, open);
   const tariff = tariffs.find((item) => item.name === simulator?.tariff);
   const shopItems = simulator?.orderItems.flatMap((item) => item.split(",").map((name) => name.trim()).filter(Boolean)) ?? [];
   const shop = shopItems.reduce((sum, name) => sum + (products.find((product) => product.name === name)?.price ?? 0), 0);

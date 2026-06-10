@@ -8,6 +8,16 @@ const defaultPaymentMethods = [
   { label: "Balans", value: "balance", enabled: true },
   { label: "Aralash", value: "mixed", enabled: true },
 ];
+const defaultStartSessionOptions = {
+  customerTypes: [
+    { label: "Guest", value: "Guest", enabled: true },
+    { label: "Registered user", value: "Registered", enabled: true },
+  ],
+  paymentModes: [
+    { label: "Prepaid", value: "paid", enabled: true },
+    { label: "Postpaid", value: "unpaid", enabled: true },
+  ],
+};
 
 function branchId(req: Request) {
   const value = req.user?.role === "admin" ? req.user.branch_id : req.body.branch_id ?? req.query.branch_id;
@@ -27,6 +37,16 @@ export async function paymentMethods(req: Request) {
   );
   const methods = Array.isArray(rows[0]?.value) ? rows[0].value : defaultPaymentMethods;
   return methods;
+}
+
+export async function startSessionOptions(req: Request) {
+  const branch = branchId(req);
+  const rows = await prisma.$queryRawUnsafe<Array<{ value: unknown }>>(
+    "select value from settings where key='start_session_options' and ($1::uuid is null or branch_id=$1::uuid or branch_id is null) order by branch_id nulls last, updated_at desc limit 1",
+    branch,
+  );
+  const value = rows[0]?.value;
+  return value && typeof value === "object" && !Array.isArray(value) ? value : defaultStartSessionOptions;
 }
 
 export async function patchSettings(req: Request) {
