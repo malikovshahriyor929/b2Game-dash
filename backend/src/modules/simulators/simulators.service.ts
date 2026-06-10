@@ -27,15 +27,79 @@ function statusFromRig(rig: RigMvpRig) {
   return "busy";
 }
 
+function normalizedRigKeys(rig: RigMvpRig) {
+  return [rig.rig_id, rig.label, rig.hostname]
+    .map((value) => String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, ""))
+    .filter(Boolean);
+}
+
+async function findExistingSimulatorForRig(rig: RigMvpRig, branchId: string) {
+  const keys = normalizedRigKeys(rig);
+  if (!keys.length) return null;
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `select *
+     from simulators
+     where branch_id=$1::uuid
+       and (
+         ws_rig_id=$2
+         or code=$2
+         or device_id=$2
+         or lower(regexp_replace(coalesce(name,''), '[^a-z0-9]+', '', 'g')) = any($3::text[])
+         or lower(regexp_replace(coalesce(code,''), '[^a-z0-9]+', '', 'g')) = any($3::text[])
+         or lower(regexp_replace(coalesce(device_id,''), '[^a-z0-9]+', '', 'g')) = any($3::text[])
+       )
+     order by
+       case
+         when ws_rig_id=$2 then 0
+         when code=$2 then 1
+         when device_id=$2 then 2
+         else 3
+       end,
+       updated_at desc
+     limit 1`,
+    branchId,
+    rig.rig_id,
+    keys,
+  );
+  return rows[0] ?? null;
+}
+
 export async function rigToSimulatorRow(rig: RigMvpRig, options: { persist?: boolean } = {}) {
   const persist = options.persist ?? true;
   const branch = await resolveRigBranch(rig);
   const zone = zoneFromRig(rig);
   const status = statusFromRig(rig);
   const name = rig.label || rig.hostname || rig.rig_id;
+  const existing = await findExistingSimulatorForRig(rig, branch.id);
   const rows = persist
-    ? await prisma.$queryRawUnsafe<any[]>(
-      `insert into simulators(branch_id,name,code,zone,simulator_type,status,device_id,ip_address,ws_rig_id,is_online,last_seen_at)
+    ? existing
+      ? await prisma.$queryRawUnsafe<any[]>(
+        `update simulators
+         set name=$2,
+             zone=$3,
+             simulator_type=$4,
+             status=$5,
+             device_id=$6,
+             ip_address=$7,
+             ws_rig_id=$8,
+             is_online=$9,
+             last_seen_at=$10::timestamptz,
+             updated_at=now()
+         where id=$1::uuid
+         returning *`,
+        existing.id,
+        name,
+        zone,
+        zone,
+        status,
+        rig.rig_id,
+        rig.hostname,
+        rig.rig_id,
+        rig.online,
+        rig.last_seen,
+      )
+      : await prisma.$queryRawUnsafe<any[]>(
+        `insert into simulators(branch_id,name,code,zone,simulator_type,status,device_id,ip_address,ws_rig_id,is_online,last_seen_at)
        values($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::timestamptz)
        on conflict(branch_id,code) do update set
          name=excluded.name,
@@ -61,11 +125,7 @@ export async function rigToSimulatorRow(rig: RigMvpRig, options: { persist?: boo
       rig.online,
       rig.last_seen,
     )
-    : await prisma.$queryRawUnsafe<any[]>(
-      "select * from simulators where branch_id=$1::uuid and code=$2 limit 1",
-      branch.id,
-      rig.rig_id,
-    );
+    : existing ? [existing] : [];
   const row = rows[0] ?? {
     id: rig.rig_id,
     branch_id: branch.id,
@@ -141,6 +201,38 @@ export async function rigToSimulatorRow(rig: RigMvpRig, options: { persist?: boo
 async function rigIdFromParam(id: string) {
   const rows = await prisma.$queryRawUnsafe<Array<{ ws_rig_id: string | null }>>("select ws_rig_id from simulators where id=$1::uuid limit 1", id).catch(() => []);
   return rows[0]?.ws_rig_id ?? id;
+}
+
+async function simulatorIdFromParam(id: string, user?: Request["user"]) {
+  const branchId = user?.role === "admin" ? user.branch_id : null;
+  if (/^[0-9a-f-]{36}$/i.test(id)) {
+    const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+      "select id from simulators where id=$1::uuid and ($2::uuid is null or branch_id=$2::uuid) limit 1",
+      id,
+      branchId,
+    );
+    if (rows[0]?.id) return rows[0].id;
+  }
+  const key = id.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+    `select id
+     from simulators
+     where ($1::uuid is null or branch_id=$1::uuid)
+       and (
+         ws_rig_id=$2
+         or code=$2
+         or device_id=$2
+         or lower(regexp_replace(coalesce(name,''), '[^a-z0-9]+', '', 'g'))=$3
+         or lower(regexp_replace(coalesce(code,''), '[^a-z0-9]+', '', 'g'))=$3
+         or lower(regexp_replace(coalesce(device_id,''), '[^a-z0-9]+', '', 'g'))=$3
+       )
+     order by updated_at desc
+     limit 1`,
+    branchId,
+    id,
+    key,
+  );
+  return rows[0]?.id ?? null;
 }
 
 export async function deleteRigFromDb(rigId: string) {
@@ -244,7 +336,7 @@ async function listDbSimulatorRows(requestedBranchId?: unknown, user?: Request["
 export async function listRows(requestedBranchId?: unknown, user?: Request["user"]) {
   try {
     const rigs = await filterRigsForScope(await listRigMvpRigs(), requestedBranchId, user);
-    return Promise.all(rigs.map((rig) => rigToSimulatorRow(rig, { persist: false })));
+    return Promise.all(rigs.map((rig) => rigToSimulatorRow(rig)));
   } catch {
     // Keep the dashboard usable from the seeded PostgreSQL data when Rig-MVP is down.
   }
@@ -307,13 +399,15 @@ export async function updateMapPosition(req: Request) {
     colSpan,
     rowSpan,
   };
+  const simulatorId = await simulatorIdFromParam(String(req.params.id), req.user);
+  if (!simulatorId) throw new ApiError(404, "Simulator not found");
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `update simulators
      set map_position=$1::jsonb, updated_at=now()
      where id=$2::uuid and ($3::uuid is null or branch_id=$3::uuid)
      returning *`,
     JSON.stringify(normalized),
-    req.params.id,
+    simulatorId,
     req.user?.role === "admin" ? req.user.branch_id : null,
   );
   if (!rows.length) throw new ApiError(404, "Simulator not found");

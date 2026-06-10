@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FiCoffee, FiCreditCard, FiSearch, FiUsers } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ import { StartSessionDialog } from "@/components/simulator/start-session-dialog"
 import { StopSessionDialog } from "@/components/simulator/stop-session-dialog";
 import { SimulatorCard } from "@/components/simulator/simulator-card";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
-import { backendPatch } from "@/server/api";
+import { backendGet, backendPatch } from "@/server/api";
 import { seconds } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Simulator, SimulatorMapPosition, SimulatorStatus } from "@/types/simulator";
@@ -22,11 +22,14 @@ const mapColumns = 24;
 const mapRows = 5;
 
 type MapPosition = SimulatorMapPosition;
+type FacilityKey = "cashier" | "wc" | "shop";
+type LayoutSelection = { type: "simulator"; id: string } | { type: "facility"; key: FacilityKey };
+type SimulatorMapLayout = { facilities?: Partial<Record<FacilityKey, MapPosition>> };
 
-const facilities = [
-  { key: "cashier", label: "Kassa", icon: FiCreditCard, position: { col: 21, row: 5 } },
-  { key: "wc", label: "WC", icon: FiUsers, position: { col: 22, row: 5 } },
-  { key: "shop", label: "Shop", icon: FiCoffee, position: { col: 23, row: 5 } },
+const facilities: Array<{ key: FacilityKey; label: string; icon: typeof FiCreditCard; position: MapPosition }> = [
+  { key: "cashier", label: "Kassa", icon: FiCreditCard, position: { floor: "1", col: 21, row: 5, colSpan: 1, rowSpan: 1 } },
+  { key: "wc", label: "WC", icon: FiUsers, position: { floor: "1", col: 22, row: 5, colSpan: 1, rowSpan: 1 } },
+  { key: "shop", label: "Shop", icon: FiCoffee, position: { floor: "1", col: 23, row: 5, colSpan: 1, rowSpan: 1 } },
 ];
 
 const statusClass: Record<SimulatorStatus, string> = {
@@ -109,6 +112,57 @@ function defaultMapPosition(simulator: Simulator): MapPosition {
     : vipPositions[number - 1] ?? fallbackPosition;
 }
 
+function positionKey(position: MapPosition) {
+  return `${position.floor ?? ""}:${position.col}:${position.row}:${position.colSpan ?? 1}:${position.rowSpan ?? 1}`;
+}
+
+function nextFreePosition(position: MapPosition, used: Set<string>) {
+  const colSpan = position.colSpan ?? 2;
+  const rowSpan = position.rowSpan ?? 1;
+  const floor = position.floor === "2" ? "2" : "1";
+  const startCol = floor === "2" ? 1 : 8;
+  const endCol = floor === "2" ? 7 : mapColumns;
+  for (let row = 1; row <= mapRows - rowSpan + 1; row += 1) {
+    for (let col = startCol; col <= endCol - colSpan + 1; col += 1) {
+      const next = { ...position, floor, col, row, colSpan, rowSpan };
+      const key = positionKey(next);
+      if (!used.has(key)) return next;
+    }
+  }
+  return position;
+}
+
+function defaultLayoutPositions(simulators: Simulator[]) {
+  const used = new Set<string>();
+  return Object.fromEntries(simulators.map((item) => {
+    let position = defaultMapPosition(item);
+    if (used.has(positionKey(position))) position = nextFreePosition(position, used);
+    used.add(positionKey(position));
+    return [item.id, position];
+  }));
+}
+
+function defaultFacilityPositions() {
+  return Object.fromEntries(facilities.map((facility) => [facility.key, facility.position])) as Record<FacilityKey, MapPosition>;
+}
+
+function normalizedMapPosition(value: unknown, fallback: MapPosition): MapPosition {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return fallback;
+  const item = value as Record<string, unknown>;
+  const col = Number(item.col);
+  const row = Number(item.row);
+  const colSpan = Number(item.colSpan ?? fallback.colSpan ?? 1);
+  const rowSpan = Number(item.rowSpan ?? fallback.rowSpan ?? 1);
+  if (![col, row, colSpan, rowSpan].every(Number.isFinite) || col < 1 || row < 1 || colSpan < 1 || rowSpan < 1) return fallback;
+  return {
+    floor: item.floor == null ? fallback.floor : String(item.floor),
+    col,
+    row,
+    colSpan,
+    rowSpan,
+  };
+}
+
 function Tile({ simulator, position, selected, editing, onClick }: { simulator: Simulator; position: MapPosition; selected: boolean; editing: boolean; onClick: () => void }) {
   const detail = simulator.remainingSeconds && simulator.remainingSeconds > 0
     ? seconds(simulator.remainingSeconds)
@@ -148,7 +202,11 @@ export function SimulatorMap() {
   const [filter, setFilter] = useState("All");
   const [query, setQuery] = useState("");
   const [editingLayout, setEditingLayout] = useState(false);
+  const [layoutSelection, setLayoutSelection] = useState<LayoutSelection | null>(null);
   const [layoutDraft, setLayoutDraft] = useState<Record<string, MapPosition>>({});
+  const [savedLayout, setSavedLayout] = useState<Record<string, MapPosition>>({});
+  const [facilityPositions, setFacilityPositions] = useState<Record<FacilityKey, MapPosition>>(() => defaultFacilityPositions());
+  const [facilityDraft, setFacilityDraft] = useState<Partial<Record<FacilityKey, MapPosition>>>({});
   const [savingLayout, setSavingLayout] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetAction, setSheetAction] = useState<"start" | "addTime" | "payment" | "stop" | null>(null);
@@ -170,17 +228,71 @@ export function SimulatorMap() {
   }), [filter, query, simulators]);
 
   const visibleIds = useMemo(() => new Set(visible.map((item) => item.id)), [visible]);
-  const selectedLayoutSimulator = useMemo(() => simulators.find((item) => item.id === selectedId) ?? visible[0], [selectedId, simulators, visible]);
+  const selectedLayoutSimulator = useMemo(() => {
+    if (layoutSelection?.type !== "simulator") return null;
+    return simulators.find((item) => item.id === layoutSelection.id) ?? null;
+  }, [layoutSelection, simulators]);
+  const resolvedPositions = useMemo(() => {
+    const used = new Set<string>();
+    return Object.fromEntries(simulators.map((item) => {
+      const stored = layoutDraft[item.id] ?? savedLayout[item.id] ?? item.mapPosition;
+      const raw = stored ?? defaultMapPosition(item);
+      const floor = raw.floor === "0" ? "1" : raw.floor === "1" && raw.col <= 7 ? "2" : raw.floor;
+      let position: MapPosition = { ...raw, floor };
+      if (!stored && used.has(positionKey(position))) position = nextFreePosition(position, used);
+      used.add(positionKey(position));
+      return [item.id, position];
+    }));
+  }, [layoutDraft, savedLayout, simulators]);
+
+  const resolvedFacilityPositions = useMemo(() => {
+    const defaults = defaultFacilityPositions();
+    return Object.fromEntries(facilities.map((facility) => [
+      facility.key,
+      normalizedMapPosition(facilityDraft[facility.key] ?? facilityPositions[facility.key], defaults[facility.key]),
+    ])) as Record<FacilityKey, MapPosition>;
+  }, [facilityDraft, facilityPositions]);
+
+  const selectedLayoutLabel = useMemo(() => {
+    if (layoutSelection?.type === "facility") return facilities.find((facility) => facility.key === layoutSelection.key)?.label ?? "None";
+    if (layoutSelection?.type === "simulator") return selectedLayoutSimulator?.name ?? "None";
+    return "None";
+  }, [layoutSelection, selectedLayoutSimulator]);
+
+  useEffect(() => {
+    if (selectedBranchId === "all") return;
+    let cancelled = false;
+    void backendGet<SimulatorMapLayout>(`/settings/map-layout?branch_id=${encodeURIComponent(selectedBranchId)}`)
+      .then((layout) => {
+        if (cancelled) return;
+        const defaults = defaultFacilityPositions();
+        setFacilityPositions({
+          cashier: normalizedMapPosition(layout.facilities?.cashier, defaults.cashier),
+          wc: normalizedMapPosition(layout.facilities?.wc, defaults.wc),
+          shop: normalizedMapPosition(layout.facilities?.shop, defaults.shop),
+        });
+        setFacilityDraft({});
+      })
+      .catch(() => {
+        if (!cancelled) setFacilityPositions(defaultFacilityPositions());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedBranchId]);
 
   function positionFor(item: Simulator) {
-    const position = layoutDraft[item.id] ?? item.mapPosition ?? defaultMapPosition(item);
-    const floor = position.floor === "0" ? "1" : position.floor === "1" && position.col <= 7 ? "2" : position.floor;
-    return { ...position, floor };
+    return resolvedPositions[item.id] ?? defaultMapPosition(item);
+  }
+
+  function facilityPositionFor(key: FacilityKey) {
+    return resolvedFacilityPositions[key] ?? defaultFacilityPositions()[key];
   }
 
   function openCard(item: Simulator) {
     if (editingLayout) {
       setSelectedId(item.id);
+      setLayoutSelection({ type: "simulator", id: item.id });
       return;
     }
     setSelectedId(item.id);
@@ -188,24 +300,44 @@ export function SimulatorMap() {
   }
 
   function moveSelectedTo(col: number, row: number) {
-    if (!editingLayout || !selectedLayoutSimulator) return;
-    const current = positionFor(selectedLayoutSimulator);
+    if (!editingLayout || !layoutSelection) return;
+    const current = layoutSelection.type === "simulator"
+      ? selectedLayoutSimulator ? positionFor(selectedLayoutSimulator) : null
+      : facilityPositionFor(layoutSelection.key);
+    if (!current) return;
     const colSpan = current.colSpan ?? 2;
     const rowSpan = current.rowSpan ?? 1;
     const safeCol = Math.min(Math.max(1, col), mapColumns - colSpan + 1);
     const floor = safeCol <= 7 ? "2" : "1";
-    setSelectedId(selectedLayoutSimulator.id);
-    setLayoutDraft((items) => ({
+    const next = { ...current, floor, col: safeCol, row, colSpan, rowSpan };
+    if (layoutSelection.type === "simulator") {
+      setSelectedId(layoutSelection.id);
+      setLayoutDraft((items) => ({
+        ...items,
+        [layoutSelection.id]: next,
+      }));
+      return;
+    }
+    setFacilityDraft((items) => ({
       ...items,
-      [selectedLayoutSimulator.id]: { ...current, floor, col: safeCol, row, colSpan, rowSpan },
+      [layoutSelection.key]: next,
     }));
   }
 
   async function saveLayout() {
+    if (selectedBranchId === "all") return;
     setSavingLayout(true);
     try {
-      await Promise.all(simulators.map((item) => backendPatch(`/simulators/${item.id}/map-position`, { map_position: positionFor(item) })));
+      const nextSimulatorLayout = Object.fromEntries(simulators.map((item) => [item.id, positionFor(item)]));
+      const nextFacilityLayout = Object.fromEntries(facilities.map((facility) => [facility.key, facilityPositionFor(facility.key)])) as Record<FacilityKey, MapPosition>;
+      setSavedLayout((items) => ({ ...items, ...nextSimulatorLayout }));
+      setFacilityPositions(nextFacilityLayout);
+      await Promise.all([
+        ...simulators.map((item) => backendPatch(`/simulators/${item.id}/map-position`, { map_position: nextSimulatorLayout[item.id] })),
+        backendPatch(`/settings/map-layout?branch_id=${encodeURIComponent(selectedBranchId)}`, { layout: { facilities: nextFacilityLayout } }),
+      ]);
       setLayoutDraft({});
+      setFacilityDraft({});
       setEditingLayout(false);
     } finally {
       setSavingLayout(false);
@@ -214,8 +346,11 @@ export function SimulatorMap() {
 
   function resetDefaultLayout() {
     setEditingLayout(true);
-    setLayoutDraft(Object.fromEntries(simulators.map((item) => [item.id, defaultMapPosition(item)])));
-    setSelectedId(selectedId ?? visible[0]?.id ?? null);
+    setLayoutDraft(defaultLayoutPositions(simulators));
+    setFacilityDraft(defaultFacilityPositions());
+    const nextId = selectedId ?? visible[0]?.id ?? null;
+    setSelectedId(nextId);
+    setLayoutSelection(nextId ? { type: "simulator", id: nextId } : { type: "facility", key: "cashier" });
   }
 
   const dialogs = (
@@ -269,8 +404,14 @@ export function SimulatorMap() {
               <Badge variant="warning">{simulators.filter((item) => item.status === "reserved").length} bron</Badge>
               <span className="ml-auto text-xs font-semibold text-slate-500">{visible.length} / {simulators.length} shown</span>
               <Button className="ml-2" size="sm" variant={editingLayout ? "default" : "secondary"} disabled={!simulators.length} onClick={() => {
-                setEditingLayout((value) => !value);
-                setSelectedId(selectedId ?? visible[0]?.id ?? null);
+                setEditingLayout((value) => {
+                  const next = !value;
+                  const nextId = selectedId ?? visible[0]?.id ?? null;
+                  if (next && !layoutSelection) setLayoutSelection(nextId ? { type: "simulator", id: nextId } : { type: "facility", key: "cashier" });
+                  return next;
+                });
+                const nextId = selectedId ?? visible[0]?.id ?? null;
+                setSelectedId(nextId);
               }}>
                 {editingLayout ? "Editing layout" : "Edit layout"}
               </Button>
@@ -284,7 +425,7 @@ export function SimulatorMap() {
             {editingLayout ? (
               <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/65 px-3 py-2">
                 <Badge variant="muted">Selected</Badge>
-                <span className="text-sm font-bold text-slate-100">{selectedLayoutSimulator?.name ?? "None"}</span>
+                <span className="text-sm font-bold text-slate-100">{selectedLayoutLabel}</span>
                 <span className="text-xs font-semibold text-slate-500">click any map cell to move</span>
               </div>
             ) : null}
@@ -311,13 +452,23 @@ export function SimulatorMap() {
                 1 floor
               </div>
               <div
-                className="pointer-events-none z-20 flex items-center justify-center gap-2 rounded-xl border border-slate-700/60 bg-slate-950/55 px-3 text-xs font-bold text-slate-300"
+                className="pointer-events-none z-20 overflow-hidden rounded-2xl border border-slate-600/70 bg-slate-900/70 shadow-2xl shadow-black/30 ring-1 ring-white/5"
                 style={{ gridColumn: "22 / span 3", gridRow: "3 / span 2" }}
+                aria-label="Entrance"
               >
-                <div className="grid h-full w-full grid-cols-4 gap-2">
-                  {[0, 1, 2, 3].map((item) => <span key={item} className="rounded-sm bg-slate-600/80 shadow-inner shadow-black/30" />)}
+                <div className="relative flex h-full min-h-0 w-full items-stretch justify-center gap-3 px-5 py-4">
+                  <div className="absolute inset-x-4 top-4 h-px bg-gradient-to-r from-transparent via-sky-300/45 to-transparent" />
+                  <div className="absolute inset-x-4 bottom-4 h-px bg-gradient-to-r from-transparent via-slate-400/35 to-transparent" />
+                  {[0, 1, 2, 3].map((item) => (
+                    <span
+                      key={item}
+                      className="h-full flex-1 rounded-full border border-slate-500/50 bg-gradient-to-b from-slate-500 via-slate-700 to-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_10px_24px_rgba(0,0,0,0.35)]"
+                    />
+                  ))}
+                  <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-600/70 bg-slate-950/95 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.16em] text-slate-100 shadow-xl shadow-black/40">
+                    Entrance
+                  </span>
                 </div>
-                <span className="absolute rounded-full bg-slate-950/80 px-2 py-1">Entrance</span>
               </div>
 
               {Array.from({ length: mapColumns * mapRows }).map((_, index) => (
@@ -338,19 +489,29 @@ export function SimulatorMap() {
               {facilities.map((facility) => {
                 const Icon = facility.icon;
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={facility.key}
-                    className="z-20 flex flex-col items-center justify-center rounded-xl border border-slate-700 bg-slate-800/85 text-xs font-bold text-slate-200 shadow-lg shadow-black/20"
-                    style={{ gridColumn: facility.position.col, gridRow: facility.position.row }}
+                    disabled={!editingLayout}
+                    onClick={() => setLayoutSelection({ type: "facility", key: facility.key })}
+                    className={cn(
+                      "z-20 flex flex-col items-center justify-center rounded-xl border border-slate-700 bg-slate-800/85 text-xs font-bold text-slate-200 shadow-lg shadow-black/20 transition",
+                      editingLayout && "cursor-pointer hover:border-sky-400 hover:ring-2 hover:ring-sky-500/20",
+                      layoutSelection?.type === "facility" && layoutSelection.key === facility.key && "border-sky-300 ring-4 ring-sky-400/40",
+                    )}
+                    style={{
+                      gridColumn: `${facilityPositionFor(facility.key).col} / span ${facilityPositionFor(facility.key).colSpan ?? 1}`,
+                      gridRow: `${facilityPositionFor(facility.key).row} / span ${facilityPositionFor(facility.key).rowSpan ?? 1}`,
+                    }}
                   >
                     <Icon className="mb-1 text-lg" />
                     {facility.label}
-                  </div>
+                  </button>
                 );
               })}
 
               {simulators.map((item) => (
-                visibleIds.has(item.id) ? <Tile key={item.id} simulator={item} position={positionFor(item)} selected={selectedId === item.id} editing={editingLayout} onClick={() => openCard(item)} /> : null
+                visibleIds.has(item.id) ? <Tile key={item.id} simulator={item} position={positionFor(item)} selected={selectedId === item.id || (layoutSelection?.type === "simulator" && layoutSelection.id === item.id)} editing={editingLayout} onClick={() => openCard(item)} /> : null
               ))}
             </div>
           </div>

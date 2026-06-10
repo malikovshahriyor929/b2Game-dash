@@ -5,4 +5,6 @@ export const settingsRoutes = Router();
 settingsRoutes.get("/", controller.list);
 settingsRoutes.get("/payment-methods", controller.paymentMethods);
 settingsRoutes.get("/start-session-options", controller.startSessionOptions);
+settingsRoutes.get("/map-layout", controller.simulatorMapLayout);
+settingsRoutes.patch("/map-layout", controller.patchSimulatorMapLayout);
 settingsRoutes.patch("/", requireRole(["super_admin"]), controller.patch);
