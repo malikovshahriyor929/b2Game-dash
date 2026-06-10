@@ -4,7 +4,7 @@ function pad(value: number) {
 
 function parseBackendTimestamp(value?: string | null) {
   if (!value) return null;
-  const normalized = value.replace(" ", "T").replace(/Z$/, "");
+  const normalized = value.replace(" ", "T");
   const date = new Date(normalized);
   return Number.isNaN(date.getTime()) ? null : date;
 }

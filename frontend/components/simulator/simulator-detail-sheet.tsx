@@ -45,8 +45,10 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
   const canMarkFixed = canOperate && simulator.status === "fixing";
   const canReviewRepair = isSuperAdmin && repairRequest?.status === "pending";
   const canConfirmFix = isSuperAdmin && repairRequest?.status === "fixed_waiting_confirmation";
+  const hasSessionDetails = Boolean(simulator.currentSessionId || simulator.currentUser || ["busy", "unpaid", "reserved"].includes(simulator.status));
   const showSessionActions = canStartSession || canAddTime || canTakePayment || canStop || canToggleLock || canRequestFix;
-  const showRigActions = Boolean(simulator.rigId);
+  const showRigDetails = isSuperAdmin && Boolean(simulator.rigId);
+  const showRigActions = isSuperAdmin && Boolean(simulator.rigId);
   const showRepairActions = canStartFix || canMarkFixed || canReviewRepair || canConfirmFix;
 
   return (
@@ -55,25 +57,36 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
         <SheetContent className="w-[min(94vw,620px)] pb-8">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-3">{simulator.name}<StatusBadge status={simulator.status} /></SheetTitle>
-          <SheetDescription>{simulator.branchName} - {simulatorKind(simulator)} - {simulator.deviceId}</SheetDescription>
+          <SheetDescription>{simulator.branchName} - {simulatorKind(simulator)}</SheetDescription>
         </SheetHeader>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Branch" value={simulator.branchName} />
-          <Field label="Type" value={simulatorKind(simulator)} />
-          <Field label="Current user" value={simulator.currentUser ?? "No session"} />
-          <Field label="Tariff" value={simulator.tariff ?? "Not selected"} />
-          <Field label="Started" value={simulator.startedAt ?? "-"} />
-          <Field label="Remaining" value={seconds(simulator.remainingSeconds ?? simulator.remainingMinutes * 60)} />
-          <Field label="Paid" value={money(simulator.paidAmount)} />
-          <Field label="Payment" value={simulator.paymentStatus} />
-          <Field label="IP address" value={simulator.ipAddress} />
-          <Field label="Repair status" value={repairRequest?.status ?? "-"} />
-          {simulator.rigId ? <Field label="Rig ID" value={simulator.rigId} /> : null}
-          {simulator.rigId ? <Field label="Rig version" value={`${simulator.rigVersion ?? "-"} / latest ${simulator.rigLatestVersion ?? "-"}`} /> : null}
-          {simulator.rigId ? <Field label="Rig host" value={simulator.rigHostname ?? "-"} /> : null}
-          {simulator.rigId ? <Field label="Last seen" value={simulator.rigLastSeen ? backendDateTime(simulator.rigLastSeen) : "-"} /> : null}
-          {simulator.rigUpdateStatus ? <Field label="Update status" value={simulator.rigUpdateStatus} /> : null}
-        </div>
+        {hasSessionDetails || repairRequest ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {hasSessionDetails ? <Field label="Current user" value={simulator.currentUser ?? "No session"} /> : null}
+            {hasSessionDetails ? <Field label="Tariff" value={simulator.tariff ?? "Not selected"} /> : null}
+            {hasSessionDetails ? <Field label="Started" value={simulator.startedAt ?? "-"} /> : null}
+            {hasSessionDetails ? <Field label="Remaining" value={seconds(simulator.remainingSeconds ?? simulator.remainingMinutes * 60)} /> : null}
+            {hasSessionDetails ? <Field label="Paid" value={money(simulator.paidAmount)} /> : null}
+            {hasSessionDetails ? <Field label="Payment" value={simulator.paymentStatus} /> : null}
+            {repairRequest ? <Field label="Repair status" value={repairRequest.status} /> : null}
+          </div>
+        ) : null}
+        {showRigDetails ? (
+          <>
+            <Separator className="my-4" />
+            <div className="space-y-2">
+              <div className="text-xs font-semibold uppercase text-slate-500">Rig technical details</div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Device ID" value={simulator.deviceId} />
+                <Field label="IP address" value={simulator.ipAddress} />
+                <Field label="Rig ID" value={simulator.rigId} />
+                <Field label="Rig version" value={`${simulator.rigVersion ?? "-"} / latest ${simulator.rigLatestVersion ?? "-"}`} />
+                <Field label="Rig host" value={simulator.rigHostname ?? "-"} />
+                <Field label="Last seen" value={simulator.rigLastSeen ? backendDateTime(simulator.rigLastSeen) : "-"} />
+                {simulator.rigUpdateStatus ? <Field label="Update status" value={simulator.rigUpdateStatus} /> : null}
+              </div>
+            </div>
+          </>
+        ) : null}
         {repairRequest ? (
           <>
             <Separator className="my-4" />
@@ -84,11 +97,15 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
             </div>
           </>
         ) : null}
-        <Separator className="my-4" />
-        <div className="space-y-2">
-          <div className="text-xs font-semibold uppercase text-slate-500">Order items</div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-sm text-slate-300">{simulator.orderItems.length ? simulator.orderItems.join(", ") : "No active shop order"}</div>
-        </div>
+        {simulator.orderItems.length ? (
+          <>
+            <Separator className="my-4" />
+            <div className="space-y-2">
+              <div className="text-xs font-semibold uppercase text-slate-500">Order items</div>
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-sm text-slate-300">{simulator.orderItems.join(", ")}</div>
+            </div>
+          </>
+        ) : null}
         {showSessionActions ? (
           <div className="mt-5 space-y-2">
             <div className="text-xs font-semibold uppercase text-slate-500">Session actions</div>

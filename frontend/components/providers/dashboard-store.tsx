@@ -115,9 +115,7 @@ function shortTime(value?: string | null) {
 }
 
 function timestampTime(value?: string | null) {
-  const text = String(value ?? "");
-  const match = text.match(/[T ](\d{2}:\d{2})/);
-  return match?.[1] ?? (value ? shortTime(value) : undefined);
+  return value ? shortTime(value) : undefined;
 }
 
 function numberValue(value: unknown) {
