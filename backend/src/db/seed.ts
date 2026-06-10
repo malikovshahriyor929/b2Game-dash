@@ -1,13 +1,10 @@
 import bcrypt from "bcrypt";
+import { PoolClient } from "pg";
 import { pool, tx } from "./pool";
 import { auditLog } from "../services/auditLog.service";
 
 const branches = [
   ["B2 Main Arena", "MAIN", "Main Arena"],
-  ["B2 Yunusabad", "YUNUSABAD", "Yunusabad"],
-  ["B2 Chilonzor", "CHILONZOR", "Chilonzor"],
-  ["B2 Sergeli", "SERGELI", "Sergeli"],
-  ["B2 Samarqand", "SAMARQAND", "Samarqand"],
 ] as const;
 
 const products = [
@@ -30,6 +27,13 @@ const tariffs = [
   ["Moza tungi zaezd", "vip", 480, 500000, 500000, "energetik", "energetik", "night"],
 ] as const;
 
+const removedBranchAdminEmails = [
+  "admin.yunusabad@b2game.uz",
+  "admin.chilonzor@b2game.uz",
+  "admin.sergeli@b2game.uz",
+  "admin.samarqand@b2game.uz",
+] as const;
+
 async function upsertUser(name: string, email: string, password: string, role: "admin" | "super_admin", branchId: string | null) {
   const hash = await bcrypt.hash(password, 10);
   const { rows } = await pool.query(
@@ -42,9 +46,36 @@ async function upsertUser(name: string, email: string, password: string, role: "
   return rows[0];
 }
 
+async function pruneNonMainBranches(client: PoolClient) {
+  const extraBranchFilter = "select id from branches where code <> 'MAIN'";
+
+  await client.query(`delete from sale_items where sale_id in (select id from sales where branch_id in (${extraBranchFilter}))`);
+  await client.query(`delete from payments where branch_id in (${extraBranchFilter})`);
+  await client.query(`delete from sales where branch_id in (${extraBranchFilter})`);
+  await client.query(`delete from sessions where branch_id in (${extraBranchFilter})`);
+  await client.query(`delete from repair_requests where branch_id in (${extraBranchFilter})`);
+  await client.query(`delete from bookings where branch_id in (${extraBranchFilter})`);
+  await client.query(`delete from shifts where branch_id in (${extraBranchFilter})`);
+  await client.query(`delete from inventory_movements where branch_id in (${extraBranchFilter})`);
+  await client.query(`delete from inventory where branch_id in (${extraBranchFilter})`);
+  await client.query(`delete from rig_connections where branch_id in (${extraBranchFilter})`);
+  await client.query(`delete from simulators where branch_id in (${extraBranchFilter})`);
+  await client.query(`delete from tariffs where branch_id in (${extraBranchFilter})`);
+  await client.query(`delete from customers where branch_id in (${extraBranchFilter})`);
+  await client.query(`delete from logs where branch_id in (${extraBranchFilter})`);
+  await client.query(`delete from settings where branch_id in (${extraBranchFilter})`);
+  await client.query(
+    `delete from users where branch_id in (${extraBranchFilter}) or email = any($1::text[])`,
+    [removedBranchAdminEmails],
+  );
+  await client.query("delete from branches where code <> 'MAIN'");
+}
+
 async function run() {
   await pool.query("create extension if not exists pgcrypto");
   await tx(async (client) => {
+    await pruneNonMainBranches(client);
+
     const branchRows: Record<string, string> = {};
     for (const [name, code, address] of branches) {
       const { rows } = await client.query(
@@ -59,39 +90,35 @@ async function run() {
 
     await upsertUser("Super Admin", "superadmin@b2game.uz", "12345678", "super_admin", null);
     await upsertUser("Main Admin", "admin.main@b2game.uz", "admin123", "admin", branchRows.MAIN);
-    await upsertUser("Yunusabad Admin", "admin.yunusabad@b2game.uz", "admin123", "admin", branchRows.YUNUSABAD);
-    await upsertUser("Chilonzor Admin", "admin.chilonzor@b2game.uz", "admin123", "admin", branchRows.CHILONZOR);
-    await upsertUser("Sergeli Admin", "admin.sergeli@b2game.uz", "admin123", "admin", branchRows.SERGELI);
-    const samarqandAdmin = await upsertUser("Samarqand Admin", "admin.samarqand@b2game.uz", "admin123", "admin", branchRows.SAMARQAND);
 
-    for (const [code, branchId] of Object.entries(branchRows)) {
-      await client.query("update tariffs set is_active=false where branch_id=$1", [branchId]);
-      for (const [name, zone, duration, weekdayPrice, weekendPrice, weekdayBonus, weekendBonus, type] of tariffs) {
-        await client.query(
-          `insert into tariffs(branch_id,name,simulator_zone,duration_minutes,price,weekday_price,weekend_price,weekday_bonus,weekend_bonus,type,is_active)
-           values($1,$2,$3,$4,$5,$5,$6,$7,$8,$9,true)`,
-          [branchId, name, zone, duration, weekdayPrice, weekendPrice, weekdayBonus, weekendBonus, type],
-        );
-      }
+    const mainBranchId = branchRows.MAIN;
 
-      for (let i = 1; i <= 16; i++) {
-        const n = String(i).padStart(2, "0");
-        await client.query(
-          `insert into simulators(branch_id,name,code,zone,simulator_type,status,device_id,ip_address)
-           values($1,$2,$2,'main','main','ready_to_play',$3,$4)
-           on conflict(branch_id, code) do update set name=excluded.name, device_id=excluded.device_id`,
-          [branchId, `MAIN-${n}`, `${code}-MAIN-${n}`, `192.168.${i}.10`],
-        );
-      }
-      for (let i = 1; i <= 4; i++) {
-        const n = String(i).padStart(2, "0");
-        await client.query(
-          `insert into simulators(branch_id,name,code,zone,simulator_type,status,device_id,ip_address)
-           values($1,$2,$2,'vip','vip','ready_to_play',$3,$4)
-           on conflict(branch_id, code) do update set name=excluded.name, device_id=excluded.device_id`,
-          [branchId, `VIP-${n}`, `${code}-VIP-${n}`, `192.168.${i}.80`],
-        );
-      }
+    await client.query("update tariffs set is_active=false where branch_id=$1", [mainBranchId]);
+    for (const [name, zone, duration, weekdayPrice, weekendPrice, weekdayBonus, weekendBonus, type] of tariffs) {
+      await client.query(
+        `insert into tariffs(branch_id,name,simulator_zone,duration_minutes,price,weekday_price,weekend_price,weekday_bonus,weekend_bonus,type,is_active)
+         values($1,$2,$3,$4,$5,$5,$6,$7,$8,$9,true)`,
+        [mainBranchId, name, zone, duration, weekdayPrice, weekendPrice, weekdayBonus, weekendBonus, type],
+      );
+    }
+
+    for (let i = 1; i <= 16; i++) {
+      const n = String(i).padStart(2, "0");
+      await client.query(
+        `insert into simulators(branch_id,name,code,zone,simulator_type,status,device_id,ip_address)
+         values($1,$2,$2,'main','main','ready_to_play',$3,$4)
+         on conflict(branch_id, code) do update set name=excluded.name, device_id=excluded.device_id`,
+        [mainBranchId, `MAIN-${n}`, `MAIN-MAIN-${n}`, `192.168.${i}.10`],
+      );
+    }
+    for (let i = 1; i <= 4; i++) {
+      const n = String(i).padStart(2, "0");
+      await client.query(
+        `insert into simulators(branch_id,name,code,zone,simulator_type,status,device_id,ip_address)
+         values($1,$2,$2,'vip','vip','ready_to_play',$3,$4)
+         on conflict(branch_id, code) do update set name=excluded.name, device_id=excluded.device_id`,
+        [mainBranchId, `VIP-${n}`, `MAIN-VIP-${n}`, `192.168.${i}.80`],
+      );
     }
 
     const productIds: string[] = [];
@@ -106,18 +133,15 @@ async function run() {
       productIds.push(rows[0].id);
     }
 
-    for (const branchId of Object.values(branchRows)) {
-      for (let i = 0; i < productIds.length; i++) {
-        await client.query(
-          `insert into inventory(branch_id,product_id,stock_quantity,low_stock_threshold)
-           values($1,$2,$3,5)
-           on conflict(branch_id, product_id) do update set stock_quantity=excluded.stock_quantity`,
-          [branchId, productIds[i], products[i][5]],
-        );
-      }
+    for (let i = 0; i < productIds.length; i++) {
+      await client.query(
+        `insert into inventory(branch_id,product_id,stock_quantity,low_stock_threshold)
+         values($1,$2,$3,5)
+         on conflict(branch_id, product_id) do update set stock_quantity=excluded.stock_quantity`,
+        [mainBranchId, productIds[i], products[i][5]],
+      );
     }
 
-    const mainBranchId = branchRows.MAIN;
     const admin = (await client.query("select * from users where email='admin.main@b2game.uz'")).rows[0];
     const sim = (await client.query("select * from simulators where branch_id=$1 and code='MAIN-01'", [mainBranchId])).rows[0];
     const tariff = (await client.query("select * from tariffs where branch_id=$1 and name='Logitech 1 soat'", [mainBranchId])).rows[0];
@@ -179,7 +203,6 @@ async function run() {
 
     await auditLog({ branch_id: mainBranchId, actor: { user_id: admin.id, role: admin.role, branch_id: admin.branch_id, email: admin.email, name: admin.name }, action_type: "start_session", entity_type: "session", entity_id: session.id, simulator_id: sim.id, session_id: session.id, amount: 50000, details: { seeded: true } }, client);
     await auditLog({ branch_id: mainBranchId, actor: { user_id: admin.id, role: admin.role, branch_id: admin.branch_id, email: admin.email, name: admin.name }, action_type: "repair_requested", entity_type: "repair_request", entity_id: repair.id, simulator_id: sim2.id, details: { seeded: true } }, client);
-    await auditLog({ branch_id: branchRows.SAMARQAND, actor: { user_id: samarqandAdmin.id, role: samarqandAdmin.role, branch_id: samarqandAdmin.branch_id, email: samarqandAdmin.email, name: samarqandAdmin.name }, action_type: "login", entity_type: "user", entity_id: samarqandAdmin.id, details: { seeded: true } }, client);
   });
 
   const flight = await pool.query("select count(*)::int as count from simulators where code ilike '%flight%' or name ilike '%flight%'");

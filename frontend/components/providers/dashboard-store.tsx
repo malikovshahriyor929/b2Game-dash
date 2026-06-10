@@ -681,17 +681,48 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     addTime(id, minutes, amount, method) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator) return;
-      if (simulator.rigId) void unlockAdminRig(simulator.rigId, Math.max(simulator.remainingMinutes, 0) + minutes).then(refreshAfterAction).catch(() => undefined);
+      const currentSeconds = simulator.remainingSeconds ?? simulator.remainingMinutes * 60;
+      const newRemainingSeconds = currentSeconds + minutes * 60;
+      const apiMethod = toApiPaymentMethod(method);
+
+      const applyLocal = () => {
+        patchSimulator(id, {
+          remainingMinutes: Math.ceil(newRemainingSeconds / 60),
+          remainingSeconds: newRemainingSeconds,
+          paidAmount: simulator.paidAmount + amount,
+          paymentStatus: "paid",
+          status: "busy",
+        });
+        recordRevenue(amount, `added time ${simulator.name}`, simulator.branchId);
+        appendLog(`added ${minutes} min to ${simulator.name}`, simulator.name, method);
+      };
+
       if (simulator.currentSessionId) {
         void backendPost<Record<string, unknown>>(`/sessions/${simulator.currentSessionId}/add-time`, {
           minutes,
           amount,
-          method: toApiPaymentMethod(method),
-        }).then(refreshAfterAction).catch(() => undefined);
+          method: apiMethod,
+        })
+          .then(() => {
+            applyLocal();
+            return refreshAfterAction();
+          })
+          .catch(() => undefined);
+        return;
       }
-      patchSimulator(id, { remainingMinutes: simulator.remainingMinutes + minutes, remainingSeconds: (simulator.remainingSeconds ?? simulator.remainingMinutes * 60) + minutes * 60, paidAmount: simulator.paidAmount + amount, paymentStatus: "paid", status: "busy" });
-      recordRevenue(amount, `added time ${simulator.name}`, simulator.branchId);
-      appendLog(`added ${minutes} min to ${simulator.name}`, simulator.name, method);
+
+      if (simulator.rigId) {
+        const totalMinutes = Math.max(1, Math.ceil(newRemainingSeconds / 60));
+        void unlockAdminRig(simulator.rigId, totalMinutes)
+          .then(() => {
+            applyLocal();
+            return refreshAfterAction();
+          })
+          .catch(() => undefined);
+        return;
+      }
+
+      applyLocal();
     },
     pay(id, amount, method) {
       const simulator = allSimulators.find((item) => item.id === id);

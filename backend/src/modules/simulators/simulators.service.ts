@@ -3,6 +3,7 @@ import { prisma } from "../../db/prisma";
 import { ApiError } from "../../utils/apiError";
 import { auditLog } from "../../services/auditLog.service";
 import { broadcastDashboard } from "../../websocket/dashboardConnection.manager";
+import { filterRigsForScope, resolveRigBranch } from "../../services/rigBranch.service";
 import {
   getRigMvpRig,
   listRigMvpRigs,
@@ -13,11 +14,6 @@ import {
   RigMvpRig,
   unlockRigMvp,
 } from "../../services/rigMvp.service";
-
-async function defaultBranch() {
-  const rows = await prisma.$queryRawUnsafe<Array<{ id: string; name: string; code: string }>>("select id,name,code from branches order by created_at asc limit 1");
-  return rows[0] ?? { id: "rig-mvp", name: "Rig-MVP", code: "RIGMVP" };
-}
 
 function zoneFromRig(rig: RigMvpRig) {
   const text = `${rig.label} ${rig.hostname} ${rig.rig_id}`.toLowerCase();
@@ -33,7 +29,7 @@ function statusFromRig(rig: RigMvpRig) {
 
 export async function rigToSimulatorRow(rig: RigMvpRig, options: { persist?: boolean } = {}) {
   const persist = options.persist ?? true;
-  const branch = await defaultBranch();
+  const branch = await resolveRigBranch(rig);
   const zone = zoneFromRig(rig);
   const status = statusFromRig(rig);
   const name = rig.label || rig.hostname || rig.rig_id;
@@ -115,7 +111,7 @@ export async function rigToSimulatorRow(rig: RigMvpRig, options: { persist?: boo
       rig.last_seen,
     );
   }
-  return {
+  const enriched = await enrichSimulatorWithActiveSession({
     ...row,
     name,
     code: rig.rig_id,
@@ -138,7 +134,8 @@ export async function rigToSimulatorRow(rig: RigMvpRig, options: { persist?: boo
     first_seen: rig.first_seen,
     last_seen: rig.last_seen,
     source: "rig_mvp",
-  };
+  });
+  return enriched;
 }
 
 async function rigIdFromParam(id: string) {
@@ -154,12 +151,60 @@ export async function deleteRigFromDb(rigId: string) {
   const branchId = connections[0]?.branch_id ?? null;
   await prisma.$executeRawUnsafe("delete from rig_connections where rig_id=$1", rigId);
   for (const connection of connections) {
-    if (connection.simulator_id) {
-      await prisma.$executeRawUnsafe("delete from simulators where id=$1::uuid", connection.simulator_id);
+    if (!connection.simulator_id) continue;
+    const simRows = await prisma.$queryRawUnsafe<Array<{ id: string; code: string }>>(
+      "select id, code from simulators where id=$1::uuid",
+      connection.simulator_id,
+    );
+    const sim = simRows[0];
+    if (!sim) continue;
+    if (sim.code === rigId) {
+      await prisma.$executeRawUnsafe("delete from simulators where id=$1::uuid", sim.id);
+    } else {
+      await prisma.$executeRawUnsafe(
+        "update simulators set ws_rig_id=null, is_online=false, status='offline', updated_at=now() where id=$1::uuid",
+        sim.id,
+      );
     }
   }
-  await prisma.$executeRawUnsafe("delete from simulators where ws_rig_id=$1", rigId);
+  await prisma.$executeRawUnsafe("delete from simulators where ws_rig_id=$1 and code=$2", rigId, rigId);
   return { rig_id: rigId, branch_id: branchId };
+}
+
+const activeSessionSelect = `
+  sess.id as active_session_id,
+  sess.customer_name as active_customer_name,
+  sess.phone as active_phone,
+  sess.started_at as active_started_at,
+  sess.duration_minutes as active_duration_minutes,
+  sess.added_minutes as active_added_minutes,
+  case
+    when sess.id is null then null
+    when sess.status = 'paused' then sess.remaining_seconds
+    else greatest(((sess.duration_minutes + sess.added_minutes) * 60 - extract(epoch from (now() - sess.started_at)))::int, 0)
+  end as active_remaining_seconds,
+  sess.paid_amount as active_paid_amount,
+  sess.payment_mode as active_payment_mode,
+  t.name as active_tariff_name`;
+
+async function enrichSimulatorWithActiveSession(row: Record<string, any>) {
+  if (!row?.id || !/^[0-9a-f-]{36}$/i.test(String(row.id))) return row;
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `select ${activeSessionSelect}
+     from simulators s
+     left join sessions sess on sess.id = s.current_session_id and sess.status in ('active','paused','unpaid')
+     left join tariffs t on t.id = sess.tariff_id
+     where s.id = $1::uuid
+     limit 1`,
+    row.id,
+  );
+  const session = rows[0];
+  if (!session?.active_session_id) return row;
+  return {
+    ...row,
+    ...session,
+    status: row.status === "offline" ? "offline" : "busy",
+  };
 }
 
 async function listDbSimulatorRows(requestedBranchId?: unknown, user?: Request["user"]) {
@@ -176,20 +221,7 @@ async function listDbSimulatorRows(requestedBranchId?: unknown, user?: Request["
        s.*,
        b.name as branch_name,
        b.code as branch_code,
-       sess.id as active_session_id,
-       sess.customer_name as active_customer_name,
-       sess.phone as active_phone,
-       sess.started_at as active_started_at,
-       sess.duration_minutes as active_duration_minutes,
-       sess.added_minutes as active_added_minutes,
-       case
-         when sess.id is null then null
-         when sess.status = 'paused' then sess.remaining_seconds
-         else greatest(((sess.duration_minutes + sess.added_minutes) * 60 - extract(epoch from (now() - sess.started_at)))::int, 0)
-       end as active_remaining_seconds,
-       sess.paid_amount as active_paid_amount,
-       sess.payment_mode as active_payment_mode,
-       t.name as active_tariff_name,
+       ${activeSessionSelect},
        s.is_online as rig_online,
        'backend' as rig_version,
        'backend' as latest_version,
@@ -210,18 +242,11 @@ async function listDbSimulatorRows(requestedBranchId?: unknown, user?: Request["
 }
 
 export async function listRows(requestedBranchId?: unknown, user?: Request["user"]) {
-  const branch = await defaultBranch();
-  const canUseRigMvp =
-    (!user || user.role !== "admin" || user.branch_id === branch.id) &&
-    (!requestedBranchId || requestedBranchId === "all" || requestedBranchId === branch.id);
-
-  if (canUseRigMvp) {
-    try {
-      const rigs = await listRigMvpRigs();
-      return Promise.all(rigs.map((rig) => rigToSimulatorRow(rig, { persist: false })));
-    } catch {
-      // Keep the dashboard usable from the seeded PostgreSQL data when Rig-MVP is down.
-    }
+  try {
+    const rigs = await filterRigsForScope(await listRigMvpRigs(), requestedBranchId, user);
+    return Promise.all(rigs.map((rig) => rigToSimulatorRow(rig, { persist: false })));
+  } catch {
+    // Keep the dashboard usable from the seeded PostgreSQL data when Rig-MVP is down.
   }
 
   return listDbSimulatorRows(requestedBranchId, user);
