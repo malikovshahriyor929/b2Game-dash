@@ -395,6 +395,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
   const [inventory, setInventory] = useState<Product[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const refreshInFlightRef = useRef<Promise<void> | null>(null);
+  const expireSessionRef = useRef<(id: string) => void>(() => undefined);
   const defaultBranchId = data?.user?.role === "super_admin" ? "all" : data?.user?.branchIds?.[0] ?? fallbackBranch.id;
   const [selectedBranchId, setSelectedBranchIdState] = useState(defaultBranchId);
   const [period, setPeriod] = useState<PeriodFilter>("today");
@@ -421,11 +422,19 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
 
   useEffect(() => {
     const timer = window.setInterval(() => {
+      const expiringIds: string[] = [];
       setAllSimulators((items) => items.map((item) => {
         if (!["busy", "unpaid"].includes(item.status) || !item.remainingSeconds) return item;
-        const remainingSeconds = Math.max(0, item.remainingSeconds - 1);
+        if (item.remainingSeconds <= 1) {
+          expiringIds.push(item.id);
+          return { ...item, remainingSeconds: 0, remainingMinutes: 0 };
+        }
+        const remainingSeconds = item.remainingSeconds - 1;
         return { ...item, remainingSeconds, remainingMinutes: Math.ceil(remainingSeconds / 60) };
       }));
+      if (expiringIds.length) {
+        queueMicrotask(() => expiringIds.forEach((id) => expireSessionRef.current(id)));
+      }
     }, 1000);
     return () => window.clearInterval(timer);
   }, []);
@@ -1241,6 +1250,10 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     simulators,
     visibleBranchIds,
   ]);
+
+  useEffect(() => {
+    expireSessionRef.current = (id) => value.stopSession(id, true);
+  }, [value]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
