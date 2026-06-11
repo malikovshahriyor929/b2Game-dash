@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { FiPlus } from "react-icons/fi";
+import { FiPlus, FiEdit2, FiTrash2, FiX } from "react-icons/fi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -13,7 +13,8 @@ import { PageHeader } from "@/components/shared/page-header";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { money } from "@/lib/format";
 import { BackendTariff, dedupeTariffs, mapTariffRow } from "@/lib/use-backend-tariffs";
-import { backendGet, backendPost } from "@/server/api";
+import { backendDelete, backendGet, backendPatch, backendPost } from "@/server/api";
+import type { Product } from "@/types/product";
 
 const tariffTypes = ["time", "package", "night", "promo", "group", "birthday", "weekend"];
 const zones = [
@@ -36,6 +37,49 @@ const typeLabels: Record<string, string> = {
   weekend: "Dam olish",
 };
 
+// Bonus matnini ("energetik" / "Energy Drink") skladdagi mahsulotga moslashtirish uchun
+// backend (sessions.service.ts) bilan bir xil aliaslar.
+const BONUS_ALIASES: Array<{ test: RegExp; like: string }> = [
+  { test: /energet|energy/i, like: "energy" },
+  { test: /chips|chipsy/i, like: "chips" },
+  { test: /snickers/i, like: "snickers" },
+  { test: /coca|cola/i, like: "cola" },
+  { test: /suv|water/i, like: "water" },
+  { test: /burger/i, like: "burger" },
+];
+
+type BonusItem = { productId: string; name: string; qty: number };
+
+function serializeBonus(items: BonusItem[]): string {
+  return items
+    .map((item) => ({ ...item, name: item.name.trim() }))
+    .filter((item) => item.name)
+    .map((item) => (item.qty > 1 ? `${item.qty} ${item.name}` : item.name))
+    .join(" + ");
+}
+
+function parseBonus(value: string | undefined, products: Product[]): BonusItem[] {
+  if (!value || !value.trim()) return [];
+  return value
+    .split(/[+,/]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const qtyMatch = part.match(/^(\d+)\s*/);
+      const qty = qtyMatch ? Math.max(1, parseInt(qtyMatch[1], 10)) : 1;
+      const text = part.replace(/^\d+\s*(x|ta|dona)?\s*/i, "").trim();
+      const lower = text.toLowerCase();
+      let product =
+        products.find((p) => p.name.toLowerCase() === lower) ??
+        products.find((p) => p.name.toLowerCase().includes(lower) || lower.includes(p.name.toLowerCase()));
+      if (!product) {
+        const alias = BONUS_ALIASES.find((a) => a.test.test(text));
+        if (alias) product = products.find((p) => p.name.toLowerCase().includes(alias.like) || p.category.toLowerCase().includes(alias.like));
+      }
+      return product ? { productId: product.id, name: product.name, qty } : { productId: "", name: text, qty };
+    });
+}
+
 function formatNumber(value: string) {
   const digits = value.replace(/\D/g, "");
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
@@ -47,17 +91,77 @@ function formatDuration(minutes: number) {
   return Number.isInteger(hours) ? `${hours} soat` : `${minutes} daqiqa`;
 }
 
-function TariffCard({ item }: { item: BackendTariff }) {
+function BonusPicker({ label, products, items, onChange }: { label: string; products: Product[]; items: BonusItem[]; onChange: (items: BonusItem[]) => void }) {
+  const available = products.filter((product) => !items.some((item) => item.productId && item.productId === product.id));
+  return (
+    <div className="space-y-2 sm:col-span-2">
+      <Label>{label}</Label>
+      <div className="space-y-2">
+        {items.map((item, index) => (
+          <div key={`${item.productId || item.name}-${index}`} className="flex items-center gap-2">
+            <div className="flex-1 truncate rounded-md border border-slate-700 bg-slate-900/40 px-3 py-2 text-sm font-semibold text-slate-200">
+              {item.name}
+              {item.productId ? null : <span className="ml-2 text-xs font-normal text-amber-300">(skladda topilmadi)</span>}
+            </div>
+            <Input
+              className="w-16 text-center"
+              inputMode="numeric"
+              value={String(item.qty)}
+              onChange={(event) => {
+                const qty = Math.max(1, Number(event.target.value.replace(/\D/g, "")) || 1);
+                onChange(items.map((it, i) => (i === index ? { ...it, qty } : it)));
+              }}
+            />
+            <Button type="button" variant="ghost" size="icon" onClick={() => onChange(items.filter((_, i) => i !== index))}>
+              <FiX />
+            </Button>
+          </div>
+        ))}
+        <Select
+          value=""
+          onValueChange={(productId) => {
+            const product = products.find((item) => item.id === productId);
+            if (product) onChange([...items, { productId: product.id, name: product.name, qty: 1 }]);
+          }}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Skladdan mahsulot tanlang..." />
+          </SelectTrigger>
+          <SelectContent>
+            {available.length ? (
+              available.map((product) => (
+                <SelectItem key={product.id} value={product.id}>
+                  {product.name}
+                  {typeof product.stock === "number" ? ` — ${product.stock} dona` : ""}
+                </SelectItem>
+              ))
+            ) : (
+              <div className="px-3 py-2 text-xs text-slate-500">Sklad bo'sh yoki barchasi tanlangan</div>
+            )}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+}
+
+function TariffCard({ item, onEdit, onDelete }: { item: BackendTariff; onEdit: () => void; onDelete: () => void }) {
   const weekdayPrice = item.weekdayPrice ?? item.price;
   const weekendPrice = item.weekendPrice ?? item.price;
 
   return (
     <Card className="p-4 w-full min-w-[220px]">
-      <div className="flex flex-wrap gap-2">
-        <Badge variant={item.simulatorZone === "vip" ? "vip" : "muted"}>
-          {zoneLabels[item.simulatorZone] ?? item.simulatorZone}
-        </Badge>
-        <Badge variant="muted">{typeLabels[item.type] ?? item.type}</Badge>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Badge variant={item.simulatorZone === "vip" ? "vip" : "muted"}>
+            {zoneLabels[item.simulatorZone] ?? item.simulatorZone}
+          </Badge>
+          <Badge variant="muted">{typeLabels[item.type] ?? item.type}</Badge>
+        </div>
+        <div className="flex shrink-0 gap-1">
+          <Button type="button" variant="ghost" size="icon" onClick={onEdit} aria-label="Tahrirlash"><FiEdit2 /></Button>
+          <Button type="button" variant="ghost" size="icon" onClick={onDelete} aria-label="O'chirish"><FiTrash2 /></Button>
+        </div>
       </div>
       <div className="mt-4 text-lg font-bold">{item.name}</div>
       <div className="mt-1 text-xs font-semibold text-slate-500">{formatDuration(item.durationMinutes)}</div>
@@ -81,12 +185,17 @@ function TariffCard({ item }: { item: BackendTariff }) {
   );
 }
 
+const emptyForm = { name: "", type: "time", simulatorZone: "main", duration: "60", weekdayPrice: "", weekendPrice: "" };
+
 export default function TariffsPage() {
-  const { selectedBranchId, branches } = useDashboardStore();
+  const { selectedBranchId, branches, products } = useDashboardStore();
   const [tariffs, setTariffs] = useState<BackendTariff[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", type: "time", simulatorZone: "main", duration: "60", weekdayPrice: "", weekendPrice: "", weekdayBonus: "", weekendBonus: "" });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [weekdayBonus, setWeekdayBonus] = useState<BonusItem[]>([]);
+  const [weekendBonus, setWeekendBonus] = useState<BonusItem[]>([]);
 
   const createBranchId = selectedBranchId === "all" ? branches[0]?.id ?? "" : selectedBranchId;
   const branchLabel = selectedBranchId === "all" ? "Barcha filiallar" : branches.find((branch) => branch.id === selectedBranchId)?.name ?? "Filial";
@@ -115,29 +224,68 @@ export default function TariffsPage() {
     void refreshTariffs();
   }, [selectedBranchId]);
 
+  function openCreate() {
+    setEditingId(null);
+    setForm(emptyForm);
+    setWeekdayBonus([]);
+    setWeekendBonus([]);
+    setOpen(true);
+  }
+
+  function openEdit(item: BackendTariff) {
+    setEditingId(item.id);
+    setForm({
+      name: item.name,
+      type: item.type || "time",
+      simulatorZone: item.simulatorZone === "vip" ? "vip" : "main",
+      duration: String(item.durationMinutes),
+      weekdayPrice: String(item.weekdayPrice ?? item.price ?? ""),
+      weekendPrice: String(item.weekendPrice ?? item.price ?? ""),
+    });
+    setWeekdayBonus(parseBonus(item.weekdayBonus, products));
+    setWeekendBonus(parseBonus(item.weekendBonus, products));
+    setOpen(true);
+  }
+
+  function remove(item: BackendTariff) {
+    if (!window.confirm(`"${item.name}" tarifini o'chirishni tasdiqlaysizmi?`)) return;
+    void backendDelete(`/tariffs/${item.id}`).then(refreshTariffs).catch(() => undefined);
+  }
+
   function submit(event: React.FormEvent) {
     event.preventDefault();
     const weekdayPrice = Number(form.weekdayPrice.replace(/\D/g, ""));
     const weekendPrice = Number((form.weekendPrice || form.weekdayPrice).replace(/\D/g, ""));
     const duration = Number(form.duration.replace(/\D/g, ""));
     if (!form.name.trim() || !Number.isFinite(weekdayPrice) || weekdayPrice <= 0 || !Number.isFinite(duration) || duration <= 0 || !createBranchId) return;
-    void backendPost("/tariffs", {
-      branch_id: createBranchId,
+
+    const payload = {
       name: form.name.trim(),
       simulator_zone: form.simulatorZone,
       duration_minutes: duration,
       price: weekdayPrice,
       weekday_price: weekdayPrice,
       weekend_price: weekendPrice,
-      weekday_bonus: form.weekdayBonus.trim() || undefined,
-      weekend_bonus: form.weekendBonus.trim() || undefined,
+      weekday_bonus: serializeBonus(weekdayBonus) || null,
+      weekend_bonus: serializeBonus(weekendBonus) || null,
       type: form.type,
       is_active: true,
-    }).then(() => {
-      setForm({ name: "", type: "time", simulatorZone: "main", duration: "60", weekdayPrice: "", weekendPrice: "", weekdayBonus: "", weekendBonus: "" });
-      setOpen(false);
-      return refreshTariffs();
-    }).catch(() => undefined);
+    };
+
+    const request = editingId
+      ? backendPatch(`/tariffs/${editingId}`, payload)
+      : backendPost("/tariffs", { branch_id: createBranchId, ...payload });
+
+    void request
+      .then(() => {
+        setForm(emptyForm);
+        setWeekdayBonus([]);
+        setWeekendBonus([]);
+        setEditingId(null);
+        setOpen(false);
+        return refreshTariffs();
+      })
+      .catch(() => undefined);
   }
 
   return (
@@ -147,7 +295,7 @@ export default function TariffsPage() {
           title="Tariflar"
           description={`${branchLabel} uchun narxlar. PN–CHT va dam olish kunlari alohida.`}
         />
-        <Button onClick={() => setOpen(true)} disabled={!createBranchId}><FiPlus /> Tarif qo'shish</Button>
+        <Button onClick={openCreate} disabled={!createBranchId}><FiPlus /> Tarif qo'shish</Button>
       </div>
 
       {loading ? (
@@ -160,7 +308,7 @@ export default function TariffsPage() {
             <section>
               <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Logitech / Middle</h2>
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                {groupedTariffs.main.map((item) => <TariffCard key={item.id} item={item} />)}
+                {groupedTariffs.main.map((item) => <TariffCard key={item.id} item={item} onEdit={() => openEdit(item)} onDelete={() => remove(item)} />)}
               </div>
             </section>
           ) : null}
@@ -168,7 +316,7 @@ export default function TariffsPage() {
             <section>
               <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Moza / VIP</h2>
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                {groupedTariffs.vip.map((item) => <TariffCard key={item.id} item={item} />)}
+                {groupedTariffs.vip.map((item) => <TariffCard key={item.id} item={item} onEdit={() => openEdit(item)} onDelete={() => remove(item)} />)}
               </div>
             </section>
           ) : null}
@@ -178,8 +326,8 @@ export default function TariffsPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Tarif qo'shish</DialogTitle>
-            <DialogDescription>Yangi B2 Game Club tarifini yarating.</DialogDescription>
+            <DialogTitle>{editingId ? "Tarifni tahrirlash" : "Tarif qo'shish"}</DialogTitle>
+            <DialogDescription>{editingId ? "Tarif ma'lumotlarini yangilang." : "Yangi B2 Game Club tarifini yarating."}</DialogDescription>
           </DialogHeader>
           <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
@@ -224,9 +372,11 @@ export default function TariffsPage() {
                 <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">so'm</span>
               </div>
             </div>
-            <div className="space-y-2"><Label>PN–CHT bonus</Label><Input value={form.weekdayBonus} onChange={(event) => setForm((item) => ({ ...item, weekdayBonus: event.target.value }))} placeholder="energetik" /></div>
-            <div className="space-y-2"><Label>Juma–Yakshanba bonus</Label><Input value={form.weekendBonus} onChange={(event) => setForm((item) => ({ ...item, weekendBonus: event.target.value }))} placeholder="energetik + chips" /></div>
-            <Button className="sm:col-span-2" type="submit" disabled={!form.name.trim() || !form.weekdayPrice.trim() || !createBranchId}><FiPlus /> Yaratish</Button>
+            <BonusPicker label="PN–CHT bonus (skladdan)" products={products} items={weekdayBonus} onChange={setWeekdayBonus} />
+            <BonusPicker label="Juma–Yakshanba bonus (skladdan)" products={products} items={weekendBonus} onChange={setWeekendBonus} />
+            <Button className="sm:col-span-2" type="submit" disabled={!form.name.trim() || !form.weekdayPrice.trim() || !createBranchId}>
+              {editingId ? <><FiEdit2 /> Saqlash</> : <><FiPlus /> Yaratish</>}
+            </Button>
           </form>
         </DialogContent>
       </Dialog>
