@@ -8,6 +8,7 @@ export type BackendTariff = {
   id: string;
   name: string;
   type: string;
+  branchId?: string;
   simulatorZone: "main" | "vip" | "all";
   durationMinutes: number;
   price: number;
@@ -28,6 +29,7 @@ export function mapTariffRow(row: Record<string, unknown>): BackendTariff {
     id: String(row.id),
     name: String(row.name ?? ""),
     type: String(row.type ?? ""),
+    branchId: row.branch_id == null ? undefined : String(row.branch_id),
     simulatorZone: String(row.simulator_zone ?? "all") as BackendTariff["simulatorZone"],
     durationMinutes: Number(row.duration_minutes ?? 0),
     price: Number(row.price ?? weekendPrice ?? weekdayPrice ?? 0),

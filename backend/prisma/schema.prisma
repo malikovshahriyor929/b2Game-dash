@@ -270,34 +270,34 @@ model RepairRequest {
 }
 
 model Shift {
-  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  branchId     String    @map("branch_id") @db.Uuid
-  openedBy     String    @map("opened_by") @db.Uuid
-  closedBy     String?   @map("closed_by") @db.Uuid
-  status       String    @default("open")
-  startingCash Decimal   @default(0) @map("starting_cash")
-  expectedCash Decimal   @default(0) @map("expected_cash")
-  actualCash   Decimal?  @map("actual_cash")
-  cardTotal    Decimal   @default(0) @map("card_total")
-  qrTotal      Decimal   @default(0) @map("qr_total")
-  productSales Decimal   @default(0) @map("product_sales")
-  sessionSales Decimal   @default(0) @map("session_sales")
-  refunds      Decimal   @default(0)
-  difference   Decimal   @default(0)
-  cashSales         Decimal @default(0) @map("cash_sales")
-  balanceSales      Decimal @default(0) @map("balance_sales")
-  totalRevenue      Decimal @default(0) @map("total_revenue")
-  cashWithdrawn     Decimal @default(0) @map("cash_withdrawn")
-  cardWithdrawn     Decimal @default(0) @map("card_withdrawn")
-  bankWithdrawn     Decimal @default(0) @map("bank_withdrawn")
-  remainingCash     Decimal @default(0) @map("remaining_cash")
-  shiftType         String? @map("shift_type")
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  branchId      String    @map("branch_id") @db.Uuid
+  openedBy      String    @map("opened_by") @db.Uuid
+  closedBy      String?   @map("closed_by") @db.Uuid
+  status        String    @default("open")
+  shiftType     String?   @map("shift_type")
+  startingCash  Decimal   @default(0) @map("starting_cash")
+  expectedCash  Decimal   @default(0) @map("expected_cash")
+  actualCash    Decimal?  @map("actual_cash")
+  cashSales     Decimal   @default(0) @map("cash_sales")
+  cardTotal     Decimal   @default(0) @map("card_total")
+  qrTotal       Decimal   @default(0) @map("qr_total")
+  balanceSales  Decimal   @default(0) @map("balance_sales")
+  totalRevenue  Decimal   @default(0) @map("total_revenue")
+  productSales  Decimal   @default(0) @map("product_sales")
+  sessionSales  Decimal   @default(0) @map("session_sales")
+  cashWithdrawn Decimal   @default(0) @map("cash_withdrawn")
+  cardWithdrawn Decimal   @default(0) @map("card_withdrawn")
+  bankWithdrawn Decimal   @default(0) @map("bank_withdrawn")
+  remainingCash Decimal   @default(0) @map("remaining_cash")
   withdrawRecipient String? @map("withdraw_recipient")
-  notes        String?
-  openedAt     DateTime  @default(now()) @map("opened_at")
-  closedAt     DateTime? @map("closed_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
+  refunds       Decimal   @default(0)
+  difference    Decimal   @default(0)
+  notes         String?
+  openedAt      DateTime  @default(now()) @map("opened_at")
+  closedAt      DateTime? @map("closed_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at")
 
   @@map("shifts")
 }
@@ -306,7 +306,7 @@ model ShiftWithdrawal {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   shiftId     String   @map("shift_id") @db.Uuid
   branchId    String   @map("branch_id") @db.Uuid
-  source      String
+  source      String // 'cash' | 'card' | 'bank'
   amount      Decimal
   recipient   String?
   note        String?

@@ -47,6 +47,81 @@ async function resolveTariffBilling(tariffId: unknown): Promise<{ open: boolean;
   return { open, hourlyRate };
 }
 
+const BONUS_PRODUCT_PATTERNS: Array<{ test: RegExp; like: string }> = [
+  { test: /energet|energy/i, like: "%energy%" },
+  { test: /chips|chipsy/i, like: "%chips%" },
+  { test: /snickers/i, like: "%snickers%" },
+  { test: /coca|cola/i, like: "%cola%" },
+  { test: /suv|water/i, like: "%water%" },
+  { test: /burger/i, like: "%burger%" },
+];
+
+function parseBonusItems(bonus: string): Array<{ like: string; text: string; label: string; quantity: number }> {
+  return bonus
+    .split(/[+,/]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const qtyMatch = part.match(/^(\d+)\s*/);
+      const quantity = qtyMatch ? Math.max(1, parseInt(qtyMatch[1], 10)) : 1;
+      const text = part.replace(/^\d+\s*(x|ta|dona)?\s*/i, "").trim();
+      const pattern = BONUS_PRODUCT_PATTERNS.find((p) => p.test.test(text));
+      const like = pattern ? pattern.like : `%${text}%`;
+      return { like, text, label: part, quantity };
+    })
+    .filter((item) => item.text && item.like !== "%%" && item.like !== "%");
+}
+
+// Tarif bonusini (kun turiga qarab weekday/weekend) skladdan best-effort ayiradi.
+// Mahsulot topilmasa yoki stok yetmasa — o'tkazib yuboradi, sessiyani bloklamaydi.
+async function applyTariffBonusStock(branchId: string, tariffId: string | null | undefined, createdBy: string) {
+  if (!tariffId || !isUuid(tariffId)) return;
+  const tariffRows = await prisma.$queryRawUnsafe<Array<{ bonus: string | null }>>(
+    `select case
+        when (extract(isodow from now() at time zone 'Asia/Tashkent')::int in (5,6,7)
+              or extract(hour from now() at time zone 'Asia/Tashkent')::int >= 18)
+        then weekend_bonus else weekday_bonus end as bonus
+      from tariffs where id=$1::uuid`,
+    tariffId,
+  );
+  const bonus = tariffRows[0]?.bonus;
+  if (!bonus || !bonus.trim()) return;
+
+  let changed = false;
+  for (const item of parseBonusItems(bonus)) {
+    const rows = await prisma.$queryRawUnsafe<Array<{ inv_id: string; product_id: string; stock_quantity: number }>>(
+      `select i.id as inv_id, p.id as product_id, i.stock_quantity
+         from products p join inventory i on i.product_id=p.id
+        where i.branch_id=$1::uuid and p.is_active=true and (lower(p.name)=lower($3) or p.name ilike $2 or p.category ilike $2)
+        order by (lower(p.name)=lower($3)) desc, i.stock_quantity desc limit 1`,
+      branchId,
+      item.like,
+      item.text,
+    );
+    const inv = rows[0];
+    if (!inv) continue; // mos mahsulot topilmadi
+    if (inv.stock_quantity < item.quantity) continue; // stok yetmaydi -> ayirmaymiz
+    await prisma.$executeRawUnsafe(
+      "update inventory set stock_quantity=stock_quantity-$1, updated_at=now() where id=$2::uuid",
+      item.quantity,
+      inv.inv_id,
+    );
+    await prisma.$executeRawUnsafe(
+      `insert into inventory_movements(branch_id,product_id,type,quantity,before_quantity,after_quantity,reason,created_by)
+       values($1::uuid,$2::uuid,'sale',$3,$4,$5,$6,$7::uuid)`,
+      branchId,
+      inv.product_id,
+      item.quantity,
+      inv.stock_quantity,
+      inv.stock_quantity - item.quantity,
+      `tariff bonus: ${item.label}`,
+      createdBy,
+    );
+    changed = true;
+  }
+  if (changed) broadcastDashboard("inventory_updated", { branch_id: branchId, reason: "tariff_bonus" }, branchId);
+}
+
 export async function start(req: Request) {
   if (!isUuid(req.body.simulator_id)) {
     const rig = await getRigMvpRig(String(req.body.simulator_id));
@@ -95,6 +170,12 @@ export async function start(req: Request) {
   );
   const session = rows[0];
   await prisma.$executeRawUnsafe("update simulators set status='busy', current_session_id=$1::uuid where id=$2::uuid", session.id, sim.id);
+  // Tarif bonusini (energetik, chips ...) skladdan ayirish. Best-effort: xato sessiyani to'xtatmaydi.
+  try {
+    await applyTariffBonusStock(sim.branch_id, req.body.tariff_id ?? null, req.user!.user_id);
+  } catch (error) {
+    console.error("applyTariffBonusStock failed", error);
+  }
   if (amount > 0) await prisma.$executeRawUnsafe("insert into payments(branch_id,session_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,paid_by_admin_id) values($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8,$9,$10::uuid)", sim.branch_id, session.id, req.body.customer_id ?? null, amount, req.body.method, req.body.method === "cash" ? amount : 0, req.body.method === "card" ? amount : 0, req.body.method === "qr" ? amount : 0, req.body.method === "balance" ? amount : 0, req.user!.user_id);
   if (sim.ws_rig_id) {
     // Open sessions unlock the rig indefinitely (no duration cap); fixed sessions cap to duration.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { FiClock, FiLock, FiLogOut, FiMenu, FiMoon, FiPlay, FiPlusCircle, FiRefreshCw, FiSearch, FiSquare, FiSun } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
@@ -32,13 +32,13 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
     activeShift,
     openShift,
     closeShift,
-    barSales,
   } = useDashboardStore();
 
   const [shiftModalOpen, setShiftModalOpen] = useState(false);
   const [startingCash, setStartingCash] = useState("");
   const [shiftType, setShiftType] = useState<"Kunduzgi (09:00 - 18:00)" | "Tungi (18:01 - 09:00)">("Kunduzgi (09:00 - 18:00)");
   const [actualCash, setActualCash] = useState("");
+  const [cashWithdrawn, setCashWithdrawn] = useState("");
   const [closeNotes, setCloseNotes] = useState("");
 
   const role = data?.user?.role;
@@ -48,15 +48,27 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
   const reserved = simulators.filter((item) => item.status === "reserved").length;
   const selectedBranchName = selectedBranchId === "all" ? "All branches" : branches.find((branch) => branch.id === selectedBranchId)?.name ?? "Branch";
 
-  const shiftBarCash = activeShift
-    ? barSales
-        .filter((s) => s.shiftId === activeShift.id && s.paymentMethod === "Naqd")
-        .reduce((sum, s) => sum + s.totalAmount, 0)
-    : 0;
+  // Smena pul ko'rsatkichlari (backend payments'dan jonli hisoblangan)
+  const cashSales = activeShift?.cashSales ?? 0;
+  const cardTotal = activeShift?.cardRevenue ?? 0;
+  const bankTotal = activeShift?.qrRevenue ?? 0;
+  const balanceSales = activeShift?.balanceSales ?? 0;
+  const totalRevenue = activeShift?.totalRevenue ?? cashSales + cardTotal + bankTotal;
+  const startingCashVal = activeShift?.startingCash ?? 0;
+  const expectedCashVal = activeShift?.expectedCash ?? startingCashVal + cashSales; // kassada bo'lishi kerak bo'lgan naqd
+  const cashWithdrawnNum = Number(cashWithdrawn || 0);
+  const remainingAfterWithdraw = expectedCashVal - cashWithdrawnNum; // keyingi smenaga qoladigan naqd
+  const actualCashNum = actualCash === "" ? null : Number(actualCash);
+  const cashDifference = actualCashNum === null ? 0 : actualCashNum - expectedCashVal;
+  // Oldingi smena qoldirgan naqd (yangi smena boshlanishi uchun)
+  const previousRemaining = shifts.find((s) => s.status === "closed")?.remainingCash ?? 0;
 
-  const expectedCashVal = activeShift
-    ? activeShift.startingCash + activeShift.totalIncome - activeShift.totalExpense + shiftBarCash
-    : 0;
+  // Yangi smena ochilayotganda boshlang'ich naqdni oldingi qoldiq bilan to'ldiramiz
+  useEffect(() => {
+    if (shiftModalOpen && !activeShift) {
+      setStartingCash(previousRemaining ? String(previousRemaining) : "");
+    }
+  }, [shiftModalOpen, activeShift, previousRemaining]);
 
   const quickActions = [
     { key: "refresh", label: "Refresh", icon: FiRefreshCw, enabled: true, click: () => location.reload() },
@@ -160,7 +172,7 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
       </div>
 
       <Dialog open={shiftModalOpen} onOpenChange={setShiftModalOpen}>
-        <DialogContent className="max-w-md border-slate-800 bg-slate-900 text-slate-100">
+        <DialogContent className="max-w-md max-h-[92vh] overflow-y-auto border-slate-800 bg-slate-900 text-slate-100 thin-scrollbar">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold text-white">
               {activeShift ? "Smenani Yopish" : "Yangi Smena Ochish"}
@@ -174,34 +186,70 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
 
           {activeShift ? (
             <div className="space-y-4 pt-3">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">Admin / smena:</span>
+                <span className="font-semibold text-white">{activeShift.operator} · {activeShift.shiftType.split(" ")[0]}</span>
+              </div>
+
+              {/* Bugungacha bo'lgan pul */}
               <div className="rounded-lg bg-slate-950 p-3.5 space-y-2 text-sm">
-                <div className="flex justify-between"><span className="text-slate-400">Admin:</span><span className="font-semibold text-white">{activeShift.operator}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Smena turi:</span><span className="font-semibold text-white">{activeShift.shiftType}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Ochilgan vaqt:</span><span className="font-semibold text-white">{activeShift.date} {activeShift.openTime}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Boshlang'ich naqd:</span><span className="font-semibold text-sky-300">{money(activeShift.startingCash)}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Kirimlar (Prixod):</span><span className="font-semibold text-emerald-300">+{money(activeShift.totalIncome)}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Chiqimlar (Rasxod):</span><span className="font-semibold text-rose-300">-{money(activeShift.totalExpense)}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Bar savdosi (Naqd):</span><span className="font-semibold text-emerald-300">+{money(shiftBarCash)}</span></div>
-                <div className="border-t border-slate-800 my-2 pt-2 flex justify-between font-bold text-white text-base">
-                  <span>Kutilayotgan naqd:</span>
-                  <span className="text-sky-300">{money(expectedCashVal)}</span>
+                <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Bugungacha bo'lgan pul</div>
+                <div className="flex justify-between"><span className="text-slate-400">Karta:</span><span className="font-semibold text-white">{money(cardTotal)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Naqd:</span><span className="font-semibold text-white">{money(cashSales)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Bank (Click/Payme/Uzum/Karmon):</span><span className="font-semibold text-white">{money(bankTotal)}</span></div>
+                {balanceSales > 0 ? (
+                  <div className="flex justify-between text-xs"><span className="text-slate-500">Balansdan (info):</span><span className="text-slate-400">{money(balanceSales)}</span></div>
+                ) : null}
+                <div className="border-t border-slate-800 mt-1 pt-2 flex justify-between font-bold text-white text-base">
+                  <span>Obshi:</span><span className="text-emerald-300">{money(totalRevenue)}</span>
                 </div>
               </div>
 
+              {/* Pul yechish (Jasur akaga) */}
+              <div className="rounded-lg bg-slate-950 p-3.5 space-y-3 text-sm">
+                <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Pul yechish</div>
+                <div className="flex justify-between"><span className="text-slate-400">Karta:</span><span className="font-semibold text-emerald-300">{money(cardTotal)} <span className="text-[10px] font-normal text-slate-500">avtomat</span></span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Bank:</span><span className="font-semibold text-emerald-300">{money(bankTotal)} <span className="text-[10px] font-normal text-slate-500">avtomat</span></span></div>
+                <div className="border-t border-slate-800 pt-2.5 space-y-2">
+                  <div className="flex justify-between text-xs"><span className="text-slate-500">Boshlang'ich naqd (oldingi smenadan):</span><span className="text-slate-300">{money(startingCashVal)}</span></div>
+                  <div className="flex justify-between text-xs"><span className="text-slate-500">Smenadagi naqd savdo:</span><span className="text-slate-300">+{money(cashSales)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Kassadagi naqd (kutilgan):</span><span className="font-semibold text-sky-300">{money(expectedCashVal)}</span></div>
+                  <div className="space-y-1.5 pt-1">
+                    <Label htmlFor="cashWithdrawn" className="text-sm font-semibold text-slate-300">Naqddan qancha yechamiz?</Label>
+                    <Input
+                      id="cashWithdrawn"
+                      placeholder="Masalan: 300 000"
+                      value={cashWithdrawn}
+                      onChange={(e) => setCashWithdrawn(e.target.value.replace(/\D/g, ""))}
+                      className="bg-slate-900 border-slate-800"
+                    />
+                  </div>
+                  <div className="flex justify-between font-bold text-base pt-1">
+                    <span className="text-white">Kassada qoladi:</span>
+                    <span className={remainingAfterWithdraw < 0 ? "text-rose-400" : "text-emerald-300"}>{money(remainingAfterWithdraw)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Haqiqiy naqd (ixtiyoriy reconciliation) */}
               <div className="space-y-2">
-                <Label htmlFor="actualCash" className="text-sm font-semibold text-slate-300">Kassadagi haqiqiy naqd pul summasi</Label>
+                <Label htmlFor="actualCash" className="text-sm font-semibold text-slate-300">Kassadagi haqiqiy naqd</Label>
                 <Input
                   id="actualCash"
                   placeholder="Masalan: 350 000"
-                  type="text"
                   value={actualCash}
                   onChange={(e) => setActualCash(e.target.value.replace(/\D/g, ""))}
                   className="bg-slate-950 border-slate-800"
                 />
+                {actualCashNum !== null ? (
+                  <div className={`text-xs font-semibold ${cashDifference === 0 ? "text-slate-400" : cashDifference < 0 ? "text-rose-400" : "text-amber-300"}`}>
+                    Farq (haqiqiy − kutilgan): {cashDifference > 0 ? "+" : ""}{money(cashDifference)}
+                  </div>
+                ) : null}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="closeNotes" className="text-sm font-semibold text-slate-300">Smena bo'yicha izoh (ixtiyoriy)</Label>
+                <Label htmlFor="closeNotes" className="text-sm font-semibold text-slate-300">Izoh (ixtiyoriy)</Label>
                 <Input
                   id="closeNotes"
                   placeholder="Izoh yozing..."
@@ -211,15 +259,15 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
                 />
               </div>
 
-              <div className="flex gap-2 pt-2">
+              <div className="flex gap-2 pt-1">
                 <Button variant="secondary" className="flex-1" onClick={() => setShiftModalOpen(false)}>Bekor qilish</Button>
                 <Button
                   className="flex-1"
                   variant="destructive"
-                  disabled={!actualCash}
                   onClick={() => {
-                    closeShift(Number(actualCash), closeNotes);
+                    closeShift(actualCashNum ?? expectedCashVal, cashWithdrawnNum, closeNotes);
                     setActualCash("");
+                    setCashWithdrawn("");
                     setCloseNotes("");
                     setShiftModalOpen(false);
                   }}
@@ -232,22 +280,22 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
             <div className="space-y-4 pt-3">
               <div className="space-y-2">
                 <Label className="text-sm font-semibold text-slate-300">Operator (Admin)</Label>
-                <Input
-                  value={data?.user?.name ?? "Admin"}
-                  disabled
-                  className="bg-slate-950 border-slate-800"
-                />
+                <Input value={data?.user?.name ?? "Admin"} disabled className="bg-slate-950 border-slate-800" />
+              </div>
+
+              {/* Carry-over: oldingi smenadan qolgan naqd */}
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3.5 space-y-1.5 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-300">Hozir kassada bo'lishi kerak naqd:</span>
+                  <span className="font-bold text-amber-300">{money(previousRemaining)}</span>
+                </div>
+                <p className="text-xs text-slate-400">Bu pul oldingi smenadan qolgan — yangi smenadagi odamning puli emas. Agar kassada bundan kam bo'lsa, oldingi smenachidan so'rang.</p>
               </div>
 
               <div className="space-y-2">
                 <Label className="text-sm font-semibold text-slate-300">Smena turi</Label>
-                <Select
-                  value={shiftType}
-                  onValueChange={(val) => setShiftType(val as any)}
-                >
-                  <SelectTrigger className="bg-slate-950 border-slate-800">
-                    <SelectValue />
-                  </SelectTrigger>
+                <Select value={shiftType} onValueChange={(val) => setShiftType(val as any)}>
+                  <SelectTrigger className="bg-slate-950 border-slate-800"><SelectValue /></SelectTrigger>
                   <SelectContent className="bg-slate-900 border-slate-800 text-slate-100">
                     <SelectItem value="Kunduzgi (09:00 - 18:00)">Kunduzgi (09:00 - 18:00)</SelectItem>
                     <SelectItem value="Tungi (18:01 - 09:00)">Tungi (18:01 - 09:00)</SelectItem>
