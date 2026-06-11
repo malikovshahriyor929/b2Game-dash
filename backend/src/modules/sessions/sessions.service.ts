@@ -167,7 +167,7 @@ async function extendRigSessionTime(simulatorId: string, addedMinutes: number, r
 
   const remainingMinutes = Math.max(1, Math.ceil(remainingSeconds / 60));
   await unlockRigMvp(rigId, remainingMinutes);
-  await sendRigMvpCommand(rigId, {
+  await sendRigMvpCommandIfSupported(rigId, {
     type: "add_time",
     minutes: addedMinutes,
     remaining_minutes: remainingMinutes,
@@ -181,7 +181,19 @@ export async function addTime(req: Request) {
   if (!Number.isFinite(minutes) || minutes <= 0) throw new ApiError(400, "minutes must be positive");
 
   await prisma.$executeRawUnsafe(
-    "update sessions set added_minutes=added_minutes+$1, remaining_seconds=remaining_seconds+$2, added_time_amount=added_time_amount+$3, total_amount=total_amount+$3, paid_amount=paid_amount+$3 where id=$4::uuid",
+    `update sessions
+     set added_minutes=added_minutes+$1,
+         remaining_seconds=(
+           case
+             when status = 'paused' then greatest(remaining_seconds, 0)
+             else greatest(((duration_minutes + added_minutes) * 60 - extract(epoch from (now() - started_at)))::int, 0)
+           end
+         ) + $2,
+         added_time_amount=added_time_amount+$3,
+         total_amount=total_amount+$3,
+         paid_amount=paid_amount+$3,
+         updated_at=now()
+     where id=$4::uuid`,
     minutes,
     minutes * 60,
     amount,

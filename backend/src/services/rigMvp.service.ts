@@ -1,3 +1,4 @@
+import axios, { AxiosRequestConfig, isAxiosError } from "axios";
 import { env } from "../config/env";
 import { triggerRigMvpSync } from "./rigMvpSync.service";
 import { ApiError } from "../utils/apiError";
@@ -18,30 +19,62 @@ export type RigMvpRig = {
   last_seen: string | null;
 };
 
-function rigMvpUrl(path: string) {
-  return new URL(path, env.RIG_MVP_API_URL).toString();
+const rigMvpAxios = axios.create({
+  baseURL: env.RIG_MVP_API_URL,
+  timeout: 30_000,
+  headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
+  validateStatus: () => true,
+});
+
+function rigMvpErrorMessage(data: unknown) {
+  if (typeof data === "string" && data.trim()) {
+    const trimmed = data.trim();
+    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const payload = parsed as { message?: unknown; detail?: unknown; error?: unknown };
+          const nested = payload.message ?? payload.detail ?? payload.error;
+          if (typeof nested === "string" && nested.trim()) return rigMvpErrorMessage(nested);
+        }
+      } catch {
+        // Fall through to HTML/plain text cleanup.
+      }
+    }
+    const ngrokOffline = trimmed.match(/endpoint\s+([a-z0-9-]+\.ngrok-free\.dev)\s+is\s+offline/i);
+    if (trimmed.includes("ERR_NGROK_3200") || ngrokOffline) {
+      return ngrokOffline
+        ? `Ngrok endpoint offline: ${ngrokOffline[1]}. Rig-MVP serverni qayta ishga tushiring yoki RIG_MVP_API_URL ni yangilang.`
+        : "Ngrok endpoint offline. Rig-MVP serverni qayta ishga tushiring yoki RIG_MVP_API_URL ni yangilang.";
+    }
+    if (/^<!doctype html/i.test(trimmed) || /^<html[\s>]/i.test(trimmed)) {
+      const title = trimmed.match(/<title[^>]*>(.*?)<\/title>/is)?.[1]?.replace(/\s+/g, " ").trim();
+      return title ? `Rig-MVP HTML error qaytardi: ${title}` : "Rig-MVP JSON o'rniga HTML error qaytardi.";
+    }
+    return trimmed;
+  }
+  if (data && typeof data === "object" && "message" in data) {
+    const message = (data as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return "";
 }
 
-async function rigMvpRequest<T>(path: string, init?: RequestInit) {
-  let response: Response;
+async function rigMvpRequest<T>(path: string, config?: AxiosRequestConfig) {
   try {
-    response = await fetch(rigMvpUrl(path), {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...init?.headers,
-      },
-    });
+    const response = await rigMvpAxios.request<T>({ ...config, url: path });
+    if (response.status < 200 || response.status >= 300) {
+      const message = rigMvpErrorMessage(response.data);
+      throw new ApiError(response.status, message || `Rig-MVP request failed: ${response.status}`);
+    }
+    return response.data;
   } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (isAxiosError(error)) {
+      throw new ApiError(503, `Rig-MVP server is not reachable at ${env.RIG_MVP_API_URL}: ${error.message}`);
+    }
     throw new ApiError(503, `Rig-MVP server is not reachable at ${env.RIG_MVP_API_URL}: ${String(error)}`);
   }
-
-  if (!response.ok) {
-    const message = await response.text();
-    throw new ApiError(response.status, message || `Rig-MVP request failed: ${response.status}`);
-  }
-
-  return response.json() as Promise<T>;
 }
 
 export async function listRigMvpRigs() {
@@ -55,8 +88,8 @@ export async function getRigMvpRig(rigId: string) {
   return rig;
 }
 
-async function rigMvpAction<T>(path: string, init?: RequestInit) {
-  const result = await rigMvpRequest<T>(path, init);
+async function rigMvpAction<T>(path: string, config?: AxiosRequestConfig) {
+  const result = await rigMvpRequest<T>(path, config);
   await triggerRigMvpSync({ forcePersist: true });
   return result;
 }
@@ -64,35 +97,35 @@ async function rigMvpAction<T>(path: string, init?: RequestInit) {
 export function notifyRigMvp(rigId: string, message: string) {
   return rigMvpAction<{ ok: boolean }>(`/api/rigs/${encodeURIComponent(rigId)}/notify`, {
     method: "POST",
-    body: JSON.stringify({ message }),
+    data: { message },
   });
 }
 
 export function lockRigMvp(rigId: string, message: string) {
   return rigMvpAction<{ ok: boolean }>(`/api/rigs/${encodeURIComponent(rigId)}/lock`, {
     method: "POST",
-    body: JSON.stringify({ message }),
+    data: { message },
   });
 }
 
 export function unlockRigMvp(rigId: string, minutes?: number) {
   return rigMvpAction<{ ok: boolean; unlock_until: string | null }>(`/api/rigs/${encodeURIComponent(rigId)}/unlock`, {
     method: "POST",
-    body: JSON.stringify(minutes && minutes > 0 ? { minutes } : {}),
+    data: minutes && minutes > 0 ? { minutes } : {},
   });
 }
 
 export function sendRigMvpCommand(rigId: string, payload: Record<string, unknown>) {
   return rigMvpAction<{ ok: boolean }>(`/api/rigs/${encodeURIComponent(rigId)}/command`, {
     method: "POST",
-    body: JSON.stringify(payload),
+    data: payload,
   });
 }
 
 export function pushRigMvpUpdate(rigIds: string[]) {
   return rigMvpRequest<{ version: string; results: Array<{ rig_id: string; ok: boolean; error?: string }> }>("/api/rigs/push_update", {
     method: "POST",
-    body: JSON.stringify({ rig_ids: rigIds }),
+    data: { rig_ids: rigIds },
   });
 }
 

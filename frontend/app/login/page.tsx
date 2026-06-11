@@ -1,31 +1,55 @@
 "use client";
 
 import { Suspense } from "react";
-import { useState } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useForm } from "react-hook-form";
 import { RiLockPasswordLine, RiShieldUserLine } from "react-icons/ri";
+import { toast } from "sonner";
+import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+const loginSchema = z.object({
+  email: z.string().trim().min(1, "Email kiriting").email("Email formati noto'g'ri"),
+  password: z.string().min(1, "Parol kiriting").min(6, "Parol kamida 6 ta belgi bo'lishi kerak"),
+});
+
+type LoginForm = z.infer<typeof loginSchema>;
+
 function LoginPanel() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const {
+    register,
+    handleSubmit,
+    setError,
+    formState: { errors, isSubmitting },
+  } = useForm<LoginForm>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { email: "", password: "" },
+  });
 
-  async function handleSubmit(event: React.FormEvent) {
-    event.preventDefault();
+  async function onSubmit(values: LoginForm) {
     const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
-    const result = await signIn("credentials", { email, password, redirect: false, callbackUrl });
+    const result = await signIn("credentials", {
+      email: values.email.trim().toLowerCase(),
+      password: values.password,
+      redirect: false,
+      callbackUrl,
+    });
     if (result?.error) {
-      setError("Login yoki parol noto'g'ri");
+      const message = "Login yoki parol noto'g'ri";
+      setError("root", { message });
+      toast.error(message);
       return;
     }
+    toast.success("Tizimga kirildi");
     router.push(callbackUrl);
+    router.refresh();
   }
 
   return (
@@ -41,23 +65,41 @@ function LoginPanel() {
           </div>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
             <div className="space-y-2">
-              <Label>Email</Label>
+              <Label htmlFor="email">Email</Label>
               <div className="relative">
                 <RiShieldUserLine className="absolute left-3 top-3 text-slate-500" />
-                <Input className="pl-9" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+                <Input
+                  id="email"
+                  className="pl-9"
+                  type="email"
+                  autoComplete="email"
+                  aria-invalid={Boolean(errors.email)}
+                  {...register("email")}
+                />
               </div>
+              {errors.email ? <p className="text-sm text-red-300">{errors.email.message}</p> : null}
             </div>
             <div className="space-y-2">
-              <Label>Parol</Label>
+              <Label htmlFor="password">Parol</Label>
               <div className="relative">
                 <RiLockPasswordLine className="absolute left-3 top-3 text-slate-500" />
-                <Input className="pl-9" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+                <Input
+                  id="password"
+                  className="pl-9"
+                  type="password"
+                  autoComplete="current-password"
+                  aria-invalid={Boolean(errors.password)}
+                  {...register("password")}
+                />
               </div>
+              {errors.password ? <p className="text-sm text-red-300">{errors.password.message}</p> : null}
             </div>
-            {error ? <p className="text-sm text-red-300">{error}</p> : null}
-            <Button className="w-full" type="submit">Kirish</Button>
+            {errors.root ? <p className="text-sm text-red-300">{errors.root.message}</p> : null}
+            <Button className="w-full" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "Kirilmoqda..." : "Kirish"}
+            </Button>
           </form>
         </CardContent>
       </Card>
