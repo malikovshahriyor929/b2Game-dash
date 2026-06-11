@@ -45,10 +45,16 @@ export function BookingTable({ onEdit }: { onEdit?: (booking: Booking) => void }
       <TableBody>
         {bookings.map((item) => {
           const simulator = allSimulators.find((sim) => sim.id === item.simulatorId);
+          // Prefer the live simulator, then the name resolved by the backend, else a dash.
+          const simulatorLabel = simulator
+            ? `${simulator.branchName} - ${simulator.name}`
+            : item.simulatorName
+              ? (item.branchName ? `${item.branchName} - ${item.simulatorName}` : item.simulatorName)
+              : "—";
           return (
             <TableRow key={item.id}>
               <TableCell>{item.customerName}<div className="text-xs text-slate-500">{formatUzPhone(item.phone)}</div></TableCell>
-              <TableCell>{simulator ? `${simulator.branchName} - ${simulator.name}` : item.simulatorId}</TableCell>
+              <TableCell>{simulatorLabel}</TableCell>
               <TableCell>{item.date}</TableCell>
               <TableCell>{item.startTime} - {item.endTime}</TableCell>
               <TableCell>{item.tariff}</TableCell>

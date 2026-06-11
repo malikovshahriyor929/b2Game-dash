@@ -8,6 +8,7 @@ export type BackendTariff = {
   id: string;
   name: string;
   type: string;
+  branchId?: string;
   simulatorZone: "main" | "vip" | "all";
   durationMinutes: number;
   price: number;
@@ -28,6 +29,7 @@ export function mapTariffRow(row: Record<string, unknown>): BackendTariff {
     id: String(row.id),
     name: String(row.name ?? ""),
     type: String(row.type ?? ""),
+    branchId: row.branch_id == null ? undefined : String(row.branch_id),
     simulatorZone: String(row.simulator_zone ?? "all") as BackendTariff["simulatorZone"],
     durationMinutes: Number(row.duration_minutes ?? 0),
     price: Number(row.price ?? weekendPrice ?? weekdayPrice ?? 0),
@@ -53,17 +55,18 @@ export function dedupeTariffs(tariffs: BackendTariff[]) {
 }
 
 export function tariffPricePeriodLabel(item: BackendTariff) {
-  if (item.pricePeriod === "weekend" || item.isWeekend) return "Juma-Yakshanba";
-  if (item.pricePeriod === "evening" || item.isEvening) return "Kechki";
-  return "PN-CHT";
+  if (item.pricePeriod === "weekend" || item.isWeekend) return "Shanba-Yakshanba";
+  return "Dushanba-Juma";
 }
 
 export function formatTariffOptionLabel(item: BackendTariff) {
   const bonus = item.bonus ? ` + ${item.bonus}` : "";
+  // VIP tariffs are open/hourly — show the rate per hour.
+  const suffix = item.type.toLowerCase() === "vip" ? "/soat" : "";
   if (item.weekdayPrice != null && item.weekendPrice != null && item.weekdayPrice !== item.weekendPrice) {
-    return `${item.name} — ${money(item.weekdayPrice)} / ${money(item.weekendPrice)}${bonus}`;
+    return `${item.name} — ${money(item.weekdayPrice)}${suffix} / ${money(item.weekendPrice)}${suffix}${bonus}`;
   }
-  return `${item.name} — ${money(item.price)}${bonus}`;
+  return `${item.name} — ${money(item.price)}${suffix}${bonus}`;
 }
 
 export function useBackendTariffs(branchId?: string, enabled = true) {

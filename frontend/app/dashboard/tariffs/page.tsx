@@ -9,22 +9,23 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CardGridSkeleton } from "@/components/ui/skeletons";
 import { PageHeader } from "@/components/shared/page-header";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { money } from "@/lib/format";
-import { BackendTariff, dedupeTariffs, mapTariffRow } from "@/lib/use-backend-tariffs";
+import { BackendTariff, mapTariffRow } from "@/lib/use-backend-tariffs";
 import { backendDelete, backendGet, backendPatch, backendPost } from "@/server/api";
 import type { Product } from "@/types/product";
 
 const tariffTypes = ["time", "package", "night", "promo", "group", "birthday", "weekend"];
 const zones = [
-  { label: "Logitech / Middle", value: "main" },
-  { label: "Moza / VIP", value: "vip" },
+  { label: "Logitech (Main)", value: "main" },
+  { label: "Moza (Premium)", value: "vip" },
 ];
 
 const zoneLabels: Record<string, string> = {
-  main: "Logitech / Middle",
-  vip: "Moza / VIP",
+  main: "Logitech (Main)",
+  vip: "Moza (Premium)",
 };
 
 const typeLabels: Record<string, string> = {
@@ -167,18 +168,18 @@ function TariffCard({ item, onEdit, onDelete }: { item: BackendTariff; onEdit: (
       <div className="mt-1 text-xs font-semibold text-slate-500">{formatDuration(item.durationMinutes)}</div>
       <div className="mt-3 space-y-1 text-sm font-semibold text-slate-300">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-slate-500">PN–CHT</span>
+          <span className="text-slate-500">Dushanba–Juma</span>
           <span>{money(weekdayPrice)}</span>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <span className="text-slate-500">Juma–Yakshanba</span>
+          <span className="text-slate-500">Shanba–Yakshanba</span>
           <span className="text-sky-200">{money(weekendPrice)}</span>
         </div>
       </div>
       {(item.weekdayBonus || item.weekendBonus) ? (
         <div className="mt-3 space-y-1 text-xs font-semibold text-emerald-300">
-          {item.weekdayBonus ? <div>PN–CHT bonus: {item.weekdayBonus}</div> : null}
-          {item.weekendBonus ? <div>Juma–Yakshanba bonus: {item.weekendBonus}</div> : null}
+          {item.weekdayBonus ? <div>Dushanba–Juma bonus: {item.weekdayBonus}</div> : null}
+          {item.weekendBonus ? <div>Shanba–Yakshanba bonus: {item.weekendBonus}</div> : null}
         </div>
       ) : null}
     </Card>
@@ -197,22 +198,40 @@ export default function TariffsPage() {
   const [weekdayBonus, setWeekdayBonus] = useState<BonusItem[]>([]);
   const [weekendBonus, setWeekendBonus] = useState<BonusItem[]>([]);
 
-  const createBranchId = selectedBranchId === "all" ? branches[0]?.id ?? "" : selectedBranchId;
-  const branchLabel = selectedBranchId === "all" ? "Barcha filiallar" : branches.find((branch) => branch.id === selectedBranchId)?.name ?? "Filial";
+  const allBranches = selectedBranchId === "all";
+  const createBranchId = allBranches ? branches[0]?.id ?? "" : selectedBranchId;
+  const branchLabel = allBranches ? "Barcha filiallar" : branches.find((branch) => branch.id === selectedBranchId)?.name ?? "Filial";
 
-  const groupedTariffs = useMemo(() => {
-    const main = tariffs.filter((item) => item.simulatorZone === "main");
-    const vip = tariffs.filter((item) => item.simulatorZone === "vip");
-    return { main, vip };
-  }, [tariffs]);
+  // "all" tanlansa har filial alohida bo'lim; aks holda faqat tanlangan filial.
+  const branchSections = useMemo(() => {
+    const zonesOf = (items: BackendTariff[]) => ({
+      main: items.filter((item) => item.simulatorZone === "main"),
+      vip: items.filter((item) => item.simulatorZone === "vip"),
+    });
+    if (!allBranches) {
+      return [{ branchId: selectedBranchId, branchName: branchLabel, zones: zonesOf(tariffs) }];
+    }
+    const byBranch = new Map<string, BackendTariff[]>();
+    for (const item of tariffs) {
+      const key = item.branchId ?? "unknown";
+      const list = byBranch.get(key) ?? [];
+      list.push(item);
+      byBranch.set(key, list);
+    }
+    const ordered = branches.filter((branch) => byBranch.has(branch.id));
+    const extras = [...byBranch.keys()].filter((id) => !branches.some((branch) => branch.id === id));
+    return [
+      ...ordered.map((branch) => ({ branchId: branch.id, branchName: branch.name, zones: zonesOf(byBranch.get(branch.id) ?? []) })),
+      ...extras.map((id) => ({ branchId: id, branchName: "Filial", zones: zonesOf(byBranch.get(id) ?? []) })),
+    ];
+  }, [allBranches, branchLabel, branches, selectedBranchId, tariffs]);
 
   async function refreshTariffs() {
     setLoading(true);
     try {
       const query = `branch_id=${encodeURIComponent(selectedBranchId)}`;
       const rows = await backendGet<Array<Record<string, unknown>>>(`/tariffs?${query}`);
-      const mapped = rows.map(mapTariffRow);
-      setTariffs(selectedBranchId === "all" ? dedupeTariffs(mapped) : mapped);
+      setTariffs(rows.map(mapTariffRow));
     } catch {
       setTariffs([]);
     } finally {
@@ -293,33 +312,55 @@ export default function TariffsPage() {
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <PageHeader
           title="Tariflar"
-          description={`${branchLabel} uchun narxlar. PN–CHT va dam olish kunlari alohida.`}
+          description={`${branchLabel} uchun narxlar. Dushanba–Juma va Shanba–Yakshanba alohida.`}
         />
         <Button onClick={openCreate} disabled={!createBranchId}><FiPlus /> Tarif qo'shish</Button>
       </div>
 
       {loading ? (
-        <Card className="p-6 text-sm text-slate-400">Tariflar yuklanmoqda...</Card>
+        <div className="space-y-8">
+          <section>
+            <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Logitech (Main)</h2>
+            <CardGridSkeleton count={6} columns="lg:grid-cols-2 xl:grid-cols-3" />
+          </section>
+          <section>
+            <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Moza (Premium)</h2>
+            <CardGridSkeleton count={6} columns="lg:grid-cols-2 xl:grid-cols-3" />
+          </section>
+        </div>
       ) : tariffs.length === 0 ? (
         <Card className="p-6 text-sm text-slate-400">Tariflar topilmadi. Seed ishga tushiring yoki yangi tarif qo'shing.</Card>
       ) : (
-        <div className="space-y-8">
-          {groupedTariffs.main.length ? (
-            <section>
-              <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Logitech / Middle</h2>
-              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                {groupedTariffs.main.map((item) => <TariffCard key={item.id} item={item} onEdit={() => openEdit(item)} onDelete={() => remove(item)} />)}
+        <div className="space-y-10">
+          {branchSections.map((section) => {
+            if (!section.zones.main.length && !section.zones.vip.length) return null;
+            return (
+              <div key={section.branchId} className="space-y-6">
+                {allBranches ? (
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-base font-black text-slate-100">{section.branchName}</h2>
+                    <div className="h-px flex-1 bg-slate-800" />
+                  </div>
+                ) : null}
+                {section.zones.main.length ? (
+                  <section>
+                    <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Logitech (Main)</h3>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {section.zones.main.map((item) => <TariffCard key={item.id} item={item} onEdit={() => openEdit(item)} onDelete={() => remove(item)} />)}
+                    </div>
+                  </section>
+                ) : null}
+                {section.zones.vip.length ? (
+                  <section>
+                    <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Moza (Premium)</h3>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {section.zones.vip.map((item) => <TariffCard key={item.id} item={item} onEdit={() => openEdit(item)} onDelete={() => remove(item)} />)}
+                    </div>
+                  </section>
+                ) : null}
               </div>
-            </section>
-          ) : null}
-          {groupedTariffs.vip.length ? (
-            <section>
-              <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Moza / VIP</h2>
-              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                {groupedTariffs.vip.map((item) => <TariffCard key={item.id} item={item} onEdit={() => openEdit(item)} onDelete={() => remove(item)} />)}
-              </div>
-            </section>
-          ) : null}
+            );
+          })}
         </div>
       )}
 
@@ -353,7 +394,7 @@ export default function TariffsPage() {
               <Input inputMode="numeric" value={form.duration} onChange={(event) => setForm((item) => ({ ...item, duration: event.target.value.replace(/\D/g, "") }))} placeholder="60" />
             </div>
             <div className="space-y-2">
-              <Label>PN–CHT narxi</Label>
+              <Label>Dushanba–Juma narxi</Label>
               <div className="relative">
                 <Input
                   className="pr-16"
@@ -366,14 +407,14 @@ export default function TariffsPage() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Juma–Yakshanba narxi</Label>
+              <Label>Shanba–Yakshanba narxi</Label>
               <div className="relative">
                 <Input className="pr-16" inputMode="numeric" value={formatNumber(form.weekendPrice)} onChange={(event) => setForm((item) => ({ ...item, weekendPrice: event.target.value.replace(/\D/g, "") }))} placeholder="50 000" />
                 <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">so'm</span>
               </div>
             </div>
-            <BonusPicker label="PN–CHT bonus (skladdan)" products={products} items={weekdayBonus} onChange={setWeekdayBonus} />
-            <BonusPicker label="Juma–Yakshanba bonus (skladdan)" products={products} items={weekendBonus} onChange={setWeekendBonus} />
+            <BonusPicker label="Dushanba–Juma bonus (skladdan)" products={products} items={weekdayBonus} onChange={setWeekdayBonus} />
+            <BonusPicker label="Shanba–Yakshanba bonus (skladdan)" products={products} items={weekendBonus} onChange={setWeekendBonus} />
             <Button className="sm:col-span-2" type="submit" disabled={!form.name.trim() || !form.weekdayPrice.trim() || !createBranchId}>
               {editingId ? <><FiEdit2 /> Saqlash</> : <><FiPlus /> Yaratish</>}
             </Button>

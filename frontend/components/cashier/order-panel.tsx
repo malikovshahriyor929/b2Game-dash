@@ -5,6 +5,7 @@ import { FiCheckCircle, FiMinus, FiPlus, FiSearch, FiTrash2, FiUser, FiUserCheck
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ListSkeleton } from "@/components/ui/skeletons";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -265,7 +266,7 @@ export function OrderPanel() {
                 <Input className="pl-9" value={customerQuery} onChange={(event) => setCustomerQuery(event.target.value)} placeholder="Mijoz ismi yoki telefon..." autoFocus />
               </div>
               <div className="max-h-[320px] space-y-2 overflow-auto pr-1 thin-scrollbar">
-                {loadingCustomers ? <div className="rounded-xl border border-dashed border-slate-700 p-5 text-center text-sm font-semibold text-slate-500">Mijozlar yuklanmoqda...</div> : null}
+                {loadingCustomers ? <ListSkeleton rows={4} /> : null}
                 {!loadingCustomers && !sortedCustomers.length ? <div className="rounded-xl border border-dashed border-slate-700 p-5 text-center text-sm font-semibold text-slate-500">Mijoz topilmadi</div> : null}
                 {sortedCustomers.map((customer) => {
                   const online = onlineCustomerIds.has(customer.id);

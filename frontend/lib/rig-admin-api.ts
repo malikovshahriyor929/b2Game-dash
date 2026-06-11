@@ -28,6 +28,10 @@ export type RigRecord = {
   active_remaining_seconds?: number | string | null;
   active_paid_amount?: number | string | null;
   active_payment_mode?: string | null;
+  active_billing_mode?: string | null;
+  active_hourly_rate?: number | string | null;
+  active_elapsed_seconds?: number | string | null;
+  active_accrued_amount?: number | string | null;
   active_tariff_name?: string | null;
   map_position?: SimulatorMapPosition | null;
   first_seen: string | null;
@@ -73,6 +77,10 @@ export function mapBackendSimulatorRows(rows: Array<Record<string, any>>): RigRe
     active_remaining_seconds: item.active_remaining_seconds ?? null,
     active_paid_amount: item.active_paid_amount ?? null,
     active_payment_mode: item.active_payment_mode ?? null,
+    active_billing_mode: item.active_billing_mode ?? null,
+    active_hourly_rate: item.active_hourly_rate ?? null,
+    active_elapsed_seconds: item.active_elapsed_seconds ?? null,
+    active_accrued_amount: item.active_accrued_amount ?? null,
     active_tariff_name: item.active_tariff_name ?? null,
     map_position: mapPosition(item.map_position),
     first_seen: item.first_seen ?? null,

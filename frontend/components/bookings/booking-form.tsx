@@ -22,7 +22,7 @@ const emptyForm: BookingFormState = {
   date: toIsoDate(new Date()),
   startTime: "16:00",
   endTime: "17:00",
-  tariff: "Logitech 60 min",
+  tariff: "",
   prepayment: 0,
   note: "",
 };
@@ -131,10 +131,8 @@ export function BookingForm({ booking, onSaved }: { booking?: Booking | null; on
     note: booking.note,
   } : emptyForm);
   const simulatorsByType = useMemo(() => simulators.filter((item) => item.zone === form.simulatorType), [form.simulatorType, simulators]);
-  const tariffsByType = useMemo(() => {
-    const zone = form.simulatorType === "VIP" ? "vip" : "main";
-    return tariffs.filter((item) => item.simulatorZone === zone || item.simulatorZone === "all");
-  }, [form.simulatorType, tariffs]);
+  // Show every tariff in booking, regardless of the simulator zone.
+  const tariffsByType = tariffs;
   const conflict = hasConflict(bookings, form, booking?.id);
   const selectedTariff = tariffsByType.find((item) => item.name === form.tariff);
   const phoneValid = normalizeUzPhone(form.phone).length === 12;
@@ -167,7 +165,7 @@ export function BookingForm({ booking, onSaved }: { booking?: Booking | null; on
             </div>
             <div className="text-xs text-slate-500">Ko'rinishi: {form.phone ? formatUzPhone(form.phone) : "+998 XX XXX XX XX"}</div>
           </div>
-          <div className="space-y-2"><Label>Simulator type</Label><Select value={form.simulatorType} onValueChange={(simulatorType) => setForm((item) => ({ ...item, simulatorType, simulatorId: "", tariff: "" }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Standard">Logitech (Standard)</SelectItem><SelectItem value="VIP">Moza (VIP)</SelectItem></SelectContent></Select></div>
+          <div className="space-y-2"><Label>Simulator type</Label><Select value={form.simulatorType} onValueChange={(simulatorType) => setForm((item) => ({ ...item, simulatorType, simulatorId: "", tariff: "" }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Standard">Logitech (Main)</SelectItem><SelectItem value="VIP">Moza (Premium)</SelectItem></SelectContent></Select></div>
           <div className="space-y-2"><Label>Exact simulator</Label><Select value={form.simulatorId} onValueChange={(simulatorId) => setForm((item) => ({ ...item, simulatorId }))}><SelectTrigger><SelectValue placeholder="Simulator tanlang" /></SelectTrigger><SelectContent>{simulatorsByType.map((simulator) => <SelectItem key={simulator.id} value={simulator.id}>{simulator.branchName} - {simulator.name}</SelectItem>)}</SelectContent></Select></div>
           <div className="space-y-2"><Label>Date</Label><DatePicker value={form.date} onChange={(date) => setForm((item) => ({ ...item, date }))} /></div>
           <div className="space-y-2"><Label>Start time</Label><Input type="time" value={form.startTime} onChange={(event) => setForm((item) => ({ ...item, startTime: event.target.value }))} /></div>

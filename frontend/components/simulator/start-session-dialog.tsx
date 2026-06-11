@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { ListSkeleton } from "@/components/ui/skeletons";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { money } from "@/lib/format";
@@ -67,10 +68,9 @@ export function StartSessionDialog({ open, onOpenChange, simulator }: { open: bo
   const tariffs = useBackendTariffs(tariffBranchId, open);
   const paymentMethods = usePaymentMethods(tariffBranchId, open);
   const startOptions = useStartSessionOptions(tariffBranchId, open);
-  const zoneTariffs = useMemo(() => {
-    const zone = simulator?.zone === "VIP" ? "vip" : "main";
-    return tariffs.filter((item) => item.simulatorZone === zone || item.simulatorZone === "all");
-  }, [simulator?.zone, tariffs]);
+  // Show every active tariff in create session, regardless of the simulator's zone
+  // (VIP/Logitech all selectable). VIP tariffs bill as open hourly sessions.
+  const zoneTariffs = tariffs;
   const durationOptions = useMemo(() => {
     return Array.from(new Set(zoneTariffs.map((item) => item.durationMinutes)))
       .filter((value) => value > 0)
@@ -91,14 +91,18 @@ export function StartSessionDialog({ open, onOpenChange, simulator }: { open: bo
   const [paymentStatus, setPaymentStatus] = useState<"paid" | "unpaid">("paid");
   const [paymentMethod, setPaymentMethod] = useState("Karta");
   const selectedTariff = zoneTariffs.find((item) => item.id === tariffId) ?? zoneTariffs[0];
+  // VIP tariffs (type='vip') open as hourly sessions: no fixed duration, billed at stop.
+  const isOpenTariff = (selectedTariff?.type ?? "").toLowerCase() === "vip";
+  const hourlyRate = selectedTariff && isOpenTariff ? Math.round((selectedTariff.price * 60) / (selectedTariff.durationMinutes || 60)) : 0;
   const selectedCustomer = customers.find((item) => item.id === selectedCustomerId);
-  const canSubmit = Boolean(simulator) && customerName.trim().length > 0 && Number(duration) > 0 && Boolean(selectedTariff) && (customerType === "Guest" || Boolean(selectedCustomer));
-  const totalAmount = paymentStatus === "unpaid" ? 0 : selectedTariff?.price ?? 0;
+  const canSubmit = Boolean(simulator) && customerName.trim().length > 0 && (isOpenTariff || Number(duration) > 0) && Boolean(selectedTariff) && (customerType === "Guest" || Boolean(selectedCustomer));
+  const totalAmount = isOpenTariff || paymentStatus === "unpaid" ? 0 : selectedTariff?.price ?? 0;
 
   const summary = useMemo(() => {
+    if (isOpenTariff) return `Soatlik: ${money(hourlyRate)}/soat - to'xtatishda hisoblanadi`;
     const mode = startOptions.paymentModes.find((item) => item.value === paymentStatus)?.label ?? "Prepaid";
     return `${duration} min - ${money(selectedTariff?.price ?? 0)}${selectedTariff?.bonus ? ` - bonus: ${selectedTariff.bonus}` : ""} - ${mode}`;
-  }, [duration, paymentStatus, selectedTariff?.bonus, selectedTariff?.price, startOptions.paymentModes]);
+  }, [duration, hourlyRate, isOpenTariff, paymentStatus, selectedTariff?.bonus, selectedTariff?.price, startOptions.paymentModes]);
 
   useEffect(() => {
     if (!open) return;
@@ -117,6 +121,11 @@ export function StartSessionDialog({ open, onOpenChange, simulator }: { open: bo
     setPaymentStatus(startOptions.paymentModes[0]?.value ?? "paid");
     setPaymentMethod(paymentMethods[0]?.label ?? "Karta");
   }, [open, paymentMethods, simulator?.id, startOptions.paymentModes, zoneTariffs]);
+
+  // Open (VIP) sessions are postpaid — the amount is only known at stop.
+  useEffect(() => {
+    if (isOpenTariff) setPaymentStatus("unpaid");
+  }, [isOpenTariff]);
 
   const loadCustomers = useCallback(async (reset = false) => {
     if (!open || customerType !== "Registered") return;
@@ -280,7 +289,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator }: { open: bo
                         <span className="block truncate text-xs opacity-75">{customer.phone ? formatUzPhone(String(customer.phone)) : "Telefon yo'q"} · Balans: {money(Number(customer.balance ?? 0))}</span>
                       </button>
                     ))}
-                    {loadingCustomers ? <div className="px-3 py-2 text-sm font-semibold text-slate-500">Mijozlar yuklanmoqda...</div> : null}
+                    {loadingCustomers ? <ListSkeleton rows={4} /> : null}
                     {!loadingCustomers && !customers.length ? <div className="px-3 py-2 text-sm font-semibold text-slate-500">Mijoz topilmadi</div> : null}
                     {!loadingCustomers && customers.length > 0 && !customersHasMore ? <div className="px-3 py-2 text-xs font-semibold text-slate-600">Boshqa mijoz yo'q</div> : null}
                   </div>
@@ -318,26 +327,38 @@ export function StartSessionDialog({ open, onOpenChange, simulator }: { open: bo
               </SelectContent>
             </Select>
             {selectedTariff ? (
-              <p className="text-xs font-semibold text-slate-500">
-                Bugun to'lov: {money(selectedTariff.price)}
-                {` (${tariffPricePeriodLabel(selectedTariff)})`}
-              </p>
+              isOpenTariff ? (
+                <p className="text-xs font-semibold text-amber-300">
+                  Soatlik (VIP): {money(hourlyRate)}/soat — vaqt bo'yicha, to'xtatishda hisoblanadi
+                </p>
+              ) : (
+                <p className="text-xs font-semibold text-slate-500">
+                  Bugun to'lov: {money(selectedTariff.price)}
+                  {` (${tariffPricePeriodLabel(selectedTariff)})`}
+                </p>
+              )
             ) : null}
           </div>
 
           <div className="space-y-2">
             <Label>Duration</Label>
-            <Select value={duration} onValueChange={handleDurationChange}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {durationOptions.map((minutes) => <SelectItem key={minutes} value={String(minutes)}>{minutes} min</SelectItem>)}
-              </SelectContent>
-            </Select>
+            {isOpenTariff ? (
+              <div className="flex h-10 items-center rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 text-sm font-semibold text-amber-200">
+                Ochiq — vaqt yuqoriga sanaladi
+              </div>
+            ) : (
+              <Select value={duration} onValueChange={handleDurationChange}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {durationOptions.map((minutes) => <SelectItem key={minutes} value={String(minutes)}>{minutes} min</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           <div className="space-y-2">
             <Label>Payment mode</Label>
-            <Select value={paymentStatus} onValueChange={(value) => setPaymentStatus(value as "paid" | "unpaid")}>
+            <Select value={paymentStatus} onValueChange={(value) => setPaymentStatus(value as "paid" | "unpaid")} disabled={isOpenTariff}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {startOptions.paymentModes.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
@@ -357,8 +378,17 @@ export function StartSessionDialog({ open, onOpenChange, simulator }: { open: bo
 
           <div className="rounded-xl bg-slate-950/80 p-4">
             <Label>Total amount</Label>
-            <div className="mt-2 text-2xl font-black text-sky-200">{money(totalAmount)}</div>
-            {selectedTariff?.bonus ? <div className="mt-1 text-xs font-semibold text-emerald-300">Bonus: {selectedTariff.bonus}</div> : null}
+            {isOpenTariff ? (
+              <>
+                <div className="mt-2 text-2xl font-black text-amber-200">{money(hourlyRate)}/soat</div>
+                <div className="mt-1 text-xs font-semibold text-slate-400">To'lov to'xtatishda hisoblanadi</div>
+              </>
+            ) : (
+              <>
+                <div className="mt-2 text-2xl font-black text-sky-200">{money(totalAmount)}</div>
+                {selectedTariff?.bonus ? <div className="mt-1 text-xs font-semibold text-emerald-300">Bonus: {selectedTariff.bonus}</div> : null}
+              </>
+            )}
           </div>
         </div>
 

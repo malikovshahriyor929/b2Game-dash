@@ -102,6 +102,8 @@ model Session {
   tariffId         String?   @map("tariff_id") @db.Uuid
   status           String
   paymentMode      String    @map("payment_mode")
+  billingMode      String    @default("fixed") @map("billing_mode")
+  hourlyRate       Decimal   @default(0) @map("hourly_rate") @db.Decimal(14, 2)
   startedAt        DateTime  @default(now()) @map("started_at")
   endedAt          DateTime? @map("ended_at")
   durationMinutes  Int       @map("duration_minutes")
@@ -233,6 +235,8 @@ model Booking {
   startTime       DateTime @map("start_time")
   endTime         DateTime @map("end_time")
   status          String   @default("pending")
+  tariffName      String?  @map("tariff_name")
+  prepayment      Decimal  @default(0) @db.Decimal(14, 2)
   note            String?
   createdBy       String   @map("created_by") @db.Uuid
   createdAt       DateTime @default(now()) @map("created_at")
@@ -268,27 +272,52 @@ model RepairRequest {
 }
 
 model Shift {
-  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  branchId     String    @map("branch_id") @db.Uuid
-  openedBy     String    @map("opened_by") @db.Uuid
-  closedBy     String?   @map("closed_by") @db.Uuid
-  status       String    @default("open")
-  startingCash Decimal   @default(0) @map("starting_cash")
-  expectedCash Decimal   @default(0) @map("expected_cash")
-  actualCash   Decimal?  @map("actual_cash")
-  cardTotal    Decimal   @default(0) @map("card_total")
-  qrTotal      Decimal   @default(0) @map("qr_total")
-  productSales Decimal   @default(0) @map("product_sales")
-  sessionSales Decimal   @default(0) @map("session_sales")
-  refunds      Decimal   @default(0)
-  difference   Decimal   @default(0)
-  notes        String?
-  openedAt     DateTime  @default(now()) @map("opened_at")
-  closedAt     DateTime? @map("closed_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  branchId      String    @map("branch_id") @db.Uuid
+  openedBy      String    @map("opened_by") @db.Uuid
+  closedBy      String?   @map("closed_by") @db.Uuid
+  status        String    @default("open")
+  shiftType     String?   @map("shift_type")
+  startingCash  Decimal   @default(0) @map("starting_cash")
+  expectedCash  Decimal   @default(0) @map("expected_cash")
+  actualCash    Decimal?  @map("actual_cash")
+  cashSales     Decimal   @default(0) @map("cash_sales")
+  cardTotal     Decimal   @default(0) @map("card_total")
+  qrTotal       Decimal   @default(0) @map("qr_total")
+  balanceSales  Decimal   @default(0) @map("balance_sales")
+  totalRevenue  Decimal   @default(0) @map("total_revenue")
+  productSales  Decimal   @default(0) @map("product_sales")
+  sessionSales  Decimal   @default(0) @map("session_sales")
+  cashWithdrawn Decimal   @default(0) @map("cash_withdrawn")
+  cardWithdrawn Decimal   @default(0) @map("card_withdrawn")
+  bankWithdrawn Decimal   @default(0) @map("bank_withdrawn")
+  remainingCash Decimal   @default(0) @map("remaining_cash")
+  withdrawRecipient String? @map("withdraw_recipient")
+  refunds       Decimal   @default(0)
+  difference    Decimal   @default(0)
+  notes         String?
+  openedAt      DateTime  @default(now()) @map("opened_at")
+  closedAt      DateTime? @map("closed_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at")
 
   @@map("shifts")
+}
+
+model ShiftWithdrawal {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shiftId     String   @map("shift_id") @db.Uuid
+  branchId    String   @map("branch_id") @db.Uuid
+  source      String // 'cash' | 'card' | 'bank'
+  amount      Decimal
+  recipient   String?
+  note        String?
+  withdrawnBy String   @map("withdrawn_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([shiftId])
+  @@index([branchId])
+  @@map("shift_withdrawals")
 }
 
 model Log {

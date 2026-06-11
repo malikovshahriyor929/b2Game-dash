@@ -7,6 +7,7 @@ import { ProductCard } from "@/components/cashier/product-card";
 import { OrderPanel } from "@/components/cashier/order-panel";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { CardGridSkeleton } from "@/components/ui/skeletons";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,7 +31,7 @@ function normalizeScanCode(value: string) {
 }
 
 export function CashierTabs() {
-  const { products, addProduct, addProductByQr, createProduct, updateProduct, deleteProduct, recordCashierTransaction, simulators, pay, addCashTransaction } = useDashboardStore();
+  const { loading, products, addProduct, addProductByQr, createProduct, updateProduct, deleteProduct, recordCashierTransaction, simulators, pay, addCashTransaction } = useDashboardStore();
   const paymentMethods = usePaymentMethods();
   const [activeTab, setActiveTab] = useState("shop");
   const [category, setCategory] = useState("Barchasi");
@@ -339,9 +340,13 @@ export function CashierTabs() {
               {cats.map((item) => <button key={item} onClick={() => setCategory(item)} className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${category === item ? "bg-sky-500 text-slate-950" : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"}`}>{item}</button>)}
             </div>
             <Input className="mb-3 h-9 max-w-md rounded-lg" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search product or QR..." />
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {visible.map((item) => <ProductCard key={item.id} product={item} onAdd={() => addProduct(item)} onEdit={() => startEditProduct(item)} onDelete={() => removeProduct(item)} />)}
-            </div>
+            {loading ? (
+              <CardGridSkeleton count={8} columns="sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" />
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {visible.map((item) => <ProductCard key={item.id} product={item} onAdd={() => addProduct(item)} onEdit={() => startEditProduct(item)} onDelete={() => removeProduct(item)} />)}
+              </div>
+            )}
           </TabsContent>
           <TabsContent value="manage">
             <Card className="space-y-4 p-4">

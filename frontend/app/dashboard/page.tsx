@@ -7,10 +7,11 @@ import { SimulatorMap } from "@/components/simulator/simulator-map";
 import { ReportCard } from "@/components/reports/report-card";
 import { RevenueChart } from "@/components/reports/revenue-chart";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
+import { StatCardsSkeleton, ChartSkeleton, MapSkeleton } from "@/components/ui/skeletons";
 import { localDate } from "@/lib/datetime";
 
 export default function DashboardPage() {
-  const { revenue, simulators, activeShift, shifts, barSales } = useDashboardStore();
+  const { loading, revenue, simulators, activeShift, shifts, barSales } = useDashboardStore();
   const { data: session } = useSession();
   const activeCount = simulators.filter((s) => ["busy", "unpaid"].includes(s.status)).length;
   const freeCount = simulators.filter((s) => s.status === "ready_to_play").length;
@@ -47,14 +48,24 @@ export default function DashboardPage() {
         </div>
       )}
       
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <ReportCard label="Today revenue" value={revenue} icon={FiCreditCard} />
-        <ReportCard label="Active sessions" value={activeCount} icon={FiActivity} format="number" />
-        <ReportCard label="Ready simulators" value={freeCount} icon={FiMonitor} format="number" />
-        <ReportCard label="Shop sales" value={shopSales} icon={FiShoppingBag} />
-      </div>
-      <div className="mb-4"><RevenueChart /></div>
-      <SimulatorMap />
+      {loading ? (
+        <>
+          <StatCardsSkeleton className="mb-4" />
+          <div className="mb-4"><ChartSkeleton /></div>
+          <MapSkeleton />
+        </>
+      ) : (
+        <>
+          <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <ReportCard label="Today revenue" value={revenue} icon={FiCreditCard} />
+            <ReportCard label="Active sessions" value={activeCount} icon={FiActivity} format="number" />
+            <ReportCard label="Ready simulators" value={freeCount} icon={FiMonitor} format="number" />
+            <ReportCard label="Shop sales" value={shopSales} icon={FiShoppingBag} />
+          </div>
+          <div className="mb-4"><RevenueChart /></div>
+          <SimulatorMap />
+        </>
+      )}
     </div>
   );
 }

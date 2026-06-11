@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { money } from "@/lib/format";
+import { money, seconds } from "@/lib/format";
 import { useBackendTariffs } from "@/lib/use-backend-tariffs";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { Simulator } from "@/types/simulator";
@@ -18,7 +18,10 @@ export function StopSessionDialog({ open, onOpenChange, simulator, onTakePayment
   const tariff = tariffs.find((item) => item.name === simulator?.tariff);
   const shopItems = simulator?.orderItems.flatMap((item) => item.split(",").map((name) => name.trim()).filter(Boolean)) ?? [];
   const shop = shopItems.reduce((sum, name) => sum + (products.find((product) => product.name === name)?.price ?? 0), 0);
-  const total = (tariff?.price ?? 0) + shop;
+  // Open (VIP) sessions bill by elapsed time — the accrued amount grows live in the store.
+  const isOpen = simulator?.billingMode === "open";
+  const sessionAmount = isOpen ? (simulator?.accruedAmount ?? 0) : (tariff?.price ?? 0);
+  const total = sessionAmount + shop;
   const paid = simulator?.paidAmount ?? 0;
   const debt = Math.max(total - paid, 0);
 
@@ -45,7 +48,9 @@ export function StopSessionDialog({ open, onOpenChange, simulator, onTakePayment
           <Row label="Customer" value={simulator?.currentUser ?? "Guest"} />
           <Row label="Started time" value={simulator?.startedAt ?? "-"} />
           <Row label="Finished time" value={new Date().toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })} />
-          <Row label="Tariff amount" value={money(tariff?.price ?? 0)} />
+          {isOpen ? <Row label="O'tgan vaqt" value={seconds(simulator?.elapsedSeconds ?? simulator?.remainingSeconds ?? 0)} /> : null}
+          {isOpen ? <Row label="Soatlik stavka" value={`${money(simulator?.hourlyRate ?? 0)}/soat`} /> : null}
+          <Row label={isOpen ? "Vaqt to'lovi (VIP)" : "Tariff amount"} value={money(sessionAmount)} />
           <Row label="Shop purchases" value={money(shop)} />
           <Row label="Total" value={money(total)} />
           <Row label="Already paid" value={money(paid)} />
@@ -55,7 +60,7 @@ export function StopSessionDialog({ open, onOpenChange, simulator, onTakePayment
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
           {debt > 0 ? <Button variant="warning" onClick={takePayment}>Take payment</Button> : null}
-          <Button variant={debt > 0 ? "destructive" : "default"} onClick={() => submit(debt > 0)}>{debt > 0 ? "Admin override stop" : "Stop session"}</Button>
+          <Button variant={debt > 0 ? "destructive" : "default"} onClick={() => submit(true)}>{debt > 0 ? "Admin override stop" : "Stop session"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
