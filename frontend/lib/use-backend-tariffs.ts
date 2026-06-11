@@ -60,10 +60,12 @@ export function tariffPricePeriodLabel(item: BackendTariff) {
 
 export function formatTariffOptionLabel(item: BackendTariff) {
   const bonus = item.bonus ? ` + ${item.bonus}` : "";
+  // VIP tariffs are open/hourly — show the rate per hour.
+  const suffix = item.type.toLowerCase() === "vip" ? "/soat" : "";
   if (item.weekdayPrice != null && item.weekendPrice != null && item.weekdayPrice !== item.weekendPrice) {
-    return `${item.name} — ${money(item.weekdayPrice)} / ${money(item.weekendPrice)}${bonus}`;
+    return `${item.name} — ${money(item.weekdayPrice)}${suffix} / ${money(item.weekendPrice)}${suffix}${bonus}`;
   }
-  return `${item.name} — ${money(item.price)}${bonus}`;
+  return `${item.name} — ${money(item.price)}${suffix}${bonus}`;
 }
 
 export function useBackendTariffs(branchId?: string, enabled = true) {

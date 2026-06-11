@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CardGridSkeleton } from "@/components/ui/skeletons";
 import { PageHeader } from "@/components/shared/page-header";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { money } from "@/lib/format";
@@ -151,7 +152,16 @@ export default function TariffsPage() {
       </div>
 
       {loading ? (
-        <Card className="p-6 text-sm text-slate-400">Tariflar yuklanmoqda...</Card>
+        <div className="space-y-8">
+          <section>
+            <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Logitech / Middle</h2>
+            <CardGridSkeleton count={6} columns="lg:grid-cols-2 xl:grid-cols-3" />
+          </section>
+          <section>
+            <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Moza / VIP</h2>
+            <CardGridSkeleton count={6} columns="lg:grid-cols-2 xl:grid-cols-3" />
+          </section>
+        </div>
       ) : tariffs.length === 0 ? (
         <Card className="p-6 text-sm text-slate-400">Tariflar topilmadi. Seed ishga tushiring yoki yangi tarif qo'shing.</Card>
       ) : (

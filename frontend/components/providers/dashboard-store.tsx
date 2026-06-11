@@ -39,6 +39,7 @@ const fallbackBranch: Branch = { id: "default-branch", name: "Default branch" };
 
 
 type DashboardStore = {
+  loading: boolean;
   simulators: Simulator[];
   allSimulators: Simulator[];
   selectedId: string | null;
@@ -198,7 +199,12 @@ function rigsToSimulators(rigs: RigRecord[], branchList: Branch[]) {
     const zone = rigType(rig);
     const status = rigStatus(rig);
     const hasSessionTimer = ["busy", "unpaid"].includes(status);
-    const remainingSeconds = hasSessionTimer ? (sessionRemainingSeconds(rig) || rigRemainingSeconds(rig.unlock_until)) : 0;
+    const isOpen = rig.active_billing_mode === "open";
+    // Open (VIP) sessions count up: the "remaining" field carries elapsed time so the card timer ticks upward.
+    const elapsedSeconds = Math.max(0, Math.floor(numberValue(rig.active_elapsed_seconds)));
+    const remainingSeconds = hasSessionTimer
+      ? (isOpen ? elapsedSeconds : (sessionRemainingSeconds(rig) || rigRemainingSeconds(rig.unlock_until)))
+      : 0;
     const branch = branchList.find((item) => item.id === rig.branch_id) ?? {
       id: rig.branch_id ?? branchList[0]?.id ?? fallbackBranch.id,
       name: rig.branch_name ?? branchList[0]?.name ?? fallbackBranch.name,
@@ -220,6 +226,10 @@ function rigsToSimulators(rigs: RigRecord[], branchList: Branch[]) {
       startedAt: timestampTime(rig.active_started_at),
       remainingMinutes: Math.ceil(remainingSeconds / 60),
       remainingSeconds,
+      billingMode: isOpen ? "open" : "fixed",
+      hourlyRate: numberValue(rig.active_hourly_rate),
+      elapsedSeconds: isOpen ? elapsedSeconds : undefined,
+      accruedAmount: isOpen ? numberValue(rig.active_accrued_amount) : undefined,
       paidAmount: numberValue(rig.active_paid_amount),
       paymentStatus: rig.active_payment_mode === "postpaid" ? "unpaid" : "paid",
       orderItems: [],
@@ -394,6 +404,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
   const [order, setOrder] = useState<OrderItem[]>([]);
   const [inventory, setInventory] = useState<Product[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
   const refreshInFlightRef = useRef<Promise<void> | null>(null);
   const expireSessionRef = useRef<(id: string) => void>(() => undefined);
   const defaultBranchId = data?.user?.role === "super_admin" ? "all" : data?.user?.branchIds?.[0] ?? fallbackBranch.id;
@@ -424,7 +435,16 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     const timer = window.setInterval(() => {
       const expiringIds: string[] = [];
       setAllSimulators((items) => items.map((item) => {
-        if (!["busy", "unpaid"].includes(item.status) || !item.remainingSeconds) return item;
+        if (!["busy", "unpaid"].includes(item.status)) return item;
+        // Open (VIP) sessions count up and never auto-expire; the accrued amount grows live.
+        if (item.billingMode === "open") {
+          const elapsedSeconds = (item.elapsedSeconds ?? item.remainingSeconds ?? 0) + 1;
+          const accruedAmount = item.hourlyRate
+            ? Math.round((Math.ceil(elapsedSeconds / 60) * item.hourlyRate) / 60)
+            : item.accruedAmount;
+          return { ...item, elapsedSeconds, remainingSeconds: elapsedSeconds, remainingMinutes: Math.ceil(elapsedSeconds / 60), accruedAmount };
+        }
+        if (!item.remainingSeconds) return item;
         if (item.remainingSeconds <= 1) {
           expiringIds.push(item.id);
           return { ...item, remainingSeconds: 0, remainingMinutes: 0 };
@@ -492,6 +512,8 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       setSelectedId((current) => (current && nextSimulators.some((item) => item.id === current) ? current : nextSimulators[0]?.id ?? null));
       } catch {
       // Keep the last simulator snapshot visible if a secondary dashboard endpoint fails.
+      } finally {
+      setLoading(false);
       }
     })();
 
@@ -650,6 +672,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
   const activeShift = useMemo(() => shifts.find((item) => item.status === "open") ?? null, [shifts]);
 
   const value = useMemo<DashboardStore>(() => ({
+    loading,
     simulators,
     allSimulators,
     selectedId,
@@ -1226,6 +1249,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         .catch(() => undefined);
     },
   }), [
+    loading,
     allSimulators,
     bookings,
     effectiveBranchId,

@@ -9,6 +9,7 @@ import { AddTimeDialog } from "@/components/simulator/add-time-dialog";
 import { PaymentDialog } from "@/components/simulator/payment-dialog";
 import { StopSessionDialog } from "@/components/simulator/stop-session-dialog";
 import { DashboardStoreProvider, useDashboardStore } from "@/components/providers/dashboard-store";
+import { Skeleton } from "@/components/ui/skeleton";
 
 function ShellInner({ children }: { children: React.ReactNode }) {
   const [dialog, setDialog] = useState<"start" | "addTime" | "payment" | "stop" | null>(null);
@@ -46,7 +47,18 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   }, [session?.authError, status]);
 
   if (status === "loading" || status === "unauthenticated") {
-    return <main className="flex h-dvh items-center justify-center bg-[#070b15] text-sm font-semibold text-slate-400">Session tekshirilmoqda...</main>;
+    return (
+      <main className="flex h-dvh gap-4 bg-[#070b15] p-4">
+        <Skeleton className="hidden h-full w-60 shrink-0 rounded-2xl lg:block" />
+        <div className="flex flex-1 flex-col gap-4">
+          <Skeleton className="h-14 w-full rounded-2xl" />
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}
+          </div>
+          <Skeleton className="h-full w-full rounded-2xl" />
+        </div>
+      </main>
+    );
   }
 
   return (

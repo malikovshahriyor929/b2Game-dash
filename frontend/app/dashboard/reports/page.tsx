@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { StatCardsSkeleton, TableSkeleton } from "@/components/ui/skeletons";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -49,6 +50,7 @@ function startOfWeek(date: Date) {
 
 export default function ReportsPage() {
   const {
+    loading,
     revenueEvents,
     lockUnlockLogs,
     barSales,
@@ -158,6 +160,13 @@ export default function ReportsPage() {
         </div>
       </div>
 
+      {loading ? (
+        <>
+          <StatCardsSkeleton count={6} className="lg:grid-cols-3 xl:grid-cols-6" />
+          <TableSkeleton rows={8} cols={3} />
+        </>
+      ) : (
+      <>
       {/* Main Indicators Grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <ReportCard label="Umumiy tushum" value={totalRevenue} icon={FiDollarSign} tone="sky" />
@@ -536,6 +545,8 @@ export default function ReportsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+      </>
+      )}
     </div>
   );
 }

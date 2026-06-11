@@ -52,6 +52,10 @@ export type Simulator = {
   startedAt?: string;
   remainingMinutes: number;
   remainingSeconds?: number;
+  billingMode?: "fixed" | "open";
+  hourlyRate?: number;
+  elapsedSeconds?: number;
+  accruedAmount?: number;
   paidAmount: number;
   paymentStatus: PaymentStatus;
   orderItems: string[];

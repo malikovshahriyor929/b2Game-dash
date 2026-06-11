@@ -102,6 +102,8 @@ model Session {
   tariffId         String?   @map("tariff_id") @db.Uuid
   status           String
   paymentMode      String    @map("payment_mode")
+  billingMode      String    @default("fixed") @map("billing_mode")
+  hourlyRate       Decimal   @default(0) @map("hourly_rate") @db.Decimal(14, 2)
   startedAt        DateTime  @default(now()) @map("started_at")
   endedAt          DateTime? @map("ended_at")
   durationMinutes  Int       @map("duration_minutes")
@@ -282,6 +284,15 @@ model Shift {
   sessionSales Decimal   @default(0) @map("session_sales")
   refunds      Decimal   @default(0)
   difference   Decimal   @default(0)
+  cashSales         Decimal @default(0) @map("cash_sales")
+  balanceSales      Decimal @default(0) @map("balance_sales")
+  totalRevenue      Decimal @default(0) @map("total_revenue")
+  cashWithdrawn     Decimal @default(0) @map("cash_withdrawn")
+  cardWithdrawn     Decimal @default(0) @map("card_withdrawn")
+  bankWithdrawn     Decimal @default(0) @map("bank_withdrawn")
+  remainingCash     Decimal @default(0) @map("remaining_cash")
+  shiftType         String? @map("shift_type")
+  withdrawRecipient String? @map("withdraw_recipient")
   notes        String?
   openedAt     DateTime  @default(now()) @map("opened_at")
   closedAt     DateTime? @map("closed_at")
@@ -289,6 +300,22 @@ model Shift {
   updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
 
   @@map("shifts")
+}
+
+model ShiftWithdrawal {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shiftId     String   @map("shift_id") @db.Uuid
+  branchId    String   @map("branch_id") @db.Uuid
+  source      String
+  amount      Decimal
+  recipient   String?
+  note        String?
+  withdrawnBy String   @map("withdrawn_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([shiftId])
+  @@index([branchId])
+  @@map("shift_withdrawals")
 }
 
 model Log {

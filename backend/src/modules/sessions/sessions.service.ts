@@ -30,6 +30,23 @@ async function sendRigMvpCommandIfSupported(rigId: string, payload: Record<strin
   }
 }
 
+// VIP tariffs (type='vip') bill as open/hourly sessions: the timer counts up and the
+// final amount is elapsed time * hourly rate (no package discount), calculated at stop.
+// hourlyRate is normalized to a per-hour price, so a 60-min/100k VIP tariff = 100k/hour.
+async function resolveTariffBilling(tariffId: unknown): Promise<{ open: boolean; hourlyRate: number }> {
+  if (!isUuid(tariffId)) return { open: false, hourlyRate: 0 };
+  const rows = await prisma.$queryRawUnsafe<Array<{ type: string; price: unknown; duration_minutes: number }>>(
+    "select type, price, duration_minutes from tariffs where id=$1::uuid limit 1",
+    tariffId,
+  );
+  const tariff = rows[0];
+  if (!tariff) return { open: false, hourlyRate: 0 };
+  const open = String(tariff.type).toLowerCase() === "vip";
+  const duration = Number(tariff.duration_minutes) || 60;
+  const hourlyRate = open ? Math.round((Number(tariff.price) * 60) / duration) : 0;
+  return { open, hourlyRate };
+}
+
 export async function start(req: Request) {
   if (!isUuid(req.body.simulator_id)) {
     const rig = await getRigMvpRig(String(req.body.simulator_id));
@@ -65,18 +82,23 @@ export async function start(req: Request) {
   if (!sim) throw new ApiError(404, "Simulator not found");
   if (req.user?.role === "admin" && sim.branch_id !== req.user.branch_id) throw new ApiError(403, "Branch scope violation");
   if (!["ready_to_play","reserved"].includes(sim.status)) throw new ApiError(409, `Simulator is ${sim.status}`);
+  const billing = await resolveTariffBilling(req.body.tariff_id);
   const amount = Number(req.body.paid_amount ?? 0);
+  // Open (VIP) sessions have no fixed duration — they count up and are billed at stop.
+  const durationMinutes = billing.open ? 0 : Number(req.body.duration_minutes ?? 0);
+  const remainingSeconds = billing.open ? 0 : durationMinutes * 60;
+  const sessionAmount = billing.open ? 0 : amount;
   const rows = await prisma.$queryRawUnsafe<any[]>(
-    `insert into sessions(branch_id,simulator_id,customer_id,customer_name,phone,tariff_id,status,payment_mode,duration_minutes,remaining_seconds,session_amount,total_amount,paid_amount,debt_amount,created_by)
-     values($1::uuid,$2::uuid,$3::uuid,$4,$5,$6::uuid,'active',$7,$8,$9,$10,$10,$11,greatest($10-$11,0),$12::uuid) returning *`,
-    sim.branch_id, sim.id, req.body.customer_id ?? null, req.body.customer_name ?? null, req.body.phone ?? null, req.body.tariff_id ?? null, paymentMode(req.body.payment_mode), req.body.duration_minutes, req.body.duration_minutes * 60, amount, amount, req.user!.user_id,
+    `insert into sessions(branch_id,simulator_id,customer_id,customer_name,phone,tariff_id,status,payment_mode,billing_mode,hourly_rate,duration_minutes,remaining_seconds,session_amount,total_amount,paid_amount,debt_amount,created_by)
+     values($1::uuid,$2::uuid,$3::uuid,$4,$5,$6::uuid,'active',$7,$8,$9,$10,$11,$12,$12,$13,greatest($12-$13,0),$14::uuid) returning *`,
+    sim.branch_id, sim.id, req.body.customer_id ?? null, req.body.customer_name ?? null, req.body.phone ?? null, req.body.tariff_id ?? null, paymentMode(req.body.payment_mode), billing.open ? "open" : "fixed", billing.hourlyRate, durationMinutes, remainingSeconds, sessionAmount, amount, req.user!.user_id,
   );
   const session = rows[0];
   await prisma.$executeRawUnsafe("update simulators set status='busy', current_session_id=$1::uuid where id=$2::uuid", session.id, sim.id);
   if (amount > 0) await prisma.$executeRawUnsafe("insert into payments(branch_id,session_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,paid_by_admin_id) values($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8,$9,$10::uuid)", sim.branch_id, session.id, req.body.customer_id ?? null, amount, req.body.method, req.body.method === "cash" ? amount : 0, req.body.method === "card" ? amount : 0, req.body.method === "qr" ? amount : 0, req.body.method === "balance" ? amount : 0, req.user!.user_id);
   if (sim.ws_rig_id) {
-    const durationMinutes = Number(req.body.duration_minutes);
-    await unlockRigMvp(sim.ws_rig_id, durationMinutes);
+    // Open sessions unlock the rig indefinitely (no duration cap); fixed sessions cap to duration.
+    await unlockRigMvp(sim.ws_rig_id, billing.open ? undefined : durationMinutes);
     await sendRigMvpCommandIfSupported(sim.ws_rig_id, {
       type: "start_session",
       session_id: session.id,
@@ -105,10 +127,27 @@ async function lockRigForSession(simulatorId: string, message = "Session ended")
 }
 
 async function finalizeSessionStop(
-  session: { id: string; simulator_id: string; branch_id: string; debt_amount?: unknown },
+  session: { id: string; simulator_id: string; branch_id: string; debt_amount?: unknown; billing_mode?: unknown },
   options: { stoppedBy?: string | null; expired?: boolean } = {},
 ) {
-  const nextStatus = Number(session.debt_amount) > 0 ? "unpaid" : "stopped";
+  let debtAmount = Number(session.debt_amount ?? 0);
+  // Open (VIP) sessions are billed at stop: elapsed minutes (rounded up) * hourly rate / 60,
+  // computed in SQL with the DB clock to avoid app/DB time skew.
+  if (String(session.billing_mode) === "open") {
+    const billed = await prisma.$queryRawUnsafe<Array<{ debt_amount: unknown }>>(
+      `update sessions
+       set duration_minutes = ceil(extract(epoch from (now() - started_at)) / 60.0)::int,
+           session_amount = round(ceil(extract(epoch from (now() - started_at)) / 60.0) * hourly_rate / 60.0),
+           total_amount = round(ceil(extract(epoch from (now() - started_at)) / 60.0) * hourly_rate / 60.0) + shop_amount + added_time_amount,
+           debt_amount = greatest(round(ceil(extract(epoch from (now() - started_at)) / 60.0) * hourly_rate / 60.0) + shop_amount + added_time_amount - paid_amount, 0),
+           updated_at = now()
+       where id=$1::uuid
+       returning debt_amount`,
+      session.id,
+    );
+    debtAmount = Number(billed[0]?.debt_amount ?? 0);
+  }
+  const nextStatus = debtAmount > 0 ? "unpaid" : "stopped";
   await prisma.$executeRawUnsafe(
     "update sessions set status=$1, ended_at=now(), stopped_by=$2::uuid where id=$3::uuid",
     nextStatus,
@@ -131,9 +170,10 @@ export async function expireElapsedSessions() {
     branch_id: string;
     debt_amount: unknown;
   }>>(
-    `select s.id, s.simulator_id, s.branch_id, s.debt_amount
+    `select s.id, s.simulator_id, s.branch_id, s.debt_amount, s.billing_mode
      from sessions s
      where s.status = 'active'
+       and s.billing_mode <> 'open'
        and greatest(
          ((s.duration_minutes + s.added_minutes) * 60)
          - extract(epoch from (now() - s.started_at))::int,

@@ -277,6 +277,10 @@ const activeSessionSelect = `
   end as active_remaining_seconds,
   sess.paid_amount as active_paid_amount,
   sess.payment_mode as active_payment_mode,
+  sess.billing_mode as active_billing_mode,
+  sess.hourly_rate as active_hourly_rate,
+  case when sess.billing_mode = 'open' then extract(epoch from (now() - sess.started_at))::int else null end as active_elapsed_seconds,
+  case when sess.billing_mode = 'open' then round(ceil(extract(epoch from (now() - sess.started_at)) / 60.0) * sess.hourly_rate / 60.0) else null end as active_accrued_amount,
   t.name as active_tariff_name`;
 
 async function enrichSimulatorWithActiveSession(row: Record<string, any>) {

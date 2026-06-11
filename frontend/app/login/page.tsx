@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -109,7 +110,7 @@ function LoginPanel() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-[#070b15] text-slate-100">Loading...</main>}>
+    <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-[#070b15] text-slate-100"><div className="w-[min(92vw,420px)] space-y-4 rounded-2xl border border-slate-800 bg-slate-900/72 p-6"><Skeleton className="h-7 w-40" /><Skeleton className="h-4 w-56" /><Skeleton className="h-11 w-full" /><Skeleton className="h-11 w-full" /><Skeleton className="h-11 w-full rounded-xl" /></div></main>}>
       <LoginPanel />
     </Suspense>
   );

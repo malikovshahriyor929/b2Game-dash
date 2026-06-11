@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { StatCardsSkeleton, TableSkeleton } from "@/components/ui/skeletons";
 import { PageHeader } from "@/components/shared/page-header";
 import { money } from "@/lib/format";
 import { backendDelete, backendGet, backendPatch, backendPost } from "@/server/api";
@@ -218,6 +219,7 @@ function DatePicker({ value, onChange }: { value: string; onChange: (value: stri
 export default function CustomersPage() {
   const { data: session } = useSession();
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loadingCustomers, setLoadingCustomers] = useState(true);
   const [branchId, setBranchId] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | CustomerStatus>("all");
@@ -233,14 +235,18 @@ export default function CustomersPage() {
   const isSuperAdmin = session?.user?.role === "super_admin";
 
   async function refreshCustomers() {
-    const [branchRows, rows] = await Promise.all([
-      backendGet<Array<Record<string, unknown>>>("/branches"),
-      backendGet<Array<Record<string, unknown>>>("/customers?branch_id=all"),
-    ]);
-    setBranchId((current) => current || String(branchRows[0]?.id ?? ""));
-    const next = rows.map(mapCustomer);
-    setCustomers(next);
-    setSelectedCustomer((current) => current && next.some((item) => item.id === current.id) ? current : next[0] ?? null);
+    try {
+      const [branchRows, rows] = await Promise.all([
+        backendGet<Array<Record<string, unknown>>>("/branches"),
+        backendGet<Array<Record<string, unknown>>>("/customers?branch_id=all"),
+      ]);
+      setBranchId((current) => current || String(branchRows[0]?.id ?? ""));
+      const next = rows.map(mapCustomer);
+      setCustomers(next);
+      setSelectedCustomer((current) => current && next.some((item) => item.id === current.id) ? current : next[0] ?? null);
+    } finally {
+      setLoadingCustomers(false);
+    }
   }
 
   useEffect(() => {
@@ -361,12 +367,16 @@ export default function CustomersPage() {
         <Button onClick={openCreate}><FiPlus /> Add customer</Button>
       </div>
 
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
-        <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Jami mijozlar</div><div className="mt-2 text-3xl font-black text-white">{stats.total}</div></Card>
-        <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Active</div><div className="mt-2 text-3xl font-black text-emerald-200">{stats.active}</div></Card>
-        <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Debt</div><div className="mt-2 text-3xl font-black text-red-200">{stats.debt}</div></Card>
-        <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Balans jami</div><div className="mt-2 text-2xl font-black text-sky-200">{money(stats.balance)}</div></Card>
-      </div>
+      {loadingCustomers ? (
+        <StatCardsSkeleton />
+      ) : (
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
+          <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Jami mijozlar</div><div className="mt-2 text-3xl font-black text-white">{stats.total}</div></Card>
+          <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Active</div><div className="mt-2 text-3xl font-black text-emerald-200">{stats.active}</div></Card>
+          <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Debt</div><div className="mt-2 text-3xl font-black text-red-200">{stats.debt}</div></Card>
+          <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Balans jami</div><div className="mt-2 text-2xl font-black text-sky-200">{money(stats.balance)}</div></Card>
+        </div>
+      )}
 
       <Card className="p-3">
         <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_180px]">
@@ -386,6 +396,9 @@ export default function CustomersPage() {
         </div>
       </Card>
 
+      {loadingCustomers ? (
+        <TableSkeleton rows={8} cols={8} />
+      ) : (
       <Table>
         <TableHeader>
           <TableRow>
@@ -425,6 +438,7 @@ export default function CustomersPage() {
           ))}
         </TableBody>
       </Table>
+      )}
 
       <Card className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-sm text-slate-400">

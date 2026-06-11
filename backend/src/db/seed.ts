@@ -16,15 +16,22 @@ const products = [
   ["Snickers", "Snacks", "4780001000066", 10000, 6500, 44],
 ] as const;
 
+// type='vip' tariffs bill as open/hourly sessions (count up, no discount); the rest are
+// fixed packages. "2 soat" = 1 soat + 1 soat (no bulk discount). Both Logitech and Moza
+// share the same structure: 1/2/3/5 soat + tungi zaezd + VIP.
 const tariffs = [
   ["Logitech 1 soat", "main", 60, 40000, 50000, null, null, "time"],
+  ["Logitech 2 soat", "main", 120, 80000, 100000, null, null, "package"],
   ["Logitech 3 soat", "main", 180, 100000, 130000, null, null, "package"],
   ["Logitech 5 soat", "main", 300, 150000, 200000, null, "energetik", "package"],
   ["Logitech tungi zaezd", "main", 480, 250000, 350000, null, "energetik", "night"],
+  ["Logitech VIP", "main", 60, 50000, 60000, null, null, "vip"],
   ["Moza 1 soat", "vip", 60, 80000, 100000, null, null, "time"],
+  ["Moza 2 soat", "vip", 120, 160000, 200000, null, null, "package"],
   ["Moza 3 soat", "vip", 180, 200000, 250000, null, "energetik", "package"],
   ["Moza 5 soat", "vip", 300, 300000, 300000, null, "energetik + chips", "package"],
   ["Moza tungi zaezd", "vip", 480, 500000, 500000, "energetik", "energetik", "night"],
+  ["Moza VIP", "vip", 60, 100000, 120000, null, null, "vip"],
 ] as const;
 
 const removedBranchAdminEmails = [
