@@ -91,7 +91,7 @@ type DashboardStore = {
   clearOrder: () => void;
   payOrder: (attachTo?: string, paymentMethod?: string, customerId?: string, payment?: Partial<PaymentPayload>) => void;
   openShift: (operator: string, shiftType: "Kunduzgi (09:00 - 18:00)" | "Tungi (18:01 - 09:00)", startingCash: number) => void;
-  closeShift: (actualCash: number, notes?: string) => void;
+  closeShift: (actualCash: number, cashWithdrawn: number, notes?: string) => void;
   addCashTransaction: (type: "income" | "expense", amount: number, source: string, method: string) => void;
   refreshRigs: () => void;
   notifyRig: (id: string, message: string) => void;
@@ -315,11 +315,12 @@ function mapRepair(row: Record<string, unknown>): RepairRequest {
 function mapShift(row: Record<string, unknown>, operator: string): Shift {
   const openedAt = String(row.opened_at ?? "");
   const closedAt = row.closed_at ? String(row.closed_at) : undefined;
+  const shiftType = String(row.shift_type ?? "") === "Tungi (18:01 - 09:00)" ? "Tungi (18:01 - 09:00)" : "Kunduzgi (09:00 - 18:00)";
   return {
     id: String(row.id),
     operator,
     date: shortDate(openedAt),
-    shiftType: "Kunduzgi (09:00 - 18:00)",
+    shiftType,
     status: String(row.status ?? "open") === "closed" ? "closed" : "open",
     openTime: shortTime(openedAt),
     closeTime: closedAt ? shortTime(closedAt) : undefined,
@@ -329,6 +330,12 @@ function mapShift(row: Record<string, unknown>, operator: string): Shift {
     discrepancy: row.difference == null ? undefined : numberValue(row.difference),
     cardRevenue: numberValue(row.card_total),
     qrRevenue: numberValue(row.qr_total),
+    cashSales: numberValue(row.cash_sales),
+    balanceSales: numberValue(row.balance_sales),
+    totalRevenue: numberValue(row.total_revenue),
+    cashWithdrawn: numberValue(row.cash_withdrawn),
+    remainingCash: numberValue(row.remaining_cash),
+    withdrawRecipient: row.withdraw_recipient ? String(row.withdraw_recipient) : undefined,
     totalIncome: numberValue(row.product_sales) + numberValue(row.session_sales),
     totalExpense: numberValue(row.refunds),
     notes: row.notes ? String(row.notes) : undefined,
@@ -1097,6 +1104,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       void backendPost<Record<string, unknown>>("/shifts/open", {
         branch_id: effectiveBranchId === "all" ? firstBackendBranchId : effectiveBranchId,
         starting_cash: startingCash,
+        shift_type: shiftType,
       }).then(refreshBackendData).catch(() => undefined);
       const newShift: Shift = {
         id: crypto.randomUUID(),
@@ -1114,20 +1122,17 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       setShifts((prev) => [newShift, ...prev]);
       appendLog(`opened shift: ${shiftType} with cash ${startingCash.toLocaleString()}`);
     },
-    closeShift(actualCash, notes) {
+    closeShift(actualCash, cashWithdrawn, notes) {
       if (!activeShift) return;
       const d = new Date();
       const timeStr = d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
       void backendPost<Record<string, unknown>>(`/shifts/${activeShift.id}/close`, {
         actual_cash: actualCash,
+        cash_withdrawn: cashWithdrawn,
         notes,
       }).then(refreshBackendData).catch(() => undefined);
 
-      const shiftBarCash = barSales
-        .filter((s) => s.shiftId === activeShift.id && s.paymentMethod === "Naqd")
-        .reduce((sum, s) => sum + s.totalAmount, 0);
-
-      const expectedCash = activeShift.startingCash + activeShift.totalIncome - activeShift.totalExpense + shiftBarCash;
+      const expectedCash = activeShift.expectedCash ?? activeShift.startingCash + (activeShift.cashSales ?? 0);
       const discrepancy = actualCash - expectedCash;
 
       setShifts((prev) =>
@@ -1139,6 +1144,8 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
               closeTime: timeStr,
               expectedCash,
               actualCash,
+              cashWithdrawn,
+              remainingCash: expectedCash - cashWithdrawn,
               discrepancy,
               notes,
             };

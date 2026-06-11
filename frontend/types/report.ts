@@ -34,6 +34,12 @@ export type Shift = {
   qrRevenue: number;
   totalIncome: number;
   totalExpense: number;
+  cashSales?: number;
+  balanceSales?: number;
+  totalRevenue?: number;
+  cashWithdrawn?: number;
+  remainingCash?: number;
+  withdrawRecipient?: string;
   notes?: string;
 };
 
