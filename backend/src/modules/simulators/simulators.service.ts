@@ -440,5 +440,6 @@ export async function requestStatus(req: Request) {
 }
 
 export async function pushUpdate(req: Request) {
-  return pushRigMvpUpdate(req.body.rig_ids ?? []);
+  const rigIds = req.body.simulator_ids ?? req.body.rig_ids ?? [];
+  return pushRigMvpUpdate(rigIds);
 }
