@@ -30,8 +30,6 @@ async function sendRigMvpCommandIfSupported(rigId: string, payload: Record<strin
   }
 }
 
-// Bonus matnini ("energetik + chips") skladdagi mahsulotga moslashtirish uchun aliaslar.
-// Bonus nomi mahsulot nomidan farq qilishi mumkin (masalan "energetik" -> "Energy Drink").
 const BONUS_PRODUCT_PATTERNS: Array<{ test: RegExp; like: string }> = [
   { test: /energet|energy/i, like: "%energy%" },
   { test: /chips|chipsy/i, like: "%chips%" },
