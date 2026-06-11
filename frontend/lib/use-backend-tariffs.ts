@@ -55,9 +55,8 @@ export function dedupeTariffs(tariffs: BackendTariff[]) {
 }
 
 export function tariffPricePeriodLabel(item: BackendTariff) {
-  if (item.pricePeriod === "weekend" || item.isWeekend) return "Juma-Yakshanba";
-  if (item.pricePeriod === "evening" || item.isEvening) return "Kechki";
-  return "PN-CHT";
+  if (item.pricePeriod === "weekend" || item.isWeekend) return "Shanba-Yakshanba";
+  return "Dushanba-Juma";
 }
 
 export function formatTariffOptionLabel(item: BackendTariff) {

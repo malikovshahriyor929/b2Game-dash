@@ -277,13 +277,16 @@ function mapBooking(row: Record<string, unknown>): Booking {
     id: String(row.id),
     customerName: String(row.customer_name ?? ""),
     phone: String(row.phone ?? ""),
-    simulatorType: String(row.booking_type ?? "session"),
+    // Form/edit filter uses the simulator zone, not the booking_type.
+    simulatorType: String(row.simulator_zone ?? "") === "vip" ? "VIP" : "Standard",
     simulatorId: String(row.simulator_id ?? ""),
+    simulatorName: row.simulator_name == null ? undefined : String(row.simulator_name),
+    branchName: row.branch_name == null ? undefined : String(row.branch_name),
     date: shortDate(start),
     startTime: shortTime(start),
     endTime: shortTime(end),
-    tariff: String(row.booking_type ?? "Booking"),
-    prepayment: 0,
+    tariff: String(row.tariff_name ?? ""),
+    prepayment: numberValue(row.prepayment),
     note: String(row.note ?? ""),
     status: statusMap[String(row.status ?? "pending")] ?? "Pending",
   };
@@ -924,12 +927,14 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       void backendPost<Record<string, unknown>>("/bookings", {
         branch_id: simulator?.branchId ?? firstBackendBranchId,
         simulator_id: booking.simulatorId,
-        booking_type: booking.simulatorType || "session",
+        booking_type: "customer_booking",
         customer_name: booking.customerName,
         phone: booking.phone,
         start_time: dateTimeFromParts(booking.date, booking.startTime),
         end_time: dateTimeFromParts(booking.date, booking.endTime),
         status: booking.status.toLowerCase().replace("-", "_"),
+        tariff_name: booking.tariff,
+        prepayment: booking.prepayment,
         note: booking.note,
       }).then(refreshBackendData).catch(() => undefined);
       setBookings((items) => [booking, ...items]);
@@ -939,12 +944,14 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     updateBooking(booking) {
       void backendPatch<Record<string, unknown>>(`/bookings/${booking.id}`, {
         simulator_id: booking.simulatorId,
-        booking_type: booking.simulatorType || "session",
+        booking_type: "customer_booking",
         customer_name: booking.customerName,
         phone: booking.phone,
         start_time: dateTimeFromParts(booking.date, booking.startTime),
         end_time: dateTimeFromParts(booking.date, booking.endTime),
         status: booking.status.toLowerCase().replace("-", "_"),
+        tariff_name: booking.tariff,
+        prepayment: booking.prepayment,
         note: booking.note,
       }).then(refreshBackendData).catch(() => undefined);
       setBookings((items) => items.map((item) => (item.id === booking.id ? booking : item)));

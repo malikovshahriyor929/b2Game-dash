@@ -235,6 +235,8 @@ model Booking {
   startTime       DateTime @map("start_time")
   endTime         DateTime @map("end_time")
   status          String   @default("pending")
+  tariffName      String?  @map("tariff_name")
+  prepayment      Decimal  @default(0) @db.Decimal(14, 2)
   note            String?
   createdBy       String   @map("created_by") @db.Uuid
   createdAt       DateTime @default(now()) @map("created_at")

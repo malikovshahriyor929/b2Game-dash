@@ -17,7 +17,7 @@ import { seconds } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Simulator, SimulatorMapPosition, SimulatorStatus } from "@/types/simulator";
 
-const filters = ["All", "Standard", "VIP", "Ready", "Busy", "Reserved", "Unpaid", "Broken", "Repair", "Offline", "Locked"];
+const filters = ["All", "Main", "Premium", "Ready", "Busy", "Reserved", "Unpaid", "Broken", "Repair", "Offline", "Locked"];
 const mapColumns = 24;
 const mapRows = 5;
 
@@ -75,7 +75,7 @@ const statusLabels: Record<SimulatorStatus, string> = {
 };
 
 function mapTypeLabel(simulator: Simulator) {
-  return simulator.zone === "Standard" ? "LOGITECH" : "MOZA VIP";
+  return simulator.zone === "Standard" ? "LOGITECH" : "MOZA PREMIUM";
 }
 
 function defaultMapPosition(simulator: Simulator): MapPosition {
@@ -217,12 +217,12 @@ export function SimulatorMap() {
     const normalizedFilter = filter.toLowerCase();
     const matchesFilter =
       filter === "All" ||
-      item.zone.toLowerCase().includes(normalizedFilter) ||
+      (filter === "Main" && item.zone === "Standard") ||
+      (filter === "Premium" && item.zone === "VIP") ||
       (filter === "Ready" && item.status === "ready_to_play") ||
       (filter === "Busy" && ["busy", "unpaid"].includes(item.status)) ||
       (filter === "Repair" && ["repair_requested", "repair_approved", "fixing", "fixed_waiting_confirmation"].includes(item.status)) ||
       item.status === normalizedFilter ||
-      (filter === "VIP" && item.zone === "VIP") ||
       (filter === "Offline" && ["offline", "locked"].includes(item.status));
     return matchesSearch && matchesFilter;
   }), [filter, query, simulators]);
@@ -397,8 +397,8 @@ export function SimulatorMap() {
         <>
           <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/75 p-3">
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <Badge>Logitech Standard</Badge>
-              <Badge variant="vip">Moza VIP</Badge>
+              <Badge>Logitech Main</Badge>
+              <Badge variant="vip">Moza Premium</Badge>
               <Badge variant="success">{simulators.filter((item) => ["busy", "unpaid"].includes(item.status)).length} band</Badge>
               <Badge variant="muted">{simulators.filter((item) => item.status === "ready_to_play").length} ready</Badge>
               <Badge variant="warning">{simulators.filter((item) => item.status === "reserved").length} bron</Badge>

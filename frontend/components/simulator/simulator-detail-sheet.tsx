@@ -18,7 +18,7 @@ function Field({ label, value }: { label: string; value?: React.ReactNode }) {
 }
 
 function simulatorKind(simulator: Simulator) {
-  return simulator.zone === "Standard" ? "Logitech (Standard)" : "Moza (VIP)";
+  return simulator.zone === "Standard" ? "Logitech (Main)" : "Moza (Premium)";
 }
 
 export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator; onAction: (action: "start" | "addTime" | "payment" | "stop") => void }) {

@@ -78,8 +78,7 @@ async function applyTariffBonusStock(branchId: string, tariffId: string | null |
   if (!tariffId || !isUuid(tariffId)) return;
   const tariffRows = await prisma.$queryRawUnsafe<Array<{ bonus: string | null }>>(
     `select case
-        when (extract(isodow from now() at time zone 'Asia/Tashkent')::int in (5,6,7)
-              or extract(hour from now() at time zone 'Asia/Tashkent')::int >= 18)
+        when extract(isodow from now() at time zone 'Asia/Tashkent')::int in (6,7)
         then weekend_bonus else weekday_bonus end as bonus
       from tariffs where id=$1::uuid`,
     tariffId,

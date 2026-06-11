@@ -18,8 +18,8 @@ export const tariffsService = {
     return prisma.$queryRawUnsafe(
       `with tariff_time as (
          select
-           extract(isodow from now() at time zone 'Asia/Tashkent')::int in (5,6,7) as is_weekend,
-           extract(hour from now() at time zone 'Asia/Tashkent')::int >= 18 as is_evening
+           extract(isodow from now() at time zone 'Asia/Tashkent')::int in (6,7) as is_weekend,
+           false as is_evening
        ),
        scoped as (
          select
@@ -27,9 +27,9 @@ export const tariffsService = {
            t.price as base_price,
            tt.is_weekend,
            tt.is_evening,
-           case when tt.is_weekend or tt.is_evening then coalesce(t.weekend_price, t.price) else coalesce(t.weekday_price, t.price) end as current_price,
-           case when tt.is_weekend or tt.is_evening then t.weekend_bonus else t.weekday_bonus end as current_bonus,
-           case when tt.is_weekend then 'weekend' when tt.is_evening then 'evening' else 'weekday' end as price_period
+           case when tt.is_weekend then coalesce(t.weekend_price, t.price) else coalesce(t.weekday_price, t.price) end as current_price,
+           case when tt.is_weekend then t.weekend_bonus else t.weekday_bonus end as current_bonus,
+           case when tt.is_weekend then 'weekend' else 'weekday' end as price_period
          from tariffs t
          cross join tariff_time tt
          where ${s.where} and t.is_active=true

@@ -22,7 +22,7 @@ const statusClass = {
 };
 
 function simulatorKind(simulator: Simulator) {
-  return simulator.zone === "Standard" ? "Logitech" : "Moza VIP";
+  return simulator.zone === "Standard" ? "Logitech" : "Moza Premium";
 }
 
 export function SimulatorCard({ simulator, selected, onClick, compact = false }: { simulator: Simulator; selected: boolean; onClick: () => void; compact?: boolean }) {

@@ -4,6 +4,8 @@ export type Booking = {
   phone: string;
   simulatorType: string;
   simulatorId: string;
+  simulatorName?: string;
+  branchName?: string;
   date: string;
   startTime: string;
   endTime: string;
