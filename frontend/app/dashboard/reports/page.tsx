@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSession } from "next-auth/react";
 import {
   FiCalendar,
   FiCreditCard,
@@ -61,6 +62,19 @@ export default function ReportsPage() {
   const [dateFilter, setDateFilter] = useState<string>("today");
   const [startDate, setStartDate] = useState<Date | undefined>(() => new Date());
   const [endDate, setEndDate] = useState<Date | undefined>(() => new Date());
+  const [operatorFilter, setOperatorFilter] = useState<string>("all");
+
+  const { data: session } = useSession();
+  const isSuperAdmin = session?.user?.role === "super_admin";
+  const ownName = session?.user?.name ?? "";
+
+  // Tanlangan branch ichidagi adminlar ro'yxati (smena/savdo/kassa yozuvlaridan).
+  const operators = Array.from(
+    new Set([...shifts, ...barSales, ...cashTransactions].map((item) => item.operator).filter(Boolean)),
+  ).sort();
+  // Superadmin tanlangan adminni (yoki barchasini) ko'radi; oddiy admin faqat o'zinikini.
+  const matchesOperator = (op: string) =>
+    isSuperAdmin ? operatorFilter === "all" || op === operatorFilter : op === ownName;
   const today = new Date();
   const todayIso = isoDate(today);
   const yesterdayIso = isoDate(addDays(today, -1));
@@ -84,13 +98,13 @@ export default function ReportsPage() {
 
   const filteredRevenueEvents = revenueEvents.filter((event) => {
     const eventDate = event.date || todayIso;
-    return isDateInRange(eventDate);
+    return isDateInRange(eventDate) && matchesOperator(event.operator ?? "");
   });
 
-  const filteredBarSales = barSales.filter((sale) => isDateInRange(sale.date));
-  const filteredLocks = lockUnlockLogs.filter((log) => isDateInRange(log.date));
-  const filteredCashTx = cashTransactions.filter((tx) => isDateInRange(tx.date));
-  const filteredShifts = shifts.filter((s) => isDateInRange(s.date));
+  const filteredBarSales = barSales.filter((sale) => isDateInRange(sale.date) && matchesOperator(sale.operator));
+  const filteredLocks = lockUnlockLogs.filter((log) => isDateInRange(log.date) && matchesOperator(log.operator));
+  const filteredCashTx = cashTransactions.filter((tx) => isDateInRange(tx.date) && matchesOperator(tx.operator));
+  const filteredShifts = shifts.filter((s) => isDateInRange(s.date) && matchesOperator(s.operator));
 
   // Calculations
   const totalRevenue = filteredRevenueEvents.reduce((sum, item) => sum + item.amount, 0);
@@ -155,6 +169,23 @@ export default function ReportsPage() {
                 onChange={setEndDate}
                 placeholder="End date"
               />
+            </div>
+          )}
+
+          {isSuperAdmin && (
+            <div className="flex items-center gap-2 border-l border-slate-800 pl-2">
+              <FiUser className="text-slate-400" />
+              <Select value={operatorFilter} onValueChange={setOperatorFilter}>
+                <SelectTrigger className="h-9 w-[170px] border-none bg-transparent text-sm font-semibold text-white focus:ring-0 text-left">
+                  <SelectValue placeholder="Admin" />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-900 border-slate-800 text-slate-100">
+                  <SelectItem value="all">Barcha adminlar</SelectItem>
+                  {operators.map((op) => (
+                    <SelectItem key={op} value={op}>{op}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
         </div>

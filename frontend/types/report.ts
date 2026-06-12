@@ -20,6 +20,7 @@ export type CashTransaction = {
 export type Shift = {
   id: string;
   operator: string;
+  branchId?: string;
   date: string;
   shiftType: "Kunduzgi (09:00 - 18:00)" | "Tungi (18:01 - 09:00)";
   status: "open" | "closed";

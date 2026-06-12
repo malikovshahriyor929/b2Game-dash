@@ -1,7 +1,7 @@
 import { Role } from "@/types/user";
 
 export const roleAccess: Record<Role, string[]> = {
-  admin: ["dashboard", "simulators", "cashier", "bookings", "customers", "tariffs", "games", "logs", "support"],
+  admin: ["dashboard", "simulators", "cashier", "bookings", "customers", "tariffs", "games", "logs", "reports", "support"],
   super_admin: ["dashboard", "simulators", "cashier", "bookings", "customers", "tariffs", "games", "logs", "promo", "reports", "analytics", "support", "settings"],
 };
 

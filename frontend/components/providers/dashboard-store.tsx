@@ -24,7 +24,7 @@ import {
 type StartPayload = { customerName: string; phone: string; tariff: string; tariffId?: string; customerId?: string; duration: number; amount: number; paymentStatus: "paid" | "unpaid"; paymentMethod?: string };
 type PeriodFilter = "today" | "yesterday" | "week" | "month" | "year" | "custom";
 type RepairPayload = { title: string; description: string; errorType: RepairErrorType; priority: RepairPriority; note?: string };
-type RevenueEvent = { id: string; time: string; date?: string; amount: number; source: string; branchId?: string };
+type RevenueEvent = { id: string; time: string; date?: string; amount: number; source: string; branchId?: string; operator?: string };
 type PaymentMethod = "cash" | "card" | "qr" | "balance" | "mixed";
 type PaymentPayload = {
   cash_amount: number;
@@ -331,7 +331,8 @@ function mapShift(row: Record<string, unknown>, operator: string): Shift {
   const shiftType = String(row.shift_type ?? "") === "Tungi (18:01 - 09:00)" ? "Tungi (18:01 - 09:00)" : "Kunduzgi (09:00 - 18:00)";
   return {
     id: String(row.id),
-    operator,
+    operator: String(row.opened_by_name ?? operator),
+    branchId: String(row.branch_id ?? ""),
     date: shortDate(openedAt),
     shiftType,
     status: String(row.status ?? "open") === "closed" ? "closed" : "open",
@@ -361,7 +362,7 @@ function mapSale(row: Record<string, unknown>, operator: string): BarSale {
     id: String(row.id),
     date: shortDate(created),
     time: shortTime(created),
-    operator,
+    operator: String(row.sold_by_name ?? operator),
     items: [],
     totalAmount: numberValue(row.total),
     paymentMethod: String(row.payment_method ?? ""),
@@ -376,7 +377,7 @@ function mapPayment(row: Record<string, unknown>, operator: string): CashTransac
     type: "income",
     amount: numberValue(row.amount),
     source: row.sale_id ? "Shop sale" : row.session_id ? "Session payment" : "Payment",
-    operator,
+    operator: String(row.paid_by_admin_name ?? operator),
     date: shortDate(created),
     time: shortTime(created),
     paymentMethod: String(row.method ?? ""),
@@ -517,6 +518,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
           amount: numberValue(row.amount),
           source: row.sale_id ? "shop sale" : row.session_id ? "session payment" : "payment",
           branchId: String(row.branch_id ?? ""),
+          operator: String(row.paid_by_admin_name ?? operator),
         };
       }));
       setSelectedId((current) => (current && nextSimulators.some((item) => item.id === current) ? current : nextSimulators[0]?.id ?? null));
@@ -656,7 +658,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
   function recordRevenue(amount: number, source: string, branchId?: string) {
     if (!Number.isFinite(amount) || amount <= 0) return;
     setRevenue((current) => current + amount);
-    setRevenueEvents((items) => [{ id: crypto.randomUUID(), time: now(), amount, source, branchId }, ...items]);
+    setRevenueEvents((items) => [{ id: crypto.randomUUID(), time: now(), amount, source, branchId, operator }, ...items]);
   }
 
   function patchSimulator(id: string, patch: Partial<Simulator>) {
@@ -692,9 +694,9 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     revenueEvents: revenueEvents.filter((event) => !event.branchId || visibleBranchIds.includes(event.branchId)),
     logs,
     lockUnlockLogs,
-    barSales,
-    cashTransactions,
-    shifts,
+    barSales: barSales.filter((sale) => !sale.branchId || visibleBranchIds.includes(sale.branchId)),
+    cashTransactions: cashTransactions.filter((tx) => !tx.branchId || visibleBranchIds.includes(tx.branchId)),
+    shifts: shifts.filter((shift) => !shift.branchId || visibleBranchIds.includes(shift.branchId)),
     activeShift,
     repairRequests: scopedRepairRequests,
     products: inventory,
@@ -1233,7 +1235,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       } else {
         setRevenue((current) => current - amount);
         setRevenueEvents((items) => [
-          { id: crypto.randomUUID(), time: timeStr, amount: -amount, source: `Expense: ${source}`, branchId: newTx.branchId },
+          { id: crypto.randomUUID(), time: timeStr, amount: -amount, source: `Expense: ${source}`, branchId: newTx.branchId, operator },
           ...items,
         ]);
         appendLog(`expense recorded: ${source} - ${amount.toLocaleString()}`, undefined, method);

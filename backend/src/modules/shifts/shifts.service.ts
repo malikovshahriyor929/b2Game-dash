@@ -4,15 +4,19 @@ import { ApiError } from "../../utils/apiError";
 import { auditLog } from "../../services/auditLog.service";
 import { broadcastDashboard } from "../../websocket/dashboardConnection.manager";
 
-const WITHDRAW_RECIPIENT = "Jasur aka";
+const WITHDRAW_RECIPIENT = "Owner";
 
 function branchId(req: Request) {
   return req.user?.role === "admin" ? req.user.branch_id : req.body.branch_id ?? req.query.branch_id;
 }
 
-// Smena davridagi pul harakatini payments jadvalidan jonli hisoblaydi.
-// Naqd / Karta / Bank (QR) / Balans (faqat info) bo'yicha.
-async function computeShiftMoney(branch: string, openedAt: unknown, closedAt?: unknown) {
+function assertBranchAccess(req: Request, branch: string) {
+  if (req.user?.role === "admin" && req.user.branch_id !== branch) {
+    throw new ApiError(403, "Shift belongs to another branch");
+  }
+}
+
+async function computeShiftMoney(shiftId: string) {
   const rows = await prisma.$queryRawUnsafe<Array<{ cash: string; card: string; bank: string; balance: string }>>(
     `select
        coalesce(sum(cash_amount),0)    as cash,
@@ -20,12 +24,8 @@ async function computeShiftMoney(branch: string, openedAt: unknown, closedAt?: u
        coalesce(sum(qr_amount),0)      as bank,
        coalesce(sum(balance_amount),0) as balance
      from payments
-     where branch_id=$1::uuid
-       and paid_at >= $2
-       and ($3::timestamp is null or paid_at <= $3)`,
-    branch,
-    openedAt,
-    closedAt ?? null,
+     where shift_id=$1::uuid`,
+    shiftId,
   );
   const r = rows[0] ?? { cash: "0", card: "0", bank: "0", balance: "0" };
   const cash = Number(r.cash);
@@ -52,14 +52,19 @@ function decorateOpenShift(shift: any, money: { cash: number; card: number; bank
 export async function list(req: Request) {
   const branch = req.user?.role === "admin" ? req.user.branch_id : req.query.branch_id === "all" ? null : req.query.branch_id ?? null;
   const rows = await prisma.$queryRawUnsafe<any[]>(
-    "select * from shifts where ($1::uuid is null or branch_id=$1::uuid) order by opened_at desc limit 200",
+    `select s.*, uo.name as opened_by_name, uc.name as closed_by_name
+     from shifts s
+     left join users uo on uo.id = s.opened_by
+     left join users uc on uc.id = s.closed_by
+     where ($1::uuid is null or s.branch_id=$1::uuid)
+     order by s.opened_at desc limit 200`,
     branch,
   );
   // Ochiq smenalar uchun pul ko'rsatkichlarini jonli hisoblab qo'shamiz (yopilgani snapshot).
   const result: any[] = [];
   for (const row of rows) {
     if (row.status === "open") {
-      const money = await computeShiftMoney(row.branch_id, row.opened_at);
+      const money = await computeShiftMoney(row.id);
       result.push(decorateOpenShift(row, money));
     } else {
       result.push(row);
@@ -73,7 +78,7 @@ export async function current(req: Request) {
   const rows = await prisma.$queryRawUnsafe<any[]>("select * from shifts where branch_id=$1::uuid and status='open' limit 1", branch);
   const shift = rows[0];
   if (!shift) return null;
-  const money = await computeShiftMoney(branch, shift.opened_at);
+  const money = await computeShiftMoney(shift.id);
   return decorateOpenShift(shift, money);
 }
 
@@ -93,6 +98,7 @@ export async function openInfo(req: Request) {
 
 export async function open(req: Request) {
   const branch = branchId(req);
+  if (!branch) throw new ApiError(400, "branch_id is required");
   const exists = await prisma.$queryRawUnsafe<any[]>("select id from shifts where branch_id=$1::uuid and status='open'", branch);
   if (exists.length) throw new ApiError(409, "Branch already has open shift");
   const startingCash = Number(req.body.starting_cash ?? 0);
@@ -113,16 +119,18 @@ export async function open(req: Request) {
 export async function close(req: Request) {
   const shift = (await prisma.$queryRawUnsafe<any[]>("select * from shifts where id=$1::uuid", req.params.id))[0];
   if (!shift) throw new ApiError(404, "Shift not found");
+  assertBranchAccess(req, shift.branch_id);
   if (shift.status === "closed") throw new ApiError(409, "Shift already closed");
 
   const branch = shift.branch_id;
-  const money = await computeShiftMoney(branch, shift.opened_at);
+  const money = await computeShiftMoney(shift.id);
 
   const startingCash = Number(shift.starting_cash ?? 0);
   const expectedCash = startingCash + money.cash; // kassada bo'lishi kerak bo'lgan naqd
   const actualCash = req.body.actual_cash == null ? expectedCash : Number(req.body.actual_cash);
   const cashWithdrawn = Math.max(0, Number(req.body.cash_withdrawn ?? 0));
-  // Karta va Bank — to'liq avtomat yechiladi (Jasur akaga).
+  if (cashWithdrawn > expectedCash) throw new ApiError(400, "Cash withdrawn exceeds expected cash");
+  // Karta va Bank — to'liq avtomat yechiladi (boshliqqa).
   const cardWithdrawn = money.card;
   const bankWithdrawn = money.bank;
   const remainingCash = expectedCash - cashWithdrawn; // keyingi smenaga o'tadigan naqd
@@ -217,8 +225,9 @@ export async function withdrawals(req: Request) {
 export async function get(req: Request) {
   const row = (await prisma.$queryRawUnsafe<any[]>("select * from shifts where id=$1::uuid", req.params.id))[0];
   if (!row) throw new ApiError(404, "Shift not found");
+  assertBranchAccess(req, row.branch_id);
   if (row.status === "open") {
-    const money = await computeShiftMoney(row.branch_id, row.opened_at);
+    const money = await computeShiftMoney(row.id);
     return decorateOpenShift(row, money);
   }
   return row;

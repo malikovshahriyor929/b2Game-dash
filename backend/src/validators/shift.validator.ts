@@ -5,6 +5,7 @@ export const openShiftSchema = z.object({
   body: z.object({
     branch_id: z.string().uuid().optional(),
     starting_cash: amount,
+    shift_type: z.string().optional(),
   }),
 });
 
@@ -12,6 +13,8 @@ export const closeShiftSchema = z.object({
   params: z.object({ id: z.string().uuid() }),
   body: z.object({
     actual_cash: amount,
+    cash_withdrawn: amount.optional(),
+    recipient: z.string().optional(),
     notes: z.string().optional(),
   }),
 });
