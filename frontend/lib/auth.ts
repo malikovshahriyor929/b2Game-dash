@@ -2,7 +2,7 @@ import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { authSecret } from "@/lib/auth-env";
 import { backendServerAxios } from "@/server/api";
-import { readBackendTokens, refreshBackendTokens } from "@/server/backend-auth";
+import { readBackendTokens, refreshBackendTokens, RefreshTokenInvalidError } from "@/server/backend-auth";
 import type { Role } from "@/types/user";
 
 function isRole(value: unknown): value is Role {
@@ -79,8 +79,10 @@ export const authOptions: NextAuthOptions = {
         token.backendRefreshToken = refreshed.refreshToken;
         token.backendTokenExpiresAt = refreshed.accessTokenExpiresAt;
         delete token.authError;
-      } catch {
-        token.authError = "RefreshAccessTokenError";
+      } catch (error) {
+        // Only force re-login when the refresh token is genuinely rejected. A transient
+        // backend outage keeps the current tokens so the session survives a restart.
+        if (error instanceof RefreshTokenInvalidError) token.authError = "RefreshAccessTokenError";
       }
       return token;
     },

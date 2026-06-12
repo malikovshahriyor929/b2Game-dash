@@ -34,8 +34,21 @@ export function readBackendTokens(payload: BackendTokenResponse): BackendTokens 
   };
 }
 
+// Thrown only when the backend explicitly rejects the refresh token (expired/invalid) —
+// i.e. the user genuinely must log in again. Transient/network failures throw a plain Error.
+export class RefreshTokenInvalidError extends Error {}
+
 export async function refreshBackendTokens(refreshToken: string) {
-  const response = await backendServerAxios.post("/auth/refresh", { refresh_token: refreshToken });
+  let response;
+  try {
+    response = await backendServerAxios.post("/auth/refresh", { refresh_token: refreshToken });
+  } catch (error) {
+    // Network / backend-down: transient, do NOT force a logout.
+    throw new Error(`Backend unreachable during refresh: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (response.status === 400 || response.status === 401 || response.status === 403) {
+    throw new RefreshTokenInvalidError("Refresh token rejected");
+  }
   if (response.status < 200 || response.status >= 300) throw new Error("Backend session refresh failed");
 
   const tokens = readBackendTokens(response.data);

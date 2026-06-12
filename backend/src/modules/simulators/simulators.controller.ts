@@ -13,3 +13,5 @@ export const timedUnlock = asyncHandler(async (req, res) => ok(res, await servic
 export const reboot = asyncHandler(async (req, res) => ok(res, await service.reboot(req)));
 export const requestStatus = asyncHandler(async (req, res) => ok(res, await service.requestStatus(req)));
 export const pushUpdate = asyncHandler(async (req, res) => ok(res, await service.pushUpdate(req)));
+export const assignable = asyncHandler(async (req, res) => ok(res, await service.assignable(req)));
+export const setAdminAssignments = asyncHandler(async (req, res) => ok(res, await service.setAdminAssignments(req)));

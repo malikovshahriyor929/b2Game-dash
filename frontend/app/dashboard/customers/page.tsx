@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { FiCalendar, FiChevronLeft, FiChevronRight, FiEdit2, FiEye, FiPlus, FiSearch, FiTrash2 } from "react-icons/fi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -399,7 +400,7 @@ export default function CustomersPage() {
       {loadingCustomers ? (
         <TableSkeleton rows={8} cols={8} />
       ) : (
-      <Table>
+      <Table className="min-w-[940px]">
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
@@ -428,10 +429,10 @@ export default function CustomersPage() {
               <TableCell>{customer.sessions}</TableCell>
               <TableCell><Badge variant={statusVariant(customer.status)}>{customer.status}</Badge></TableCell>
               <TableCell>
-                <div className="flex justify-end gap-2">
-                  <Button size="icon" variant="secondary" aria-label={`${customer.name} profile`} onClick={() => openProfile(customer)}><FiEye /></Button>
-                  <Button size="icon" variant="secondary" aria-label={`${customer.name} edit`} onClick={() => openEdit(customer)}><FiEdit2 /></Button>
-                  <Button size="icon" variant="destructive" aria-label={`${customer.name} delete`} onClick={() => removeCustomer(customer)}><FiTrash2 /></Button>
+                <div className="flex justify-end gap-2 whitespace-nowrap">
+                  <IconButton tooltip="Profil" variant="secondary" onClick={() => openProfile(customer)}><FiEye /></IconButton>
+                  <IconButton tooltip="Tahrirlash" variant="secondary" onClick={() => openEdit(customer)}><FiEdit2 /></IconButton>
+                  <IconButton tooltip="O'chirish" variant="destructive" onClick={() => removeCustomer(customer)}><FiTrash2 /></IconButton>
                 </div>
               </TableCell>
             </TableRow>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionToken } from "@/lib/session-token";
 import { backendServerAxios } from "@/server/api";
-import { refreshBackendTokens } from "@/server/backend-auth";
+import { refreshBackendTokens, RefreshTokenInvalidError } from "@/server/backend-auth";
 
 type RouteContext = {
   params: Promise<{ path: string[] }>;
@@ -53,6 +53,11 @@ async function proxy(request: NextRequest, context: RouteContext) {
       headers: { "Content-Type": String(response.headers["content-type"] ?? "application/json") },
     });
   } catch (error) {
+    // Genuinely invalid session -> 401 so the client signs out cleanly.
+    // Transient backend outage -> 502 so the client shows an error but stays logged in.
+    if (error instanceof RefreshTokenInvalidError) {
+      return NextResponse.json({ success: false, message: "Session expired", errors: [] }, { status: 401 });
+    }
     return NextResponse.json({ success: false, message: error instanceof Error ? error.message : "Backend unavailable", errors: [] }, { status: 502 });
   }
 }

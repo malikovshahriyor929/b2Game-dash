@@ -2,7 +2,7 @@
 
 import { FiCheckCircle, FiEdit2, FiTrash2, FiXCircle } from "react-icons/fi";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { money } from "@/lib/format";
@@ -29,7 +29,7 @@ export function BookingTable({ onEdit }: { onEdit?: (booking: Booking) => void }
   }
 
   return (
-    <Table>
+    <Table className="min-w-[920px]">
       <TableHeader>
         <TableRow>
           <TableHead>Customer</TableHead>
@@ -54,18 +54,18 @@ export function BookingTable({ onEdit }: { onEdit?: (booking: Booking) => void }
           return (
             <TableRow key={item.id}>
               <TableCell>{item.customerName}<div className="text-xs text-slate-500">{formatUzPhone(item.phone)}</div></TableCell>
-              <TableCell>{simulatorLabel}</TableCell>
-              <TableCell>{item.date}</TableCell>
-              <TableCell>{item.startTime} - {item.endTime}</TableCell>
-              <TableCell>{item.tariff}</TableCell>
-              <TableCell>{money(item.prepayment)}</TableCell>
+              <TableCell className="whitespace-nowrap">{simulatorLabel}</TableCell>
+              <TableCell className="whitespace-nowrap">{item.date}</TableCell>
+              <TableCell className="whitespace-nowrap">{item.startTime} - {item.endTime}</TableCell>
+              <TableCell className="whitespace-nowrap">{item.tariff}</TableCell>
+              <TableCell className="whitespace-nowrap">{money(item.prepayment)}</TableCell>
               <TableCell><Badge variant={badgeVariant(item.status)}>{item.status}</Badge></TableCell>
               <TableCell>
-                <div className="flex justify-end gap-2">
-                  <Button size="icon" variant="secondary" onClick={() => onEdit?.(item)} aria-label="Edit booking"><FiEdit2 /></Button>
-                  <Button size="icon" variant="success" disabled={item.status === "Arrived"} onClick={() => patchStatus(item, "Arrived")} aria-label="Mark arrived"><FiCheckCircle /></Button>
-                  <Button size="icon" variant="warning" disabled={item.status === "Cancelled"} onClick={() => patchStatus(item, "Cancelled")} aria-label="Cancel booking"><FiXCircle /></Button>
-                  <Button size="icon" variant="destructive" onClick={() => deleteBooking(item.id)} aria-label="Delete booking"><FiTrash2 /></Button>
+                <div className="flex justify-end gap-2 whitespace-nowrap">
+                  <IconButton tooltip="Tahrirlash" variant="secondary" onClick={() => onEdit?.(item)}><FiEdit2 /></IconButton>
+                  <IconButton tooltip="Keldi (arrived)" variant="success" disabled={item.status === "Arrived"} onClick={() => patchStatus(item, "Arrived")}><FiCheckCircle /></IconButton>
+                  <IconButton tooltip="Bekor qilish" variant="warning" disabled={item.status === "Cancelled"} onClick={() => patchStatus(item, "Cancelled")}><FiXCircle /></IconButton>
+                  <IconButton tooltip="O'chirish" variant="destructive" onClick={() => deleteBooking(item.id)}><FiTrash2 /></IconButton>
                 </div>
               </TableCell>
             </TableRow>

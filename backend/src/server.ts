@@ -5,6 +5,15 @@ import { assertDbConnection } from "./config/db";
 import { attachWebSocketServer } from "./websocket/websocket.server";
 import { startRigMvpSync } from "./services/rigMvpSync.service";
 
+// Keep the server alive on stray async errors (e.g. an unreachable Rig-MVP/ngrok call).
+// Without these, a single unhandled rejection terminates the whole backend process.
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection]", reason);
+});
+process.on("uncaughtException", (error) => {
+  console.error("[uncaughtException]", error);
+});
+
 async function main() {
   await assertDbConnection();
   const server = http.createServer(app);

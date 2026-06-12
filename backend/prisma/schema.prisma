@@ -56,6 +56,16 @@ model Simulator {
   @@map("simulators")
 }
 
+model SimulatorAdmin {
+  simulatorId String   @map("simulator_id") @db.Uuid
+  adminId     String   @map("admin_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@id([simulatorId, adminId])
+  @@index([adminId])
+  @@map("simulator_admins")
+}
+
 model Tariff {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   branchId        String?  @map("branch_id") @db.Uuid
