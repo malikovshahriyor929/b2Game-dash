@@ -5,6 +5,7 @@ import { auditLog } from "../../services/auditLog.service";
 import { broadcastDashboard } from "../../websocket/dashboardConnection.manager";
 import { getRigMvpRig, lockRigMvp, sendRigMvpCommand, unlockRigMvp } from "../../services/rigMvp.service";
 import { isUuid } from "../../utils/ids";
+import { requireOpenShift } from "../shifts/shift.guard";
 
 async function getSessionScoped(req: Request) {
   const rows = await prisma.$queryRawUnsafe<any[]>("select * from sessions where id=$1::uuid and ($2::uuid is null or branch_id=$2::uuid)", req.params.id, req.user?.role === "admin" ? req.user.branch_id : null);
@@ -162,6 +163,8 @@ export async function start(req: Request) {
   const durationMinutes = billing.open ? 0 : Number(req.body.duration_minutes ?? 0);
   const remainingSeconds = billing.open ? 0 : durationMinutes * 60;
   const sessionAmount = billing.open ? 0 : amount;
+  // To'lov bo'ladigan bo'lsa, ochiq smena shart — sessiya yaratishdan oldin tekshiramiz (orphan bo'lmasligi uchun).
+  const shiftId = amount > 0 ? await requireOpenShift(sim.branch_id) : null;
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `insert into sessions(branch_id,simulator_id,customer_id,customer_name,phone,tariff_id,status,payment_mode,billing_mode,hourly_rate,duration_minutes,remaining_seconds,session_amount,total_amount,paid_amount,debt_amount,created_by)
      values($1::uuid,$2::uuid,$3::uuid,$4,$5,$6::uuid,'active',$7,$8,$9,$10,$11,$12,$12,$13,greatest($12-$13,0),$14::uuid) returning *`,
@@ -175,7 +178,7 @@ export async function start(req: Request) {
   } catch (error) {
     console.error("applyTariffBonusStock failed", error);
   }
-  if (amount > 0) await prisma.$executeRawUnsafe("insert into payments(branch_id,session_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,paid_by_admin_id) values($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8,$9,$10::uuid)", sim.branch_id, session.id, req.body.customer_id ?? null, amount, req.body.method, req.body.method === "cash" ? amount : 0, req.body.method === "card" ? amount : 0, req.body.method === "qr" ? amount : 0, req.body.method === "balance" ? amount : 0, req.user!.user_id);
+  if (amount > 0) await prisma.$executeRawUnsafe("insert into payments(branch_id,shift_id,session_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,paid_by_admin_id) values($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6,$7,$8,$9,$10,$11::uuid)", sim.branch_id, shiftId, session.id, req.body.customer_id ?? null, amount, req.body.method, req.body.method === "cash" ? amount : 0, req.body.method === "card" ? amount : 0, req.body.method === "qr" ? amount : 0, req.body.method === "balance" ? amount : 0, req.user!.user_id);
   if (sim.ws_rig_id) {
     // Open sessions unlock the rig indefinitely (no duration cap); fixed sessions cap to duration.
     await unlockRigMvp(sim.ws_rig_id, billing.open ? undefined : durationMinutes);
@@ -299,6 +302,8 @@ export async function addTime(req: Request) {
   const minutes = Number(req.body.minutes);
   const amount = Number(req.body.amount ?? 0);
   if (!Number.isFinite(minutes) || minutes <= 0) throw new ApiError(400, "minutes must be positive");
+  // To'lov bo'ladigan bo'lsa, ochiq smena shart — sessiyani o'zgartirishdan oldin tekshiramiz.
+  const shiftId = amount > 0 ? await requireOpenShift(s.branch_id) : null;
 
   await prisma.$executeRawUnsafe(
     `update sessions
@@ -326,8 +331,9 @@ export async function addTime(req: Request) {
 
   if (amount > 0) {
     await prisma.$executeRawUnsafe(
-      "insert into payments(branch_id,session_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,paid_by_admin_id) values($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8,$9,$10::uuid)",
+      "insert into payments(branch_id,shift_id,session_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,paid_by_admin_id) values($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6,$7,$8,$9,$10,$11::uuid)",
       updated.branch_id,
+      shiftId,
       updated.id,
       updated.customer_id ?? null,
       amount,

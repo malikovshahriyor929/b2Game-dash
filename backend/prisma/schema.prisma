@@ -136,6 +136,7 @@ model Session {
 model Payment {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   branchId       String   @map("branch_id") @db.Uuid
+  shiftId        String?  @map("shift_id") @db.Uuid
   sessionId      String?  @map("session_id") @db.Uuid
   saleId         String?  @map("sale_id") @db.Uuid
   customerId     String?  @map("customer_id") @db.Uuid
@@ -152,6 +153,7 @@ model Payment {
   receivedAmount Decimal? @map("received_amount") @db.Decimal(14, 2)
   changeAmount   Decimal  @default(0) @map("change_amount") @db.Decimal(14, 2)
 
+  @@index([shiftId])
   @@map("payments")
 }
 
