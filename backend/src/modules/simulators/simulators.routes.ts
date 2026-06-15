@@ -4,6 +4,8 @@ import * as c from "./simulators.controller";
 export const simulatorsRoutes = Router();
 simulatorsRoutes.get("/map", c.map);
 simulatorsRoutes.get("/", c.list);
+simulatorsRoutes.get("/assignable", requireRole(["super_admin"]), c.assignable);
+simulatorsRoutes.post("/assignments", requireRole(["super_admin"]), c.setAdminAssignments);
 simulatorsRoutes.post("/push-update", requireRole(["super_admin"]), c.pushUpdate);
 simulatorsRoutes.get("/:id", c.get);
 simulatorsRoutes.patch("/:id/map-position", c.updateMapPosition);

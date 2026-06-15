@@ -3,8 +3,9 @@
 import { useEffect } from "react";
 import type { Session } from "next-auth";
 import { SessionProvider as NextAuthSessionProvider, signOut } from "next-auth/react";
-import { Toaster, toast } from "sonner";
+import toast, { Toaster } from "react-hot-toast";
 import { isAxiosError } from "axios";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { appAxiosInstance, axiosInstance, axiosMessage } from "@/server/api";
 
 export function SessionProvider({ children, session }: { children: React.ReactNode; session: Session | null }) {
@@ -36,8 +37,16 @@ export function SessionProvider({ children, session }: { children: React.ReactNo
 
   return (
     <NextAuthSessionProvider session={session} refetchInterval={5 * 60} refetchOnWindowFocus>
-      <Toaster richColors closeButton theme="dark" position="top-right" />
-      {children}
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          duration: 4000,
+          style: { background: "#0f172a", color: "#e2e8f0", border: "1px solid #1e293b" },
+          success: { iconTheme: { primary: "#22c55e", secondary: "#0f172a" } },
+          error: { iconTheme: { primary: "#ef4444", secondary: "#0f172a" } },
+        }}
+      />
+      <TooltipProvider delayDuration={150}>{children}</TooltipProvider>
     </NextAuthSessionProvider>
   );
 }

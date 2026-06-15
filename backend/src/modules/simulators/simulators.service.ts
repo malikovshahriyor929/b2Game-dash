@@ -3,6 +3,7 @@ import { prisma } from "../../db/prisma";
 import { ApiError } from "../../utils/apiError";
 import { auditLog } from "../../services/auditLog.service";
 import { broadcastDashboard } from "../../websocket/dashboardConnection.manager";
+import { isUuid } from "../../utils/ids";
 import { filterRigsForScope, resolveRigBranch } from "../../services/rigBranch.service";
 import {
   getRigMvpRig,
@@ -311,6 +312,8 @@ async function listDbSimulatorRows(requestedBranchId?: unknown, user?: Request["
       : null;
 
   if (user?.role === "admin" && !branchId) return [];
+  // Admins only see simulators explicitly assigned to them by a super_admin.
+  const adminId = user?.role === "admin" ? user.user_id : null;
 
   return prisma.$queryRawUnsafe<any[]>(
     `select
@@ -332,20 +335,65 @@ async function listDbSimulatorRows(requestedBranchId?: unknown, user?: Request["
      left join sessions sess on sess.id = s.current_session_id and sess.status in ('active','paused','unpaid')
      left join tariffs t on t.id = sess.tariff_id
      where ($1::uuid is null or s.branch_id = $1::uuid)
+       and ($2::uuid is null or exists (select 1 from simulator_admins sa where sa.simulator_id = s.id and sa.admin_id = $2::uuid))
      order by b.created_at asc, s.zone asc, s.code asc`,
     branchId,
+    adminId,
   );
 }
 
 export async function listRows(requestedBranchId?: unknown, user?: Request["user"]) {
   try {
     const rigs = await filterRigsForScope(await listRigMvpRigs(), requestedBranchId, user);
-    return Promise.all(rigs.map((rig) => rigToSimulatorRow(rig)));
+    const rows = await Promise.all(rigs.map((rig) => rigToSimulatorRow(rig)));
+    // Admins only see simulators a super_admin assigned to them (many-to-many).
+    if (user?.role === "admin") {
+      const assigned = await prisma.$queryRawUnsafe<Array<{ simulator_id: string }>>(
+        "select simulator_id from simulator_admins where admin_id=$1::uuid",
+        user.user_id,
+      );
+      const ids = new Set(assigned.map((a) => String(a.simulator_id)));
+      return rows.filter((row) => ids.has(String(row.id)));
+    }
+    return rows;
   } catch {
     // Keep the dashboard usable from the seeded PostgreSQL data when Rig-MVP is down.
   }
 
   return listDbSimulatorRows(requestedBranchId, user);
+}
+
+export async function assignable(_req: Request) {
+  return prisma.$queryRawUnsafe<any[]>(
+    `select s.id, s.name, s.code, s.zone, b.name as branch_name,
+       coalesce(array_agg(sa.admin_id::text) filter (where sa.admin_id is not null), '{}') as assigned_admin_ids
+     from simulators s
+     join branches b on b.id = s.branch_id
+     left join simulator_admins sa on sa.simulator_id = s.id
+     group by s.id, s.name, s.code, s.zone, b.name
+     order by b.name asc, s.zone asc, s.code asc`,
+  );
+}
+
+export async function setAdminAssignments(req: Request) {
+  const adminId = String(req.body.admin_id ?? "");
+  if (!isUuid(adminId)) throw new ApiError(400, "admin_id is required");
+  const simulatorIds = (Array.isArray(req.body.simulator_ids) ? req.body.simulator_ids : []).map(String).filter(isUuid);
+  const admin = (await prisma.$queryRawUnsafe<Array<{ id: string }>>("select id from users where id=$1::uuid and role='admin' limit 1", adminId))[0];
+  if (!admin) throw new ApiError(404, "Admin not found");
+  // Reset this admin's assignments, then assign the selected simulators (many-to-many:
+  // a simulator may be assigned to several admins).
+  await prisma.$executeRawUnsafe("delete from simulator_admins where admin_id=$1::uuid", adminId);
+  if (simulatorIds.length) {
+    await prisma.$executeRawUnsafe(
+      "insert into simulator_admins(simulator_id, admin_id) select unnest($2::uuid[]), $1::uuid on conflict do nothing",
+      adminId,
+      simulatorIds,
+    );
+  }
+  await auditLog({ actor: req.user, branch_id: null, action_type: "simulator_assignments_set", entity_type: "user", entity_id: adminId, details: { count: simulatorIds.length } });
+  broadcastDashboard("simulators_reassigned", { admin_id: adminId, count: simulatorIds.length }, null);
+  return { admin_id: adminId, simulator_ids: simulatorIds };
 }
 
 export async function list(req: Request) {

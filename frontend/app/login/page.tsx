@@ -6,7 +6,7 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { RiLockPasswordLine, RiShieldUserLine } from "react-icons/ri";
-import { toast } from "sonner";
+import toast from "react-hot-toast";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,13 +36,15 @@ function LoginPanel() {
 
   async function onSubmit(values: LoginForm) {
     const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
+    // NOTE: do NOT pass callbackUrl here — with redirect:false it makes NextAuth return
+    // ok:true even on failed credentials. We redirect manually after a verified success.
     const result = await signIn("credentials", {
       email: values.email.trim().toLowerCase(),
       password: values.password,
       redirect: false,
-      callbackUrl,
     });
-    if (result?.error) {
+    // Treat anything other than a clean success as a failure (covers 401 where `error` may be unset).
+    if (!result || !result.ok || result.error) {
       const message = "Login yoki parol noto'g'ri";
       setError("root", { message });
       toast.error(message);
