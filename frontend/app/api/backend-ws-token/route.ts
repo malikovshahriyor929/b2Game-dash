@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionToken } from "@/lib/session-token";
+import { getSessionToken, persistRefreshedSession } from "@/lib/session-token";
 import { refreshBackendTokens } from "@/server/backend-auth";
 
 export async function GET(request: NextRequest) {
@@ -17,7 +17,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, message: "Session refresh token missing", errors: [] }, { status: 401 });
     }
     const refreshed = await refreshBackendTokens(sessionToken.backendRefreshToken);
-    return NextResponse.json({ success: true, data: { token: refreshed.accessToken } });
+    const response = NextResponse.json({ success: true, data: { token: refreshed.accessToken } });
+    await persistRefreshedSession(request, response, sessionToken, refreshed);
+    return response;
   } catch (error) {
     return NextResponse.json({ success: false, message: error instanceof Error ? error.message : "Backend unavailable", errors: [] }, { status: 502 });
   }

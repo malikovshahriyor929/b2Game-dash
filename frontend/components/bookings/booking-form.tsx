@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { FiCalendar, FiChevronLeft, FiChevronRight, FiPlus } from "react-icons/fi";
+import { useMemo, useRef, useState } from "react";
+import { FiCalendar, FiCheck, FiChevronLeft, FiChevronRight, FiPlus, FiUserPlus } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { money } from "@/lib/format";
 import { useBackendTariffs } from "@/lib/use-backend-tariffs";
+import { searchCustomers, createCustomer, type CustomerLite } from "@/lib/customers-api";
 import { Booking } from "@/types/booking";
 
 type BookingFormState = Omit<Booking, "id" | "status">;
@@ -138,22 +139,119 @@ export function BookingForm({ booking, onSaved }: { booking?: Booking | null; on
   const phoneValid = normalizeUzPhone(form.phone).length === 12;
   const submitLabel = booking ? "Save booking" : "Create booking";
 
-  function submit(event: React.FormEvent) {
-    event.preventDefault();
-    if (!form.customerName.trim() || !phoneValid || !form.simulatorId || conflict) return;
-    const payload = { ...form, phone: normalizeUzPhone(form.phone) };
-    if (booking) {
-      updateBooking({ ...payload, id: booking.id, status: booking.status });
-    } else {
-      addBooking({ ...payload, id: crypto.randomUUID(), status: "Confirmed" });
-      setForm(emptyForm);
+  // Mijoz qidirish (search-first): mavjud mijozni tanlash yoki yangisini yaratish.
+  const [linkedCustomerId, setLinkedCustomerId] = useState<string | null>(booking?.customerId ?? null);
+  const [customerResults, setCustomerResults] = useState<CustomerLite[]>([]);
+  const [customerOpen, setCustomerOpen] = useState(false);
+  const [searchingCustomers, setSearchingCustomers] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const searchTimer = useRef<number | null>(null);
+  const blurTimer = useRef<number | null>(null);
+
+  async function runCustomerSearch(query: string) {
+    setSearchingCustomers(true);
+    try {
+      setCustomerResults(await searchCustomers(query, selectedBranchId));
+    } catch {
+      setCustomerResults([]);
+    } finally {
+      setSearchingCustomers(false);
     }
-    onSaved?.();
+  }
+
+  function handleCustomerNameChange(value: string) {
+    setForm((item) => ({ ...item, customerName: value }));
+    setLinkedCustomerId(null);
+    setCustomerOpen(true);
+    if (searchTimer.current) window.clearTimeout(searchTimer.current);
+    searchTimer.current = window.setTimeout(() => void runCustomerSearch(value), 250);
+  }
+
+  function selectCustomer(customer: CustomerLite) {
+    setForm((item) => ({ ...item, customerName: customer.name, phone: normalizeUzPhone(customer.phone) }));
+    setLinkedCustomerId(customer.id);
+    setCustomerOpen(false);
+  }
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!form.customerName.trim() || !phoneValid || !form.simulatorId || conflict || submitting) return;
+    setSubmitting(true);
+    try {
+      let customerId = linkedCustomerId ?? undefined;
+      // Mavjud mijoz tanlanmagan bo'lsa — yangi mijoz yaratamiz va bronni unga bog'laymiz.
+      if (!booking && !customerId) {
+        const simulator = simulators.find((item) => item.id === form.simulatorId);
+        const branchForCustomer = simulator?.branchId ?? (selectedBranchId !== "all" ? selectedBranchId : undefined);
+        if (branchForCustomer) {
+          try {
+            const created = await createCustomer({ name: form.customerName.trim(), phone: normalizeUzPhone(form.phone), branchId: branchForCustomer });
+            customerId = created.id;
+          } catch {
+            // Mijoz yaratilmasa ham bron ad-hoc nom/telefon bilan davom etadi.
+          }
+        }
+      }
+      const payload = { ...form, phone: normalizeUzPhone(form.phone), customerId };
+      if (booking) {
+        updateBooking({ ...payload, id: booking.id, status: booking.status });
+      } else {
+        addBooking({ ...payload, id: crypto.randomUUID(), status: "Confirmed" });
+        setForm(emptyForm);
+        setLinkedCustomerId(null);
+        setCustomerResults([]);
+      }
+      onSaved?.();
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
         <form onSubmit={submit} className="grid gap-3 lg:grid-cols-2">
-          <div className="space-y-2"><Label>Customer name</Label><Input value={form.customerName} onChange={(event) => setForm((item) => ({ ...item, customerName: event.target.value }))} placeholder="Mijoz ismi" /></div>
+          <div className="space-y-2">
+            <Label>Customer name</Label>
+            <div className="relative">
+              <Input
+                value={form.customerName}
+                autoComplete="off"
+                onChange={(event) => handleCustomerNameChange(event.target.value)}
+                onFocus={() => { setCustomerOpen(true); if (!customerResults.length) void runCustomerSearch(form.customerName); }}
+                onBlur={() => { blurTimer.current = window.setTimeout(() => setCustomerOpen(false), 150); }}
+                placeholder="Mijoz ismi — qidiring yoki yangi qo'shing"
+              />
+              {customerOpen ? (
+                <div
+                  className="absolute left-0 right-0 top-full z-30 mt-1 max-h-60 overflow-auto rounded-xl border border-slate-700 bg-slate-900 p-1 shadow-2xl shadow-black/40 thin-scrollbar"
+                  onMouseDown={(event) => { event.preventDefault(); if (blurTimer.current) window.clearTimeout(blurTimer.current); }}
+                >
+                  {searchingCustomers ? <div className="px-3 py-2 text-sm text-slate-400">Qidirilmoqda...</div> : null}
+                  {!searchingCustomers && customerResults.map((customer) => (
+                    <button
+                      key={customer.id}
+                      type="button"
+                      onClick={() => selectCustomer(customer)}
+                      className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition hover:bg-slate-800"
+                    >
+                      <span className="min-w-0 truncate font-semibold text-white">{customer.name || "Ismsiz mijoz"}</span>
+                      <span className="shrink-0 text-xs text-slate-400">{formatUzPhone(customer.phone)}</span>
+                    </button>
+                  ))}
+                  {!searchingCustomers && !customerResults.length && form.customerName.trim() ? (
+                    <div className="flex items-center gap-2 px-3 py-2 text-sm text-sky-300"><FiUserPlus className="shrink-0" /> Topilmadi — yangi mijoz sifatida yaratiladi.</div>
+                  ) : null}
+                  {!searchingCustomers && !form.customerName.trim() ? (
+                    <div className="px-3 py-2 text-sm text-slate-500">Ism yoki telefon bo'yicha qidiring.</div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            {linkedCustomerId ? (
+              <div className="flex items-center gap-1.5 text-xs text-emerald-300"><FiCheck className="shrink-0" /> Mavjud mijoz tanlandi</div>
+            ) : form.customerName.trim() ? (
+              <div className="flex items-center gap-1.5 text-xs text-sky-300"><FiUserPlus className="shrink-0" /> Yangi mijoz sifatida saqlanadi</div>
+            ) : null}
+          </div>
           <div className="space-y-2">
             <Label>Phone</Label>
             <div className="grid grid-cols-[84px,1fr] gap-2">
@@ -176,7 +274,7 @@ export function BookingForm({ booking, onSaved }: { booking?: Booking | null; on
           <div className={`rounded-xl border p-3 text-sm lg:col-span-2 ${conflict ? "border-red-500/40 bg-red-500/10 text-red-200" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"}`}>
             {conflict ? "Conflict: tanlangan simulator shu vaqtda band yoki vaqt oralig'i noto'g'ri." : `Conflict yo'q. ${selectedTariff ? `Tariff: ${money(selectedTariff.price)}.` : ""}`}
           </div>
-          <Button className="lg:col-span-2" type="submit" disabled={!form.customerName.trim() || !phoneValid || !form.simulatorId || conflict}><FiPlus /> {submitLabel}</Button>
+          <Button className="lg:col-span-2" type="submit" disabled={!form.customerName.trim() || !phoneValid || !form.simulatorId || conflict || submitting}><FiPlus /> {submitting ? "Saqlanmoqda..." : submitLabel}</Button>
         </form>
   );
 }

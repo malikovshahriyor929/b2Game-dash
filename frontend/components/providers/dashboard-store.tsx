@@ -60,6 +60,7 @@ type DashboardStore = {
   branches: Branch[];
   selectedBranchId: string;
   setSelectedBranchId: (id: string) => void;
+  createBranch: (payload: { name: string; code: string; address?: string; phone?: string }) => Promise<Branch>;
   period: PeriodFilter;
   setPeriod: (period: PeriodFilter) => void;
   customStartDate: string;
@@ -705,6 +706,25 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     branches: branchList,
     selectedBranchId: effectiveBranchId,
     setSelectedBranchId,
+    async createBranch(payload) {
+      const row = await backendPost<Record<string, unknown>>("/branches", {
+        name: payload.name,
+        code: payload.code,
+        ...(payload.address ? { address: payload.address } : {}),
+        ...(payload.phone ? { phone: payload.phone } : {}),
+        status: "active",
+      });
+      const branch: Branch = { id: String(row.id), name: String(row.name ?? payload.name) };
+      setBranchList((items) => {
+        const real = items.filter((item) => item.id !== fallbackBranch.id && item.id !== branch.id);
+        return [...real, branch];
+      });
+      // Super admin lands on the freshly created branch so they can start adding simulators.
+      if (canUseAllBranches) setSelectedBranchIdState(branch.id);
+      appendLog(`created branch ${branch.name}`);
+      void refreshBackendData();
+      return branch;
+    },
     period,
     setPeriod,
     customStartDate,
@@ -930,6 +950,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         branch_id: simulator?.branchId ?? firstBackendBranchId,
         simulator_id: booking.simulatorId,
         booking_type: "customer_booking",
+        customer_id: booking.customerId ?? undefined,
         customer_name: booking.customerName,
         phone: booking.phone,
         start_time: dateTimeFromParts(booking.date, booking.startTime),
