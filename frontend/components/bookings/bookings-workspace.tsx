@@ -16,7 +16,6 @@ export function BookingsWorkspace() {
   const { loading, allSimulators, arriveBooking } = useDashboardStore();
   const [modalOpen, setModalOpen] = useState(false);
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
-  // Mijoz keldi → o'sha PC uchun sessiya boshlash formasi (prefilled).
   const [startSim, setStartSim] = useState<Simulator | undefined>(undefined);
   const [startPrefill, setStartPrefill] = useState<{ customerName?: string; phone?: string; tariffName?: string; prepayment?: number } | undefined>(undefined);
   const [fulfillBookingId, setFulfillBookingId] = useState<string | undefined>(undefined);

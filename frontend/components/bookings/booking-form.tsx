@@ -10,7 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { Booking } from "@/types/booking";
 
-// Tarif/prepayment bronlashda yo'q; tugash vaqti boshlanish + 1 soat (avto).
 type BookingFormState = Omit<Booking, "id" | "status" | "endTime" | "startAt" | "endAt" | "tariff" | "prepayment">;
 
 const emptyForm: BookingFormState = {
@@ -94,12 +93,10 @@ function DatePicker({ value, onChange }: { value: string; onChange: (value: stri
   );
 }
 
-// 24-soatlik vaqt tanlash (soat 00–23, daqiqa 5 daqiqalik qadam). Native 12h/AM-PM o'rniga.
 function TimePicker24({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const [hh = "00", mm = "00"] = value.split(":");
   const hours = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
   const minuteOptions = Array.from({ length: 12 }, (_, index) => String(index * 5).padStart(2, "0"));
-  // Tahrirda kelgan daqiqa ro'yxatda bo'lmasa ham ko'rinsin.
   const minuteList = minuteOptions.includes(mm) ? minuteOptions : [...minuteOptions, mm].sort();
   return (
     <div className="grid grid-cols-2 gap-2">
@@ -120,7 +117,6 @@ function minutes(value: string) {
   return hour * 60 + minute;
 }
 
-// Boshlanish vaqtiga tarif davomiyligini qo'shib tugash vaqtini hisoblaydi.
 function addMinutesToTime(start: string, mins: number) {
   const total = (minutes(start) + mins) % (24 * 60);
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
@@ -132,7 +128,7 @@ function hasConflict(bookings: Booking[], form: BookingFormState, endTime: strin
   if (!form.simulatorId || !form.date || !form.startTime || !endTime) return false;
   const start = minutes(form.startTime);
   const end = minutes(endTime);
-  if (end <= start) return false; // yarim tunni kesib o'tsa, to'qnashuv deb hisoblamaymiz
+  if (end <= start) return false; 
   return bookings.some((booking) => booking.id !== editingId && !TERMINAL_STATUSES.includes(booking.status) && booking.simulatorId === form.simulatorId && booking.date === form.date && start < minutes(booking.endTime) && end > minutes(booking.startTime));
 }
 
@@ -148,7 +144,6 @@ export function BookingForm({ booking, onSaved }: { booking?: Booking | null; on
     note: booking.note,
   } : emptyForm);
   const simulatorsByType = useMemo(() => simulators.filter((item) => item.zone === form.simulatorType), [form.simulatorType, simulators]);
-  // Tugash vaqti = boshlanish + 1 soat (qo'lda kiritilmaydi).
   const endTime = addMinutesToTime(form.startTime, 60);
   const conflict = hasConflict(bookings, form, endTime, booking?.id);
   const phoneValid = normalizeUzPhone(form.phone).length === 12;
