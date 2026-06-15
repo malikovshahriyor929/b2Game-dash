@@ -82,6 +82,8 @@ type DashboardStore = {
   addBooking: (booking: Booking) => void;
   updateBooking: (booking: Booking) => void;
   deleteBooking: (id: string) => void;
+  arriveBooking: (booking: Booking) => void;
+  noShowBooking: (booking: Booking) => void;
   addProduct: (product: Product) => void;
   addProductByQr: (code: string) => Product | null;
   createProduct: (product: Omit<Product, "id">) => Promise<Product | null>;
@@ -285,6 +287,8 @@ function mapBooking(row: Record<string, unknown>): Booking {
     date: shortDate(start),
     startTime: shortTime(start),
     endTime: shortTime(end),
+    startAt: start || undefined,
+    endAt: end || undefined,
     tariff: String(row.tariff_name ?? ""),
     prepayment: numberValue(row.prepayment),
     note: String(row.note ?? ""),
@@ -467,6 +471,29 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         queueMicrotask(() => expiringIds.forEach((id) => expireSessionRef.current(id)));
       }
     }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // Auto no-show: bron vaqtidan 15 daqiqa o'tib mijoz "arrived" bo'lmasa, avtomat no_show qilamiz va PC bo'shaydi.
+  const bookingsRef = useRef(bookings);
+  bookingsRef.current = bookings;
+  const noShowFiredRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const GRACE_MS = 15 * 60 * 1000;
+    const timer = window.setInterval(() => {
+      const nowMs = Date.now();
+      for (const b of bookingsRef.current) {
+        if (b.status !== "Pending" && b.status !== "Confirmed") continue;
+        if (!b.startAt) continue;
+        const startMs = Date.parse(b.startAt);
+        if (!Number.isFinite(startMs) || nowMs <= startMs + GRACE_MS) continue;
+        if (noShowFiredRef.current.has(b.id)) continue;
+        noShowFiredRef.current.add(b.id);
+        void backendPost(`/bookings/${b.id}/no-show`).then(refreshBackendData).catch(() => undefined);
+        setBookings((items) => items.map((item) => (item.id === b.id ? { ...item, status: "No-show" } : item)));
+        patchSimulator(b.simulatorId, { status: "ready_to_play", currentUser: undefined, paidAmount: 0, paymentStatus: "paid" });
+      }
+    }, 60000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -968,6 +995,18 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         patchSimulator(booking.simulatorId, { status: "ready_to_play", currentUser: undefined, paidAmount: 0, paymentStatus: "paid" });
         appendLog(`deleted booking for ${booking.simulatorId}`, booking.simulatorId);
       }
+    },
+    arriveBooking(booking) {
+      void backendPost<Record<string, unknown>>(`/bookings/${booking.id}/arrived`).then(refreshBackendData).catch(() => undefined);
+      setBookings((items) => items.map((item) => (item.id === booking.id ? { ...item, status: "Arrived" } : item)));
+      appendLog(`booking arrived for ${booking.simulatorId}`, booking.simulatorId);
+    },
+    noShowBooking(booking) {
+      void backendPost<Record<string, unknown>>(`/bookings/${booking.id}/no-show`).then(refreshBackendData).catch(() => undefined);
+      setBookings((items) => items.map((item) => (item.id === booking.id ? { ...item, status: "No-show" } : item)));
+      // Mijoz kelmadi — bron egallagan simulyatorni bo'shatamiz.
+      patchSimulator(booking.simulatorId, { status: "ready_to_play", currentUser: undefined, paidAmount: 0, paymentStatus: "paid" });
+      appendLog(`booking no-show for ${booking.simulatorId}`, booking.simulatorId);
     },
     addProduct(product) {
       if (product.stock <= 0) return;

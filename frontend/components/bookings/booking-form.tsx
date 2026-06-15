@@ -8,31 +8,23 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
-import { money } from "@/lib/format";
-import { useBackendTariffs } from "@/lib/use-backend-tariffs";
 import { Booking } from "@/types/booking";
 
-type BookingFormState = Omit<Booking, "id" | "status">;
+// Tarif/prepayment bronlashda yo'q; tugash vaqti boshlanish + 1 soat (avto).
+type BookingFormState = Omit<Booking, "id" | "status" | "endTime" | "startAt" | "endAt" | "tariff" | "prepayment">;
 
 const emptyForm: BookingFormState = {
   customerName: "",
   phone: "",
-  simulatorType: "Standard",
+  simulatorType: "VIP",
   simulatorId: "",
   date: toIsoDate(new Date()),
   startTime: "16:00",
-  endTime: "17:00",
-  tariff: "",
-  prepayment: 0,
   note: "",
 };
 
 const monthNames = ["Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentabr", "Oktabr", "Noyabr", "Dekabr"];
 const weekDays = ["Du", "Se", "Ch", "Pa", "Ju", "Sh", "Ya"];
-
-function formatNumber(value: string | number) {
-  return String(value).replace(/\D/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-}
 
 function normalizeUzPhone(value: string) {
   let digits = value.replace(/\D/g, "");
@@ -102,22 +94,50 @@ function DatePicker({ value, onChange }: { value: string; onChange: (value: stri
   );
 }
 
+// 24-soatlik vaqt tanlash (soat 00–23, daqiqa 5 daqiqalik qadam). Native 12h/AM-PM o'rniga.
+function TimePicker24({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [hh = "00", mm = "00"] = value.split(":");
+  const hours = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
+  const minuteOptions = Array.from({ length: 12 }, (_, index) => String(index * 5).padStart(2, "0"));
+  // Tahrirda kelgan daqiqa ro'yxatda bo'lmasa ham ko'rinsin.
+  const minuteList = minuteOptions.includes(mm) ? minuteOptions : [...minuteOptions, mm].sort();
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <Select value={hh} onValueChange={(hour) => onChange(`${hour}:${mm}`)}>
+        <SelectTrigger><SelectValue /></SelectTrigger>
+        <SelectContent className="max-h-60">{hours.map((hour) => <SelectItem key={hour} value={hour}>{hour}</SelectItem>)}</SelectContent>
+      </Select>
+      <Select value={mm} onValueChange={(minute) => onChange(`${hh}:${minute}`)}>
+        <SelectTrigger><SelectValue /></SelectTrigger>
+        <SelectContent className="max-h-60">{minuteList.map((minute) => <SelectItem key={minute} value={minute}>{minute}</SelectItem>)}</SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 function minutes(value: string) {
   const [hour, minute] = value.split(":").map(Number);
   return hour * 60 + minute;
 }
 
-function hasConflict(bookings: Booking[], form: BookingFormState, editingId?: string) {
-  if (!form.simulatorId || !form.date || !form.startTime || !form.endTime) return false;
+// Boshlanish vaqtiga tarif davomiyligini qo'shib tugash vaqtini hisoblaydi.
+function addMinutesToTime(start: string, mins: number) {
+  const total = (minutes(start) + mins) % (24 * 60);
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+const TERMINAL_STATUSES: Booking["status"][] = ["Cancelled", "No-show", "Completed"];
+
+function hasConflict(bookings: Booking[], form: BookingFormState, endTime: string, editingId?: string) {
+  if (!form.simulatorId || !form.date || !form.startTime || !endTime) return false;
   const start = minutes(form.startTime);
-  const end = minutes(form.endTime);
-  if (end <= start) return true;
-  return bookings.some((booking) => booking.id !== editingId && booking.status !== "Cancelled" && booking.simulatorId === form.simulatorId && booking.date === form.date && start < minutes(booking.endTime) && end > minutes(booking.startTime));
+  const end = minutes(endTime);
+  if (end <= start) return false; // yarim tunni kesib o'tsa, to'qnashuv deb hisoblamaymiz
+  return bookings.some((booking) => booking.id !== editingId && !TERMINAL_STATUSES.includes(booking.status) && booking.simulatorId === form.simulatorId && booking.date === form.date && start < minutes(booking.endTime) && end > minutes(booking.startTime));
 }
 
 export function BookingForm({ booking, onSaved }: { booking?: Booking | null; onSaved?: () => void }) {
-  const { addBooking, bookings, simulators, updateBooking, selectedBranchId } = useDashboardStore();
-  const tariffs = useBackendTariffs(selectedBranchId === "all" ? undefined : selectedBranchId);
+  const { addBooking, bookings, simulators, updateBooking } = useDashboardStore();
   const [form, setForm] = useState<BookingFormState>(() => booking ? {
     customerName: booking.customerName,
     phone: booking.phone,
@@ -125,23 +145,19 @@ export function BookingForm({ booking, onSaved }: { booking?: Booking | null; on
     simulatorId: booking.simulatorId,
     date: booking.date,
     startTime: booking.startTime,
-    endTime: booking.endTime,
-    tariff: booking.tariff,
-    prepayment: booking.prepayment,
     note: booking.note,
   } : emptyForm);
   const simulatorsByType = useMemo(() => simulators.filter((item) => item.zone === form.simulatorType), [form.simulatorType, simulators]);
-  // Show every tariff in booking, regardless of the simulator zone.
-  const tariffsByType = tariffs;
-  const conflict = hasConflict(bookings, form, booking?.id);
-  const selectedTariff = tariffsByType.find((item) => item.name === form.tariff);
+  // Tugash vaqti = boshlanish + 1 soat (qo'lda kiritilmaydi).
+  const endTime = addMinutesToTime(form.startTime, 60);
+  const conflict = hasConflict(bookings, form, endTime, booking?.id);
   const phoneValid = normalizeUzPhone(form.phone).length === 12;
   const submitLabel = booking ? "Save booking" : "Create booking";
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!form.customerName.trim() || !phoneValid || !form.simulatorId || conflict) return;
-    const payload = { ...form, phone: normalizeUzPhone(form.phone) };
+    const payload = { ...form, endTime, tariff: "", prepayment: 0, phone: normalizeUzPhone(form.phone) };
     if (booking) {
       updateBooking({ ...payload, id: booking.id, status: booking.status });
     } else {
@@ -165,17 +181,17 @@ export function BookingForm({ booking, onSaved }: { booking?: Booking | null; on
             </div>
             <div className="text-xs text-slate-500">Ko'rinishi: {form.phone ? formatUzPhone(form.phone) : "+998 XX XXX XX XX"}</div>
           </div>
-          <div className="space-y-2"><Label>Simulator type</Label><Select value={form.simulatorType} onValueChange={(simulatorType) => setForm((item) => ({ ...item, simulatorType, simulatorId: "", tariff: "" }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Standard">Logitech (Main)</SelectItem><SelectItem value="VIP">Moza (Premium)</SelectItem></SelectContent></Select></div>
+          <div className="space-y-2"><Label>Simulator type</Label><Select value={form.simulatorType} onValueChange={(simulatorType) => setForm((item) => ({ ...item, simulatorType, simulatorId: "" }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="VIP">Moza (Premium)</SelectItem><SelectItem value="Standard">Logitech (Main)</SelectItem></SelectContent></Select></div>
           <div className="space-y-2"><Label>Exact simulator</Label><Select value={form.simulatorId} onValueChange={(simulatorId) => setForm((item) => ({ ...item, simulatorId }))}><SelectTrigger><SelectValue placeholder="Simulator tanlang" /></SelectTrigger><SelectContent>{simulatorsByType.map((simulator) => <SelectItem key={simulator.id} value={simulator.id}>{simulator.branchName} - {simulator.name}</SelectItem>)}</SelectContent></Select></div>
           <div className="space-y-2"><Label>Date</Label><DatePicker value={form.date} onChange={(date) => setForm((item) => ({ ...item, date }))} /></div>
-          <div className="space-y-2"><Label>Start time</Label><Input type="time" value={form.startTime} onChange={(event) => setForm((item) => ({ ...item, startTime: event.target.value }))} /></div>
-          <div className="space-y-2"><Label>End time</Label><Input type="time" value={form.endTime} onChange={(event) => setForm((item) => ({ ...item, endTime: event.target.value }))} /></div>
-          <div className="space-y-2"><Label>Tariff</Label><Select value={form.tariff} onValueChange={(tariff) => setForm((item) => ({ ...item, tariff }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{tariffsByType.map((tariff) => <SelectItem key={tariff.id} value={tariff.name}>{tariff.name} - {money(tariff.price)}{tariff.bonus ? ` + ${tariff.bonus}` : ""}</SelectItem>)}</SelectContent></Select></div>
-          <div className="space-y-2"><Label>Prepayment</Label><Input inputMode="numeric" value={formatNumber(form.prepayment)} onChange={(event) => setForm((item) => ({ ...item, prepayment: Number(event.target.value.replace(/\D/g, "")) }))} placeholder="20 000" /></div>
-          <div className="space-y-2"><Label>Note</Label><Input value={form.note} onChange={(event) => setForm((item) => ({ ...item, note: event.target.value }))} placeholder="Izoh" /></div>
-          <div className={`rounded-xl border p-3 text-sm lg:col-span-2 ${conflict ? "border-red-500/40 bg-red-500/10 text-red-200" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"}`}>
-            {conflict ? "Conflict: tanlangan simulator shu vaqtda band yoki vaqt oralig'i noto'g'ri." : `Conflict yo'q. ${selectedTariff ? `Tariff: ${money(selectedTariff.price)}.` : ""}`}
-          </div>
+          <div className="space-y-2"><Label>Start time</Label><TimePicker24 value={form.startTime} onChange={(startTime) => setForm((item) => ({ ...item, startTime }))} /></div>
+          <div className="space-y-2"><Label>Tugash vaqti (avto +1 soat)</Label><div className="flex h-10 items-center rounded-xl border border-slate-700 bg-slate-950/40 px-3 text-sm font-semibold text-slate-300">{form.startTime} – {endTime}</div></div>
+          <div className="space-y-2 lg:col-span-2"><Label>Note</Label><Input value={form.note} onChange={(event) => setForm((item) => ({ ...item, note: event.target.value }))} placeholder="Izoh" /></div>
+          {conflict ? (
+            <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm font-semibold text-red-200 lg:col-span-2">
+              Bu simulyator shu vaqt oralig'ida band. Boshqa vaqt yoki simulyator tanlang.
+            </div>
+          ) : null}
           <Button className="lg:col-span-2" type="submit" disabled={!form.customerName.trim() || !phoneValid || !form.simulatorId || conflict}><FiPlus /> {submitLabel}</Button>
         </form>
   );

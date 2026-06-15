@@ -9,6 +9,8 @@ export type Booking = {
   date: string;
   startTime: string;
   endTime: string;
+  startAt?: string; // ISO — to'qnashuv va auto no-show hisobi uchun
+  endAt?: string; // ISO
   tariff: string;
   prepayment: number;
   note: string;
