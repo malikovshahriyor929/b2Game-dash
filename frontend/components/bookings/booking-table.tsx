@@ -1,11 +1,10 @@
 "use client";
 
-import { FiCheckCircle, FiEdit2, FiTrash2, FiXCircle } from "react-icons/fi";
+import { FiCheckCircle, FiEdit2, FiTrash2, FiUserX, FiXCircle } from "react-icons/fi";
 import { Badge } from "@/components/ui/badge";
 import { IconButton } from "@/components/ui/icon-button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
-import { money } from "@/lib/format";
 import { Booking } from "@/types/booking";
 
 function badgeVariant(status: Booking["status"]) {
@@ -21,23 +20,23 @@ function formatUzPhone(value: string) {
   return digits.startsWith("998") ? `+998 ${parts.join(" ")}` : value;
 }
 
-export function BookingTable({ onEdit }: { onEdit?: (booking: Booking) => void }) {
-  const { bookings, allSimulators, updateBooking, deleteBooking } = useDashboardStore();
+export function BookingTable({ onEdit, onArrive }: { onEdit?: (booking: Booking) => void; onArrive?: (booking: Booking) => void }) {
+  const { bookings, allSimulators, updateBooking, deleteBooking, noShowBooking } = useDashboardStore();
 
   function patchStatus(booking: Booking, status: Booking["status"]) {
     updateBooking({ ...booking, status });
   }
 
+  const isPending = (status: Booking["status"]) => status === "Pending" || status === "Confirmed";
+
   return (
-    <Table className="min-w-[920px]">
+    <Table className="min-w-[680px]">
       <TableHeader>
         <TableRow>
           <TableHead>Customer</TableHead>
           <TableHead>Simulator</TableHead>
           <TableHead>Date</TableHead>
           <TableHead>Time</TableHead>
-          <TableHead>Tariff</TableHead>
-          <TableHead>Prepay</TableHead>
           <TableHead>Status</TableHead>
           <TableHead className="text-right">Actions</TableHead>
         </TableRow>
@@ -57,14 +56,13 @@ export function BookingTable({ onEdit }: { onEdit?: (booking: Booking) => void }
               <TableCell className="whitespace-nowrap">{simulatorLabel}</TableCell>
               <TableCell className="whitespace-nowrap">{item.date}</TableCell>
               <TableCell className="whitespace-nowrap">{item.startTime} - {item.endTime}</TableCell>
-              <TableCell className="whitespace-nowrap">{item.tariff}</TableCell>
-              <TableCell className="whitespace-nowrap">{money(item.prepayment)}</TableCell>
               <TableCell><Badge variant={badgeVariant(item.status)}>{item.status}</Badge></TableCell>
               <TableCell>
                 <div className="flex justify-end gap-2 whitespace-nowrap">
                   <IconButton tooltip="Tahrirlash" variant="secondary" onClick={() => onEdit?.(item)}><FiEdit2 /></IconButton>
-                  <IconButton tooltip="Keldi (arrived)" variant="success" disabled={item.status === "Arrived"} onClick={() => patchStatus(item, "Arrived")}><FiCheckCircle /></IconButton>
-                  <IconButton tooltip="Bekor qilish" variant="warning" disabled={item.status === "Cancelled"} onClick={() => patchStatus(item, "Cancelled")}><FiXCircle /></IconButton>
+                  <IconButton tooltip="Keldi → sessiya boshlash" variant="success" disabled={!isPending(item.status)} onClick={() => onArrive?.(item)}><FiCheckCircle /></IconButton>
+                  <IconButton tooltip="Kelmadi (no-show)" variant="warning" disabled={!isPending(item.status)} onClick={() => noShowBooking(item)}><FiUserX /></IconButton>
+                  <IconButton tooltip="Bekor qilish" variant="warning" disabled={!isPending(item.status)} onClick={() => patchStatus(item, "Cancelled")}><FiXCircle /></IconButton>
                   <IconButton tooltip="O'chirish" variant="destructive" onClick={() => deleteBooking(item.id)}><FiTrash2 /></IconButton>
                 </div>
               </TableCell>

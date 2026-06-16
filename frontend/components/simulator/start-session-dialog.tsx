@@ -62,8 +62,8 @@ function localPhoneDigits(value: string) {
   return digits.startsWith("998") ? digits.slice(3, 12) : digits.slice(0, 9);
 }
 
-export function StartSessionDialog({ open, onOpenChange, simulator }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator }) {
-  const { startSession, selectedBranchId } = useDashboardStore();
+export function StartSessionDialog({ open, onOpenChange, simulator, prefill, fulfillBookingId }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator; prefill?: { customerName?: string; phone?: string; tariffName?: string; prepayment?: number }; fulfillBookingId?: string }) {
+  const { startSession, selectedBranchId, bookings } = useDashboardStore();
   const tariffBranchId = simulator?.branchId ?? (selectedBranchId === "all" ? undefined : selectedBranchId);
   const tariffs = useBackendTariffs(tariffBranchId, open);
   const paymentMethods = usePaymentMethods(tariffBranchId, open);
@@ -107,20 +107,41 @@ export function StartSessionDialog({ open, onOpenChange, simulator }: { open: bo
   useEffect(() => {
     if (!open) return;
     setCustomerType("Guest");
-    setCustomerName("Guest");
+    setCustomerName(prefill?.customerName || "Guest");
     setCustomerQuery("");
     setSelectedCustomerId(null);
     setCustomers([]);
     setCustomerOffset(0);
     setCustomersHasMore(true);
     setCustomerPopoverOpen(false);
-    setPhone("");
-    const first = zoneTariffs[0];
+    setPhone(prefill?.phone ? normalizeUzPhone(prefill.phone) : "");
+    // Brondan kelganda tarifni nomi bo'yicha topib qo'yamiz, aks holda birinchisi.
+    const matched = prefill?.tariffName ? zoneTariffs.find((item) => item.name === prefill.tariffName) : undefined;
+    const first = matched ?? zoneTariffs[0];
     setTariffId(first?.id ?? "");
     setDuration(String(first?.durationMinutes || 60));
     setPaymentStatus(startOptions.paymentModes[0]?.value ?? "paid");
     setPaymentMethod(paymentMethods[0]?.label ?? "Karta");
-  }, [open, paymentMethods, simulator?.id, startOptions.paymentModes, zoneTariffs]);
+  }, [open, paymentMethods, simulator?.id, startOptions.paymentModes, zoneTariffs, prefill?.customerName, prefill?.phone, prefill?.tariffName]);
+
+  // Walk-in / band PC ogohlantirishlari (bloklamaydi — admin xohlasa davom etadi).
+  const simulatorBusy = Boolean(simulator && ["busy", "unpaid"].includes(simulator.status));
+  const conflictBooking = useMemo(() => {
+    if (!simulator) return undefined;
+    const startMs = Date.now();
+    const durMin = isOpenTariff ? 60 : Number(duration) || 0;
+    const endMs = startMs + durMin * 60000;
+    return bookings.find((booking) => {
+      if (booking.id === fulfillBookingId) return false;
+      if (booking.simulatorId !== simulator.id) return false;
+      if (!["Pending", "Confirmed", "Arrived"].includes(booking.status)) return false;
+      if (!booking.startAt || !booking.endAt) return false;
+      const bs = Date.parse(booking.startAt);
+      const be = Date.parse(booking.endAt);
+      if (!Number.isFinite(bs) || !Number.isFinite(be)) return false;
+      return startMs < be && endMs > bs;
+    });
+  }, [bookings, simulator, duration, isOpenTariff, fulfillBookingId]);
 
   // Open (VIP) sessions are postpaid — the amount is only known at stop.
   useEffect(() => {
@@ -238,6 +259,22 @@ export function StartSessionDialog({ open, onOpenChange, simulator }: { open: bo
           <DialogTitle>Start session</DialogTitle>
           <DialogDescription>{simulator?.name ?? "No simulator selected"} uchun yangi sessiya.</DialogDescription>
         </DialogHeader>
+
+        {prefill?.prepayment ? (
+          <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 p-3 text-sm font-semibold text-sky-200">
+            Oldindan to'lov: {money(prefill.prepayment)} — to'lovni hisobga oling.
+          </div>
+        ) : null}
+        {simulatorBusy ? (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm font-semibold text-amber-200">
+            ⚠️ Bu simulyator hozir band (faol sessiya bor). Yangi sessiya boshlash uni almashtiradi.
+          </div>
+        ) : null}
+        {conflictBooking ? (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm font-semibold text-amber-200">
+            ⚠️ Bu simulyatorda shu vaqt oralig'ida bron bor: {conflictBooking.customerName} ({conflictBooking.startTime}–{conflictBooking.endTime}). Davom etsangiz bron egasiga PC qolmasligi mumkin.
+          </div>
+        ) : null}
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
