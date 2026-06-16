@@ -22,7 +22,14 @@ export type RigMvpRig = {
 const rigMvpAxios = axios.create({
   baseURL: env.RIG_MVP_API_URL,
   timeout: 30_000,
-  headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
+  headers: {
+    "Content-Type": "application/json",
+    "ngrok-skip-browser-warning": "true",
+    // Server-to-server auth for admin_server's gated /api/* — must match
+    // its RIG_MVP_API_KEY. Only sent when a key is configured, so an
+    // unprotected dev server still works.
+    ...(env.RIG_MVP_API_KEY ? { "X-API-Key": env.RIG_MVP_API_KEY } : {}),
+  },
   validateStatus: () => true,
 });
 
