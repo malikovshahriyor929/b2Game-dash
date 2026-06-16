@@ -1,10 +1,11 @@
+import { baseRole } from "../../types/auth.types";
 import { Request } from "express";
 import { prisma } from "../../db/prisma";
 import { createGenericService } from "../_shared/generic.service";
 const baseCustomersService = createGenericService({ table: "customers", entity: "customer", branchScoped: true, writableColumns: ["branch_id","name","phone","balance","bonus","total_spent","sessions_count","last_visit_at","status"] });
 
 function branchFilter(req: Request) {
-  if (req.user?.role === "admin") return { where: "branch_id=$1::uuid", values: [req.user.branch_id] as unknown[] };
+  if (baseRole(req.user?.role) === "admin") return { where: "branch_id=$1::uuid", values: [(req.user?.branch_id ?? null)] as unknown[] };
   const branchId = req.query.branch_id;
   if (!branchId || branchId === "all") return { where: "1=1", values: [] as unknown[] };
   return { where: "branch_id=$1::uuid", values: [branchId] as unknown[] };

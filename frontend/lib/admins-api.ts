@@ -1,10 +1,12 @@
 import { backendDelete, backendGet, backendPatch, backendPost } from "@/server/api";
 
+export type AdminRole = "admin" | "super_admin" | "dev_admin" | "dev_super_admin";
+
 export type AdminUser = {
   id: string;
   name: string;
   email: string;
-  role: "admin" | "super_admin";
+  role: AdminRole;
   branchId: string | null;
   isActive: boolean;
 };
@@ -24,7 +26,7 @@ export type AdminPayload = {
   name: string;
   email: string;
   password?: string;
-  role?: "admin" | "super_admin";
+  role?: AdminRole;
   branch_id?: string | null;
   is_active?: boolean;
 };
@@ -34,7 +36,11 @@ function mapUser(row: Record<string, unknown>): AdminUser {
     id: String(row.id),
     name: String(row.name ?? ""),
     email: String(row.email ?? ""),
-    role: row.role === "super_admin" ? "super_admin" : "admin",
+    role:
+      row.role === "dev_super_admin" ? "dev_super_admin"
+      : row.role === "dev_admin" ? "dev_admin"
+      : row.role === "super_admin" ? "super_admin"
+      : "admin",
     branchId: row.branch_id == null ? null : String(row.branch_id),
     isActive: Boolean(row.is_active),
   };

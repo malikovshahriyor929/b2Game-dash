@@ -1,3 +1,4 @@
+import { baseRole } from "../../types/auth.types";
 import { Request } from "express";
 import { prisma } from "../../db/prisma";
 import { createGenericService } from "../_shared/generic.service";
@@ -6,7 +7,7 @@ import { ApiError } from "../../utils/apiError";
 const baseService = createGenericService({ table: "branches", entity: "branch", writableColumns: ["name","code","address","phone","status"] });
 
 function branchFilter(req: Request, requestedId?: string) {
-  if (req.user?.role === "admin") return req.user.branch_id;
+  if (baseRole(req.user?.role) === "admin") return (req.user?.branch_id ?? null);
   return requestedId ?? null;
 }
 

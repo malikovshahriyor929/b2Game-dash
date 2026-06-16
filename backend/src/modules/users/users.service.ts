@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import { prisma } from "../../db/prisma";
 import { ApiError } from "../../utils/apiError";
 import { auditLog } from "../../services/auditLog.service";
+import { baseRole, isDevRole } from "../../types/auth.types";
 
 function sanitizeUser<T extends Record<string, unknown>>(user: T) {
   const { password_hash: _passwordHash, passwordHash: _passwordHashCamel, ...safeUser } = user;
@@ -20,7 +21,21 @@ async function resolvePasswordHash(body: Record<string, any>) {
 }
 
 function scopedBranch(req: Request) {
-  return req.user?.role === "admin" ? req.user.branch_id : null;
+  // admin and dev_admin only see their own branch; (dev_)super_admin sees everything.
+  return baseRole(req.user?.role) === "admin" ? req.user?.branch_id ?? null : null;
+}
+
+function isDev(req: Request) {
+  return isDevRole(req.user?.role);
+}
+
+// Developer accounts (dev_admin / dev_super_admin) are fully hidden from regular
+// admins/super_admins. Block any attempt by a non-dev to read or mutate a developer row
+// by pretending the row does not exist.
+async function assertManageable(req: Request, id: string) {
+  const rows = await prisma.$queryRawUnsafe<Array<{ role: string }>>("select role from users where id=$1::uuid limit 1", id);
+  if (!rows.length) throw new ApiError(404, "user not found");
+  if (isDevRole(rows[0].role) && !isDev(req)) throw new ApiError(404, "user not found");
 }
 
 export const usersService = {
@@ -30,9 +45,11 @@ export const usersService = {
       `select id,name,email,role,branch_id,is_active,created_at,updated_at
        from users
        where ($1::uuid is null or branch_id=$1::uuid)
+         and ($2::boolean or role not in ('dev_admin','dev_super_admin'))
        order by created_at desc
        limit 200`,
       branchId,
+      isDev(req),
     );
     return rows;
   },
@@ -43,9 +60,11 @@ export const usersService = {
       `select id,name,email,role,branch_id,is_active,created_at,updated_at
        from users
        where id=$1::uuid and ($2::uuid is null or branch_id=$2::uuid)
+         and ($3::boolean or role not in ('dev_admin','dev_super_admin'))
        limit 1`,
       id,
       branchId,
+      isDev(req),
     );
     if (!rows.length) throw new ApiError(404, "user not found");
     return rows[0];
@@ -54,14 +73,21 @@ export const usersService = {
   async create(req: Request) {
     const name = String(req.body.name ?? "").trim();
     const email = String(req.body.email ?? "").trim().toLowerCase();
-    const role = req.body.role === "super_admin" ? "super_admin" : "admin";
+    // Only a developer may create a developer account; everyone else is capped at super_admin.
+    if (isDevRole(req.body.role) && !isDev(req)) throw new ApiError(403, "Insufficient role");
+    const role =
+      req.body.role === "dev_super_admin" ? "dev_super_admin"
+      : req.body.role === "dev_admin" ? "dev_admin"
+      : req.body.role === "super_admin" ? "super_admin"
+      : "admin";
     if (!name) throw new ApiError(400, "Name is required");
     if (!email) throw new ApiError(400, "Email is required");
     const passwordHash = await resolvePasswordHash(req.body);
     if (!passwordHash) throw new ApiError(400, "Password is required");
-    // Admins must belong to a branch; super_admins are global (branch null).
-    const branchId = role === "super_admin" ? null : (req.body.branch_id ?? null);
-    if (role === "admin" && !branchId) throw new ApiError(400, "Admin needs an assigned branch");
+    // Branch-scoped roles (admin, dev_admin) need a branch; global roles are branch null.
+    const needsBranch = baseRole(role) === "admin";
+    const branchId = needsBranch ? (req.body.branch_id ?? null) : null;
+    if (needsBranch && !branchId) throw new ApiError(400, "Admin needs an assigned branch");
 
     const exists = await prisma.$queryRawUnsafe<Record<string, unknown>[]>("select id from users where email=$1 limit 1", email);
     if (exists.length) throw new ApiError(409, "Email already in use");
@@ -83,6 +109,9 @@ export const usersService = {
   },
 
   async update(req: Request, id: string) {
+    await assertManageable(req, id);
+    // A non-dev cannot promote anyone into a hidden developer role.
+    if (isDevRole(req.body.role) && !isDev(req)) throw new ApiError(403, "Insufficient role");
     const passwordHash = await resolvePasswordHash(req.body);
     const email = req.body.email == null ? null : String(req.body.email).trim().toLowerCase();
     if (email) {
@@ -116,6 +145,7 @@ export const usersService = {
 
   async remove(req: Request, id: string) {
     if (req.user?.user_id === id) throw new ApiError(400, "You cannot delete your own account");
+    await assertManageable(req, id);
     // Remove this admin's simulator assignments before deleting them.
     await prisma.$executeRawUnsafe("delete from simulator_admins where admin_id=$1::uuid", id);
     const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>("delete from users where id=$1::uuid returning *", id);

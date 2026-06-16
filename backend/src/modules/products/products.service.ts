@@ -1,3 +1,4 @@
+import { baseRole } from "../../types/auth.types";
 import { createGenericService } from "../_shared/generic.service";
 import { prisma } from "../../db/prisma";
 import { ApiError } from "../../utils/apiError";
@@ -7,7 +8,7 @@ const baseService = createGenericService({ table: "products", entity: "product",
 export const productsService = {
   ...baseService,
   async create(req: Parameters<typeof baseService.create>[0]) {
-    const branchId = req.user?.role === "admin" ? req.user.branch_id : req.body.branch_id;
+    const branchId = baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : req.body.branch_id;
     if (!branchId || branchId === "all") throw new ApiError(400, "branch_id is required to create product inventory");
 
     const existing = req.body.barcode

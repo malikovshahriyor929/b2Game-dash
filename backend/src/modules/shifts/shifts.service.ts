@@ -1,3 +1,4 @@
+import { baseRole } from "../../types/auth.types";
 import { Request } from "express";
 import { prisma } from "../../db/prisma";
 import { ApiError } from "../../utils/apiError";
@@ -7,11 +8,11 @@ import { broadcastDashboard } from "../../websocket/dashboardConnection.manager"
 const WITHDRAW_RECIPIENT = "Owner";
 
 function branchId(req: Request) {
-  return req.user?.role === "admin" ? req.user.branch_id : req.body.branch_id ?? req.query.branch_id;
+  return baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : req.body.branch_id ?? req.query.branch_id;
 }
 
 function assertBranchAccess(req: Request, branch: string) {
-  if (req.user?.role === "admin" && req.user.branch_id !== branch) {
+  if (baseRole(req.user?.role) === "admin" && (req.user?.branch_id ?? null) !== branch) {
     throw new ApiError(403, "Shift belongs to another branch");
   }
 }
@@ -50,7 +51,7 @@ function decorateOpenShift(shift: any, money: { cash: number; card: number; bank
 }
 
 export async function list(req: Request) {
-  const branch = req.user?.role === "admin" ? req.user.branch_id : req.query.branch_id === "all" ? null : req.query.branch_id ?? null;
+  const branch = baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : req.query.branch_id === "all" ? null : req.query.branch_id ?? null;
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `select s.*, uo.name as opened_by_name, uc.name as closed_by_name
      from shifts s
@@ -211,7 +212,7 @@ export async function close(req: Request) {
 }
 
 export async function withdrawals(req: Request) {
-  const branch = req.user?.role === "admin" ? req.user.branch_id : req.query.branch_id === "all" ? null : req.query.branch_id ?? null;
+  const branch = baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : req.query.branch_id === "all" ? null : req.query.branch_id ?? null;
   return prisma.$queryRawUnsafe(
     `select w.*, u.name as withdrawn_by_name
      from shift_withdrawals w

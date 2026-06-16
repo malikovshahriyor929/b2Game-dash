@@ -1,3 +1,4 @@
+import { baseRole } from "../../types/auth.types";
 import { Request } from "express";
 import { prisma } from "../../db/prisma";
 import { ApiError } from "../../utils/apiError";
@@ -13,7 +14,7 @@ type ModuleConfig = {
 
 function scope(req: Request, alias = "") {
   const prefix = alias ? `${alias}.` : "";
-  if (req.user?.role === "admin") return { where: `${prefix}branch_id = $1::uuid`, values: [req.user.branch_id] };
+  if (baseRole(req.user?.role) === "admin") return { where: `${prefix}branch_id = $1::uuid`, values: [(req.user?.branch_id ?? null)] };
   const branchId = req.query.branch_id ?? req.body?.branch_id;
   if (!branchId || branchId === "all") return { where: "1=1", values: [] as unknown[] };
   return { where: `${prefix}branch_id = $1::uuid`, values: [branchId] };
@@ -40,7 +41,7 @@ export function createGenericService(config: ModuleConfig) {
     },
     async create(req: Request) {
       const body = { ...req.body };
-      if (config.branchScoped && req.user?.role === "admin") body.branch_id = req.user.branch_id;
+      if (config.branchScoped && baseRole(req.user?.role) === "admin") body.branch_id = (req.user?.branch_id ?? null);
       const keys = config.writableColumns.filter((key) => body[key] !== undefined);
       if (!keys.length) throw new ApiError(400, "No writable fields provided");
       const placeholders = keys.map((key, index) => placeholder(key, index + 1)).join(",");

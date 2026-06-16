@@ -1,3 +1,4 @@
+import { baseRole } from "../types/auth.types";
 import { Request } from "express";
 import { ApiError } from "../utils/apiError";
 
@@ -10,7 +11,7 @@ export function branchWhere(req: Request, alias = "") {
 
 export function writeBranchId(req: Request) {
   if (!req.branchScope) throw new ApiError(500, "Branch scope missing");
-  if (req.user?.role === "admin") return req.user.branch_id!;
+  if (baseRole(req.user?.role) === "admin") return (req.user?.branch_id ?? null)!;
   const bodyBranch = req.body?.branch_id;
   if (!bodyBranch || bodyBranch === "all") throw new ApiError(400, "branch_id is required for this write");
   return bodyBranch;

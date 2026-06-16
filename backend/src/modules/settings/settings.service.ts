@@ -1,3 +1,4 @@
+import { baseRole } from "../../types/auth.types";
 import { Request } from "express";
 import { prisma } from "../../db/prisma";
 import { auditLog } from "../../services/auditLog.service";
@@ -27,7 +28,7 @@ const defaultSimulatorMapLayout = {
 };
 
 function branchId(req: Request) {
-  const value = req.user?.role === "admin" ? req.user.branch_id : req.body.branch_id ?? req.query.branch_id;
+  const value = baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : req.body.branch_id ?? req.query.branch_id;
   return !value || value === "all" ? null : String(value);
 }
 

@@ -1,9 +1,10 @@
+import { baseRole } from "../../types/auth.types";
 import { createGenericService } from "../_shared/generic.service";
 import { Request } from "express";
 import { prisma } from "../../db/prisma";
 
 function branchScope(req: Request) {
-  if (req.user?.role === "admin") return { where: "branch_id=$1::uuid", values: [req.user.branch_id] };
+  if (baseRole(req.user?.role) === "admin") return { where: "branch_id=$1::uuid", values: [(req.user?.branch_id ?? null)] };
   const branchId = req.query.branch_id ?? req.body?.branch_id;
   if (!branchId || branchId === "all") return { where: "1=1", values: [] as unknown[] };
   return { where: "branch_id=$1::uuid", values: [branchId] };

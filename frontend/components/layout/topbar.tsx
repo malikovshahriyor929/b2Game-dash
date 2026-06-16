@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
-import { FiClock, FiLock, FiLogOut, FiMenu, FiMoon, FiPlay, FiPlus, FiPlusCircle, FiRefreshCw, FiSearch, FiSquare, FiSun } from "react-icons/fi";
+import { FiClock, FiKey, FiLock, FiLogOut, FiMenu, FiMoon, FiPlay, FiPlus, FiPlusCircle, FiRefreshCw, FiSearch, FiSquare, FiSun } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import { canUseAction } from "@/lib/permissions";
 import { money } from "@/lib/format";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { CreateBranchDialog } from "@/components/layout/create-branch-dialog";
+import { ChangePasswordDialog } from "@/components/shared/change-password-dialog";
 
 export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start" | "addTime" | "payment" | "stop") => void; onOpenSidebar: () => void }) {
   const { data } = useSession();
@@ -37,6 +38,7 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
 
   const [shiftModalOpen, setShiftModalOpen] = useState(false);
   const [branchDialogOpen, setBranchDialogOpen] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [branchSelectOpen, setBranchSelectOpen] = useState(false);
   const [startingCash, setStartingCash] = useState("");
   const [shiftType, setShiftType] = useState<"Kunduzgi (09:00 - 18:00)" | "Tungi (18:01 - 09:00)">("Kunduzgi (09:00 - 18:00)");
@@ -133,6 +135,7 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>{data?.user?.name} - {data?.user?.role}</DropdownMenuLabel>
               <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setTimeout(() => setPasswordDialogOpen(true), 0)}><FiKey /> Parolni o&apos;zgartirish</DropdownMenuItem>
               <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/login" })}><FiLogOut /> Logout</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -349,6 +352,7 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
       </Dialog>
 
       <CreateBranchDialog open={branchDialogOpen} onOpenChange={setBranchDialogOpen} />
+      <ChangePasswordDialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen} />
     </header>
   );
 }

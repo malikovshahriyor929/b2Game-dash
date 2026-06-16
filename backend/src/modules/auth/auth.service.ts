@@ -52,3 +52,17 @@ export async function refresh(refreshToken: string) {
     throw new ApiError(401, "Invalid refresh token");
   }
 }
+
+// Self-service password change for the logged-in user (admin, super_admin or dev).
+export async function changePassword(actor: AuthUser, currentPassword: string, newPassword: string) {
+  const { rows } = await pool.query("select id, password_hash from users where id=$1 and is_active=true", [actor.user_id]);
+  const user = rows[0];
+  if (!user) throw new ApiError(404, "User not found");
+  if (!(await bcrypt.compare(currentPassword, user.password_hash))) throw new ApiError(400, "Current password is incorrect");
+  if (await bcrypt.compare(newPassword, user.password_hash)) throw new ApiError(400, "New password must differ from the current one");
+
+  const newHash = await bcrypt.hash(newPassword, 10);
+  await pool.query("update users set password_hash=$1, updated_at=now() where id=$2", [newHash, user.id]);
+  await auditLog({ branch_id: actor.branch_id, actor, action_type: "password_changed", entity_type: "user", entity_id: actor.user_id });
+  return { changed: true };
+}

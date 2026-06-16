@@ -6,7 +6,7 @@ import { readBackendTokens, refreshBackendTokens, RefreshTokenInvalidError } fro
 import type { Role } from "@/types/user";
 
 function isRole(value: unknown): value is Role {
-  return value === "admin" || value === "super_admin";
+  return value === "admin" || value === "super_admin" || value === "dev_admin" || value === "dev_super_admin";
 }
 
 export const authOptions: NextAuthOptions = {
@@ -38,12 +38,17 @@ export const authOptions: NextAuthOptions = {
         const user = payload.data?.user;
         const tokens = readBackendTokens(payload);
         if (!user || !isRole(user.role) || !tokens) return null;
-        const branchIds = user.role === "super_admin" ? ["all"] : user.branch_id ? [String(user.branch_id)] : [];
+        // Developer roles are hidden: the UI treats dev_super_admin exactly like super_admin
+        // and dev_admin exactly like admin. `isDev` unlocks the dev-only management bits.
+        const isDev = user.role === "dev_admin" || user.role === "dev_super_admin";
+        const role: Role = user.role === "dev_super_admin" ? "super_admin" : user.role === "dev_admin" ? "admin" : user.role;
+        const branchIds = role === "super_admin" ? ["all"] : user.branch_id ? [String(user.branch_id)] : [];
         return {
           id: String(user.id),
           name: String(user.name),
           email: String(user.email),
-          role: user.role,
+          role,
+          isDev,
           branchIds,
           backendToken: tokens.accessToken,
           backendRefreshToken: tokens.refreshToken,
@@ -59,6 +64,7 @@ export const authOptions: NextAuthOptions = {
         token.name = user.name;
         token.email = user.email;
         token.role = user.role;
+        token.isDev = user.isDev;
         token.branchIds = user.branchIds;
         token.backendToken = user.backendToken;
         token.backendRefreshToken = user.backendRefreshToken;
@@ -91,6 +97,7 @@ export const authOptions: NextAuthOptions = {
       session.user.name = token.name ?? "";
       session.user.email = token.email ?? "";
       session.user.role = isRole(token.role) ? token.role : "admin";
+      session.user.isDev = Boolean(token.isDev);
       session.user.branchIds = Array.isArray(token.branchIds) ? token.branchIds : [];
       session.authError = token.authError;
       return session;

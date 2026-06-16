@@ -1,8 +1,9 @@
+import { baseRole } from "../../types/auth.types";
 import { Request } from "express";
 import { prisma } from "../../db/prisma";
 import { listRigMvpRigs } from "../../services/rigMvp.service";
 
-const branchId = (req: Request) => (req.user?.role === "admin" ? req.user.branch_id : req.query.branch_id === "all" ? null : req.query.branch_id ?? null);
+const branchId = (req: Request) => (baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : req.query.branch_id === "all" ? null : req.query.branch_id ?? null);
 const num = (value: unknown) => Number(value ?? 0);
 
 export async function summary(req: Request) {
