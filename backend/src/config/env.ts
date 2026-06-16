@@ -17,6 +17,8 @@ const envSchema = z.object({
   WS_OFFLINE_AFTER_MS: z.coerce.number().default(60000),
   LATEST_AGENT_VERSION: z.string().default("1.0.17"),
   RIG_MVP_API_URL: z.string().default("http://127.0.0.1:8000"),
+  // Server-to-server key sent as the X-API-Key header on every Rig-MVP
+  RIG_MVP_API_KEY: z.string().default(""),
   RIG_MVP_SYNC_INTERVAL_MS: z.coerce.number().default(30000),
   RIG_MVP_DB_SYNC_INTERVAL_MS: z.coerce.number().default(60000),
   RIG_DEFAULT_BRANCH_CODE: z.string().default("MAIN"),
