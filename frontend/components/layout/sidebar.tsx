@@ -3,14 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { useState } from "react";
 import { IconType } from "react-icons";
-import { FiBarChart2, FiCalendar, FiChevronLeft, FiChevronRight, FiCpu, FiDatabase, FiGift, FiHome, FiLogOut, FiMessageCircle, FiMonitor, FiPieChart, FiSettings, FiShoppingCart, FiTag, FiUserCheck, FiUsers, FiX } from "react-icons/fi";
+import { FiBarChart2, FiCalendar, FiChevronLeft, FiChevronRight, FiCpu, FiDatabase, FiGift, FiHome, FiLogOut, FiMessageCircle, FiMonitor, FiPieChart, FiPlus, FiSettings, FiShoppingCart, FiTag, FiUserCheck, FiUsers, FiX } from "react-icons/fi";
 import { RiGamepadLine } from "react-icons/ri";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { canAccess } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
+import { CreateBranchDialog } from "@/components/layout/create-branch-dialog";
 
 const items: { key: string; label: string; href: string; icon: IconType }[] = [
   { key: "dashboard", label: "Dashboard", href: "/dashboard", icon: FiHome },
@@ -34,6 +36,7 @@ export function Sidebar({ collapsed, mobileOpen, onCloseMobile, onToggleCollapse
   const { data } = useSession();
   const role = data?.user?.role;
   const visible = items.filter((item) => canAccess(role, item.key));
+  const [branchDialogOpen, setBranchDialogOpen] = useState(false);
 
   return (
     <>
@@ -85,6 +88,19 @@ export function Sidebar({ collapsed, mobileOpen, onCloseMobile, onToggleCollapse
         </nav>
       </ScrollArea>
       <div className={cn("border-t border-slate-800 p-3", collapsed && "md:px-2")}>
+        {role === "super_admin" ? (
+          <button
+            title={collapsed ? "Filial qo'shish" : undefined}
+            onClick={() => setBranchDialogOpen(true)}
+            className={cn(
+              "mb-2 flex w-full items-center gap-3 rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2.5 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20",
+              collapsed && "md:justify-center md:px-2",
+            )}
+          >
+            <FiPlus className="shrink-0 text-lg" />
+            <span className={cn("truncate", collapsed && "md:hidden")}>Filial qo&apos;shish</span>
+          </button>
+        ) : null}
         <button
           className={cn("mb-2 hidden w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-400 hover:bg-slate-800 hover:text-white md:flex", collapsed && "justify-center px-2")}
           onClick={onToggleCollapsed}
@@ -95,6 +111,7 @@ export function Sidebar({ collapsed, mobileOpen, onCloseMobile, onToggleCollapse
         <div className={cn("flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-400", collapsed && "md:justify-center md:px-2")}><FiLogOut /><span className={cn(collapsed && "md:hidden")}>Chiqish</span></div>
       </div>
     </aside>
+    <CreateBranchDialog open={branchDialogOpen} onOpenChange={setBranchDialogOpen} />
     </>
   );
 }

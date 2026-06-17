@@ -1,3 +1,4 @@
+import { baseRole } from "../types/auth.types";
 import { prisma } from "../db/prisma";
 import { env } from "../config/env";
 import { RigMvpRig } from "./rigMvp.service";
@@ -58,8 +59,8 @@ export async function filterRigsForScope(
   requestedBranchId?: unknown,
   user?: { role?: string; branch_id?: string | null },
 ) {
-  const branchId = user?.role === "admin"
-    ? user.branch_id
+  const branchId = baseRole(user?.role) === "admin"
+    ? (user?.branch_id ?? null)
     : requestedBranchId && requestedBranchId !== "all"
       ? String(requestedBranchId)
       : null;

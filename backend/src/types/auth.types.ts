@@ -1,4 +1,21 @@
-export type Role = "admin" | "super_admin";
+// Hidden developer roles: same powers as their base role, but invisible to regular
+// admins/super_admins (filtered out of the users list and the audit logs).
+//   dev_admin       -> mirrors "admin"       (branch-scoped)
+//   dev_super_admin -> mirrors "super_admin" (global)
+// Only a developer can see or manage developer accounts.
+export type Role = "admin" | "super_admin" | "dev_admin" | "dev_super_admin";
+
+// SQL list of the hidden developer roles (kept in one place).
+export const DEV_ROLES = ["dev_admin", "dev_super_admin"] as const;
+
+export function isDevRole(role?: string | null): boolean {
+  return role === "dev_admin" || role === "dev_super_admin";
+}
+
+// Effective base role used for access gating and branch scoping.
+export function baseRole(role?: string | null): "admin" | "super_admin" {
+  return role === "super_admin" || role === "dev_super_admin" ? "super_admin" : "admin";
+}
 
 export type JwtPayload = {
   user_id: string;

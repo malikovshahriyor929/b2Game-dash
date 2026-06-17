@@ -1,3 +1,4 @@
+import { baseRole } from "../../types/auth.types";
 import { Request } from "express";
 import { prisma } from "../../db/prisma";
 import { ApiError } from "../../utils/apiError";
@@ -205,7 +206,7 @@ async function rigIdFromParam(id: string) {
 }
 
 async function simulatorIdFromParam(id: string, user?: Request["user"]) {
-  const branchId = user?.role === "admin" ? user.branch_id : null;
+  const branchId = baseRole(user?.role) === "admin" ? (user?.branch_id ?? null) : null;
   if (/^[0-9a-f-]{36}$/i.test(id)) {
     const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
       "select id from simulators where id=$1::uuid and ($2::uuid is null or branch_id=$2::uuid) limit 1",
@@ -305,15 +306,15 @@ async function enrichSimulatorWithActiveSession(row: Record<string, any>) {
 }
 
 async function listDbSimulatorRows(requestedBranchId?: unknown, user?: Request["user"]) {
-  const branchId = user?.role === "admin"
-    ? user.branch_id
+  const branchId = baseRole(user?.role) === "admin"
+    ? (user?.branch_id ?? null)
     : requestedBranchId && requestedBranchId !== "all"
       ? String(requestedBranchId)
       : null;
 
-  if (user?.role === "admin" && !branchId) return [];
+  if (baseRole(user?.role) === "admin" && !branchId) return [];
   // Admins only see simulators explicitly assigned to them by a super_admin.
-  const adminId = user?.role === "admin" ? user.user_id : null;
+  const adminId = baseRole(user?.role) === "admin" ? (user?.user_id ?? null) : null;
 
   return prisma.$queryRawUnsafe<any[]>(
     `select
@@ -347,10 +348,10 @@ export async function listRows(requestedBranchId?: unknown, user?: Request["user
     const rigs = await filterRigsForScope(await listRigMvpRigs(), requestedBranchId, user);
     const rows = await Promise.all(rigs.map((rig) => rigToSimulatorRow(rig)));
     // Admins only see simulators a super_admin assigned to them (many-to-many).
-    if (user?.role === "admin") {
+    if (baseRole(user?.role) === "admin") {
       const assigned = await prisma.$queryRawUnsafe<Array<{ simulator_id: string }>>(
         "select simulator_id from simulator_admins where admin_id=$1::uuid",
-        user.user_id,
+        (user?.user_id ?? null),
       );
       const ids = new Set(assigned.map((a) => String(a.simulator_id)));
       return rows.filter((row) => ids.has(String(row.id)));
@@ -460,7 +461,7 @@ export async function updateMapPosition(req: Request) {
      returning *`,
     JSON.stringify(normalized),
     simulatorId,
-    req.user?.role === "admin" ? req.user.branch_id : null,
+    baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : null,
   );
   if (!rows.length) throw new ApiError(404, "Simulator not found");
   broadcastDashboard("simulator_updated", rows[0], rows[0].branch_id);
@@ -470,7 +471,7 @@ export async function updateMapPosition(req: Request) {
 async function command(req: Request, action: string, work: (rig: RigMvpRig) => Promise<unknown>) {
   const rig = await getRigMvpRig(await rigIdFromParam(String(req.params.id)));
   const currentRow = await rigToSimulatorRow(rig);
-  if (req.user?.role === "admin" && currentRow.branch_id !== req.user.branch_id) throw new ApiError(403, "Branch scope violation");
+  if (baseRole(req.user?.role) === "admin" && currentRow.branch_id !== (req.user?.branch_id ?? null)) throw new ApiError(403, "Branch scope violation");
   await work(rig);
   const row = await rigToSimulatorRow(await getRigMvpRig(rig.rig_id));
   await auditLog({ actor: req.user, branch_id: row.branch_id, action_type: action, entity_type: "rig_mvp", entity_id: null, details: { rig_id: rig.rig_id } });

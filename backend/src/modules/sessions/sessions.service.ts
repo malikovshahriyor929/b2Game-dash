@@ -1,3 +1,4 @@
+import { baseRole } from "../../types/auth.types";
 import { Request } from "express";
 import { prisma } from "../../db/prisma";
 import { ApiError } from "../../utils/apiError";
@@ -8,12 +9,12 @@ import { isUuid } from "../../utils/ids";
 import { requireOpenShift } from "../shifts/shift.guard";
 
 async function getSessionScoped(req: Request) {
-  const rows = await prisma.$queryRawUnsafe<any[]>("select * from sessions where id=$1::uuid and ($2::uuid is null or branch_id=$2::uuid)", req.params.id, req.user?.role === "admin" ? req.user.branch_id : null);
+  const rows = await prisma.$queryRawUnsafe<any[]>("select * from sessions where id=$1::uuid and ($2::uuid is null or branch_id=$2::uuid)", req.params.id, baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : null);
   if (!rows.length) throw new ApiError(404, "Session not found");
   return rows[0];
 }
-export async function list(req: Request) { return prisma.$queryRawUnsafe("select * from sessions where ($1::uuid is null or branch_id=$1::uuid) order by created_at desc limit 200", req.user?.role === "admin" ? req.user.branch_id : req.query.branch_id === "all" ? null : req.query.branch_id ?? null); }
-export async function active(req: Request) { return prisma.$queryRawUnsafe("select * from sessions where status in ('active','paused','unpaid') and ($1::uuid is null or branch_id=$1::uuid) order by started_at desc", req.user?.role === "admin" ? req.user.branch_id : req.query.branch_id === "all" ? null : req.query.branch_id ?? null); }
+export async function list(req: Request) { return prisma.$queryRawUnsafe("select * from sessions where ($1::uuid is null or branch_id=$1::uuid) order by created_at desc limit 200", baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : req.query.branch_id === "all" ? null : req.query.branch_id ?? null); }
+export async function active(req: Request) { return prisma.$queryRawUnsafe("select * from sessions where status in ('active','paused','unpaid') and ($1::uuid is null or branch_id=$1::uuid) order by started_at desc", baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : req.query.branch_id === "all" ? null : req.query.branch_id ?? null); }
 export const get = getSessionScoped;
 
 function paymentMode(value: unknown) {
@@ -155,7 +156,7 @@ export async function start(req: Request) {
   const simRows = await prisma.$queryRawUnsafe<any[]>("select * from simulators where id=$1::uuid", req.body.simulator_id);
   const sim = simRows[0];
   if (!sim) throw new ApiError(404, "Simulator not found");
-  if (req.user?.role === "admin" && sim.branch_id !== req.user.branch_id) throw new ApiError(403, "Branch scope violation");
+  if (baseRole(req.user?.role) === "admin" && sim.branch_id !== (req.user?.branch_id ?? null)) throw new ApiError(403, "Branch scope violation");
   if (!["ready_to_play","reserved"].includes(sim.status)) throw new ApiError(409, `Simulator is ${sim.status}`);
   const billing = await resolveTariffBilling(req.body.tariff_id);
   const amount = Number(req.body.paid_amount ?? 0);

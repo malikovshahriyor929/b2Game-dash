@@ -18,6 +18,7 @@ import { StatCardsSkeleton, TableSkeleton } from "@/components/ui/skeletons";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   AdminBranch,
+  AdminRole,
   AdminUser,
   AssignableSimulator,
   createAdmin,
@@ -33,17 +34,25 @@ type FormState = {
   name: string;
   email: string;
   password: string;
-  role: "admin" | "super_admin";
+  role: AdminRole;
   branchId: string;
   isActive: boolean;
 };
 
 const emptyForm: FormState = { name: "", email: "", password: "", role: "admin", branchId: "", isActive: true };
 
+// admin and dev_admin are tied to a branch (and get simulator assignments);
+// super_admin and dev_super_admin are global.
+const branchScopedRole = (role: AdminRole) => role === "admin" || role === "dev_admin";
+const roleLabel = (role: AdminRole) =>
+  role === "dev_super_admin" ? "Dev super admin" : role === "dev_admin" ? "Dev admin" : role === "super_admin" ? "Super admin" : "Admin";
+
 export default function AdminsPage() {
   const { data: session } = useSession();
   const confirm = useConfirm();
   const isSuper = session?.user?.role === "super_admin";
+  // Only a dev sees and can manage the hidden developer accounts.
+  const isDev = Boolean(session?.user?.isDev);
 
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [branches, setBranches] = useState<AdminBranch[]>([]);
@@ -106,13 +115,13 @@ export default function AdminsPage() {
     if (!name || !email) return toast.error("Ism va email kerak");
     if (!editingId && form.password.length < 6) return toast.error("Parol kamida 6 ta belgi");
     if (form.password && form.password.length < 6) return toast.error("Parol kamida 6 ta belgi");
-    if (form.role === "admin" && !form.branchId) return toast.error("Admin uchun filial tanlang");
+    if (branchScopedRole(form.role) && !form.branchId) return toast.error("Admin uchun filial tanlang");
 
     const payload = {
       name,
       email,
       role: form.role,
-      branch_id: form.role === "super_admin" ? null : form.branchId,
+      branch_id: branchScopedRole(form.role) ? form.branchId : null,
       is_active: form.isActive,
       ...(form.password ? { password: form.password } : {}),
     };
@@ -215,13 +224,13 @@ export default function AdminsPage() {
               <TableRow key={admin.id}>
                 <TableCell className="font-semibold text-white">{admin.name}</TableCell>
                 <TableCell className="text-slate-300">{admin.email}</TableCell>
-                <TableCell><Badge variant={admin.role === "super_admin" ? "vip" : "muted"}>{admin.role === "super_admin" ? "Super admin" : "Admin"}</Badge></TableCell>
-                <TableCell className="text-slate-300">{admin.role === "super_admin" ? "Barchasi" : branchName(admin.branchId)}</TableCell>
-                <TableCell>{admin.role === "super_admin" ? "—" : `${assignedCount.get(admin.id) ?? 0} ta`}</TableCell>
+                <TableCell><Badge variant={branchScopedRole(admin.role) ? "muted" : "vip"}>{roleLabel(admin.role)}</Badge></TableCell>
+                <TableCell className="text-slate-300">{branchScopedRole(admin.role) ? branchName(admin.branchId) : "Barchasi"}</TableCell>
+                <TableCell>{branchScopedRole(admin.role) ? `${assignedCount.get(admin.id) ?? 0} ta` : "—"}</TableCell>
                 <TableCell><Badge variant={admin.isActive ? "success" : "destructive"}>{admin.isActive ? "Faol" : "Bloklangan"}</Badge></TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-2 whitespace-nowrap">
-                    {admin.role === "admin" ? <IconButton tooltip="Simulyator biriktirish" variant="secondary" onClick={() => openAssign(admin)}><FiMonitor /></IconButton> : null}
+                    {branchScopedRole(admin.role) ? <IconButton tooltip="Simulyator biriktirish" variant="secondary" onClick={() => openAssign(admin)}><FiMonitor /></IconButton> : null}
                     <IconButton tooltip="Tahrirlash / parol" variant="secondary" onClick={() => openEdit(admin)}><FiEdit2 /></IconButton>
                     <IconButton tooltip="O'chirish" variant="destructive" disabled={admin.id === session?.user?.id} onClick={() => remove(admin)}><FiTrash2 /></IconButton>
                   </div>
@@ -257,6 +266,8 @@ export default function AdminsPage() {
                 <SelectContent>
                   <SelectItem value="admin">Admin</SelectItem>
                   <SelectItem value="super_admin">Super admin</SelectItem>
+                  {isDev ? <SelectItem value="dev_admin">Dev admin (yashirin)</SelectItem> : null}
+                  {isDev ? <SelectItem value="dev_super_admin">Dev super admin (yashirin)</SelectItem> : null}
                 </SelectContent>
               </Select>
             </div>
@@ -270,7 +281,7 @@ export default function AdminsPage() {
                 </SelectContent>
               </Select>
             </div>
-            {form.role === "admin" && !singleBranch ? (
+            {branchScopedRole(form.role) && !singleBranch ? (
               <div className="space-y-2 sm:col-span-2">
                 <Label>Filial</Label>
                 <Select value={form.branchId} onValueChange={(branchId) => setForm((f) => ({ ...f, branchId }))}>

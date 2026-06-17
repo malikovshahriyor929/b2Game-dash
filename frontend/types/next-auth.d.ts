@@ -9,6 +9,7 @@ declare module "next-auth" {
       name: string;
       email: string;
       role: Role;
+      isDev: boolean;
       branchIds: string[];
     };
   }
@@ -16,6 +17,7 @@ declare module "next-auth" {
   interface User {
     email: string;
     role: Role;
+    isDev?: boolean;
     branchIds: string[];
     backendToken?: string;
     backendRefreshToken?: string;
@@ -27,6 +29,7 @@ declare module "next-auth/jwt" {
   interface JWT {
     email: string;
     role: Role;
+    isDev?: boolean;
     branchIds: string[];
     backendToken?: string;
     backendRefreshToken?: string;

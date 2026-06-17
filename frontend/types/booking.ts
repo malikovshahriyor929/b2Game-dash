@@ -2,6 +2,7 @@ export type Booking = {
   id: string;
   customerName: string;
   phone: string;
+  customerId?: string;
   simulatorType: string;
   simulatorId: string;
   simulatorName?: string;

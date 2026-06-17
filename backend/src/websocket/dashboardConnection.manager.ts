@@ -1,3 +1,4 @@
+import { baseRole } from "../types/auth.types";
 import { WebSocket } from "ws";
 import { AuthUser } from "../types/auth.types";
 import { DashboardSocketState } from "../types/websocket.types";
@@ -14,8 +15,8 @@ export function broadcastDashboard(type: string, data: Record<string, unknown>, 
   const payload = JSON.stringify({ type, data, created_at: new Date().toISOString() });
   for (const client of dashboards) {
     if (client.ws.readyState !== WebSocket.OPEN) continue;
-    if (client.user.role === "admin" && branchId && client.user.branch_id !== branchId) continue;
-    if (client.user.role === "super_admin" && !client.allBranches && branchId && client.branchId !== branchId) continue;
+    if (baseRole(client.user.role) === "admin" && branchId && client.user.branch_id !== branchId) continue;
+    if (baseRole(client.user.role) === "super_admin" && !client.allBranches && branchId && client.branchId !== branchId) continue;
     client.ws.send(payload);
   }
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
-import { FiClock, FiLock, FiLogOut, FiMenu, FiMoon, FiPlay, FiPlusCircle, FiRefreshCw, FiSearch, FiSquare, FiSun } from "react-icons/fi";
+import { FiClock, FiKey, FiLock, FiLogOut, FiMenu, FiMoon, FiPlay, FiPlus, FiPlusCircle, FiRefreshCw, FiSearch, FiSquare, FiSun } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,8 @@ import { Label } from "@/components/ui/label";
 import { canUseAction } from "@/lib/permissions";
 import { money } from "@/lib/format";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
+import { CreateBranchDialog } from "@/components/layout/create-branch-dialog";
+import { ChangePasswordDialog } from "@/components/shared/change-password-dialog";
 
 export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start" | "addTime" | "payment" | "stop") => void; onOpenSidebar: () => void }) {
   const { data } = useSession();
@@ -35,6 +37,9 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
   } = useDashboardStore();
 
   const [shiftModalOpen, setShiftModalOpen] = useState(false);
+  const [branchDialogOpen, setBranchDialogOpen] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [branchSelectOpen, setBranchSelectOpen] = useState(false);
   const [startingCash, setStartingCash] = useState("");
   const [shiftType, setShiftType] = useState<"Kunduzgi (09:00 - 18:00)" | "Tungi (18:01 - 09:00)">("Kunduzgi (09:00 - 18:00)");
   const [actualCash, setActualCash] = useState("");
@@ -130,6 +135,7 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>{data?.user?.name} - {data?.user?.role}</DropdownMenuLabel>
               <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setTimeout(() => setPasswordDialogOpen(true), 0)}><FiKey /> Parolni o&apos;zgartirish</DropdownMenuItem>
               <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/login" })}><FiLogOut /> Logout</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -138,11 +144,23 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
 
       <div className="mt-2 grid min-w-0 gap-2 lg:grid-cols-[360px_minmax(220px,1fr)_auto] xl:grid-cols-[420px_minmax(260px,1fr)_auto]">
         <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
-          <Select value={selectedBranchId} onValueChange={setSelectedBranchId} disabled={role !== "super_admin"}>
+          <Select open={branchSelectOpen} onOpenChange={setBranchSelectOpen} value={selectedBranchId} onValueChange={setSelectedBranchId} disabled={role !== "super_admin"}>
             <SelectTrigger className="h-9 min-w-0"><SelectValue /></SelectTrigger>
             <SelectContent>
               {role === "super_admin" ? <SelectItem value="all">All branches</SelectItem> : null}
               {branchOptions.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}
+              {role === "super_admin" ? (
+                <>
+                  <div className="my-1 h-px bg-slate-700" />
+                  <button
+                    type="button"
+                    onClick={() => { setBranchSelectOpen(false); setTimeout(() => setBranchDialogOpen(true), 0); }}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-sky-300 outline-none transition hover:bg-slate-800 focus:bg-slate-800"
+                  >
+                    <FiPlus className="shrink-0" /> Filial qo&apos;shish
+                  </button>
+                </>
+              ) : null}
             </SelectContent>
           </Select>
           <Select value={period} onValueChange={(value) => setPeriod(value as typeof period)}>
@@ -332,6 +350,9 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
           )}
         </DialogContent>
       </Dialog>
+
+      <CreateBranchDialog open={branchDialogOpen} onOpenChange={setBranchDialogOpen} />
+      <ChangePasswordDialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen} />
     </header>
   );
 }
