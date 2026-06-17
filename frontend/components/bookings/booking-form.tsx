@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CustomerSelect, SelectedCustomer } from "@/components/shared/customer-select";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { Booking } from "@/types/booking";
 
@@ -31,11 +32,6 @@ function normalizeUzPhone(value: string) {
   if (digits.startsWith("998")) return digits.slice(0, 12);
   if (digits.length === 9) digits = `998${digits}`;
   return digits.slice(0, 12);
-}
-
-function localPhone(value: string) {
-  const digits = value.replace(/\D/g, "");
-  return digits.startsWith("998") ? digits.slice(3, 12) : digits.slice(0, 9);
 }
 
 function formatUzPhone(value: string) {
@@ -133,10 +129,11 @@ function hasConflict(bookings: Booking[], form: BookingFormState, endTime: strin
 }
 
 export function BookingForm({ booking, onSaved }: { booking?: Booking | null; onSaved?: () => void }) {
-  const { addBooking, bookings, simulators, updateBooking } = useDashboardStore();
+  const { addBooking, bookings, simulators, updateBooking, selectedBranchId } = useDashboardStore();
   const [form, setForm] = useState<BookingFormState>(() => booking ? {
     customerName: booking.customerName,
     phone: booking.phone,
+    customerId: booking.customerId,
     simulatorType: booking.simulatorType,
     simulatorId: booking.simulatorId,
     date: booking.date,
@@ -144,6 +141,16 @@ export function BookingForm({ booking, onSaved }: { booking?: Booking | null; on
     note: booking.note,
   } : emptyForm);
   const simulatorsByType = useMemo(() => simulators.filter((item) => item.zone === form.simulatorType), [form.simulatorType, simulators]);
+  // Mijoz qidiruvi/qo'shilishi shu bron qaysi filialga tegishli bo'lsa o'sha bo'yicha.
+  const customerBranchId = useMemo(
+    () => simulators.find((item) => item.id === form.simulatorId)?.branchId ?? (selectedBranchId !== "all" ? selectedBranchId : undefined),
+    [simulators, form.simulatorId, selectedBranchId],
+  );
+  const selectedCustomer: SelectedCustomer | null = form.customerName ? { id: form.customerId, name: form.customerName, phone: form.phone } : null;
+
+  function handleCustomerChange(customer: SelectedCustomer | null) {
+    setForm((item) => ({ ...item, customerId: customer?.id, customerName: customer?.name ?? "", phone: customer?.phone ?? "" }));
+  }
   const endTime = addMinutesToTime(form.startTime, 60);
   const conflict = hasConflict(bookings, form, endTime, booking?.id);
   const phoneValid = normalizeUzPhone(form.phone).length === 12;
@@ -164,17 +171,12 @@ export function BookingForm({ booking, onSaved }: { booking?: Booking | null; on
 
   return (
         <form onSubmit={submit} className="grid gap-3 lg:grid-cols-2">
-          <div className="space-y-2"><Label>Customer name</Label><Input value={form.customerName} onChange={(event) => setForm((item) => ({ ...item, customerName: event.target.value }))} placeholder="Mijoz ismi" /></div>
-          <div className="space-y-2">
-            <Label>Phone</Label>
-            <div className="grid grid-cols-[84px,1fr] gap-2">
-              <div className="flex h-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-950/70 text-sm font-bold text-slate-300">+998</div>
-              <Input inputMode="numeric" maxLength={9} value={localPhone(form.phone)} onChange={(event) => {
-                const local = event.target.value.replace(/\D/g, "").slice(0, 9);
-                setForm((item) => ({ ...item, phone: local ? `998${local}` : "" }));
-              }} placeholder="901112233" />
+          <div className="space-y-2 lg:col-span-2">
+            <Label>Mijoz</Label>
+            <CustomerSelect branchId={customerBranchId} value={selectedCustomer} onChange={handleCustomerChange} />
+            <div className="text-xs text-slate-500">
+              {form.phone ? `Telefon: ${formatUzPhone(form.phone)}` : "Ro'yxatdan mijoz tanlang yoki yangi mijoz qo'shing"}
             </div>
-            <div className="text-xs text-slate-500">Ko'rinishi: {form.phone ? formatUzPhone(form.phone) : "+998 XX XXX XX XX"}</div>
           </div>
           <div className="space-y-2"><Label>Simulator type</Label><Select value={form.simulatorType} onValueChange={(simulatorType) => setForm((item) => ({ ...item, simulatorType, simulatorId: "" }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="VIP">Moza (Premium)</SelectItem><SelectItem value="Standard">Logitech (Main)</SelectItem></SelectContent></Select></div>
           <div className="space-y-2"><Label>Exact simulator</Label><Select value={form.simulatorId} onValueChange={(simulatorId) => setForm((item) => ({ ...item, simulatorId }))}><SelectTrigger><SelectValue placeholder="Simulator tanlang" /></SelectTrigger><SelectContent>{simulatorsByType.map((simulator) => <SelectItem key={simulator.id} value={simulator.id}>{simulator.branchName} - {simulator.name}</SelectItem>)}</SelectContent></Select></div>

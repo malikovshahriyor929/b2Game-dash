@@ -1,10 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { ListSkeleton } from "@/components/ui/skeletons";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { money } from "@/lib/format";
@@ -12,18 +11,9 @@ import { formatTariffOptionLabel, tariffPricePeriodLabel, useBackendTariffs } fr
 import { usePaymentMethods } from "@/lib/use-payment-methods";
 import { useStartSessionOptions } from "@/lib/use-start-session-options";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { CustomerSelect, SelectedCustomer } from "@/components/shared/customer-select";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
-import { backendGet } from "@/server/api";
 import { Simulator } from "@/types/simulator";
-
-type CustomerRow = {
-  id: string;
-  name: string;
-  phone?: string | null;
-  balance?: number | string | null;
-  sessions_count?: number | string | null;
-};
-const customerPageSize = 20;
 
 function normalizeUzPhone(value: string) {
   let digits = value.replace(/\D/g, "");
@@ -32,19 +22,6 @@ function normalizeUzPhone(value: string) {
   if (digits.length === 9) digits = `998${digits}`;
   if (digits.startsWith("8") && digits.length === 11) digits = `99${digits}`;
   return digits.slice(0, 12);
-}
-
-function formatUzPhone(value: string) {
-  const digits = normalizeUzPhone(value);
-  if (!digits) return "";
-  if (!digits.startsWith("998")) return digits;
-  const local = digits.slice(3);
-  const area = local.slice(0, 2);
-  const prefix = local.slice(2, 5);
-  const line = local.slice(5, 9);
-  if (!area) return "+998";
-  if (!prefix) return `+998 (${area}`;
-  return `+998 (${area}) ${prefix}${line ? ` ${line}` : ""}`;
 }
 
 function formatUzLocalPhone(value: string) {
@@ -80,13 +57,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
   }, [zoneTariffs]);
   const [customerType, setCustomerType] = useState<"Guest" | "Registered">("Guest");
   const [customerName, setCustomerName] = useState("Guest");
-  const [customerQuery, setCustomerQuery] = useState("");
-  const [customers, setCustomers] = useState<CustomerRow[]>([]);
-  const [loadingCustomers, setLoadingCustomers] = useState(false);
-  const [customerOffset, setCustomerOffset] = useState(0);
-  const [customersHasMore, setCustomersHasMore] = useState(true);
-  const [customerPopoverOpen, setCustomerPopoverOpen] = useState(false);
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [picked, setPicked] = useState<SelectedCustomer | null>(null);
   const [phone, setPhone] = useState("");
   const [tariffId, setTariffId] = useState("");
   const [duration, setDuration] = useState("60");
@@ -96,7 +67,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
   // VIP tariffs (type='vip') open as hourly sessions: no fixed duration, billed at stop.
   const isOpenTariff = (selectedTariff?.type ?? "").toLowerCase() === "vip";
   const hourlyRate = selectedTariff && isOpenTariff ? Math.round((selectedTariff.price * 60) / (selectedTariff.durationMinutes || 60)) : 0;
-  const selectedCustomer = customers.find((item) => item.id === selectedCustomerId);
+  const selectedCustomer = picked;
   const canSubmit = Boolean(simulator) && customerName.trim().length > 0 && (isOpenTariff || Number(duration) > 0) && Boolean(selectedTariff) && (customerType === "Guest" || Boolean(selectedCustomer));
   const totalAmount = isOpenTariff || paymentStatus === "unpaid" ? 0 : selectedTariff?.price ?? 0;
 
@@ -110,12 +81,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
     if (!open) return;
     setCustomerType("Guest");
     setCustomerName(prefill?.customerName || "Guest");
-    setCustomerQuery("");
-    setSelectedCustomerId(null);
-    setCustomers([]);
-    setCustomerOffset(0);
-    setCustomersHasMore(true);
-    setCustomerPopoverOpen(false);
+    setPicked(null);
     setPhone(prefill?.phone ? normalizeUzPhone(prefill.phone) : "");
     // Brondan kelganda tarifni nomi bo'yicha topib qo'yamiz, aks holda birinchisi.
     const matched = prefill?.tariffName ? zoneTariffs.find((item) => item.name === prefill.tariffName) : undefined;
@@ -150,80 +116,18 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
     if (isOpenTariff) setPaymentStatus("unpaid");
   }, [isOpenTariff]);
 
-  const loadCustomers = useCallback(async (reset = false) => {
-    if (!open || customerType !== "Registered") return;
-    if (loadingCustomers || (!reset && !customersHasMore)) return;
-    const offset = reset ? 0 : customerOffset;
-    setLoadingCustomers(true);
-    const params = new URLSearchParams({
-      branch_id: tariffBranchId && tariffBranchId !== "all" ? tariffBranchId : "all",
-      limit: String(customerPageSize),
-      offset: String(offset),
-    });
-    const search = customerQuery.trim();
-    if (search) params.set("q", search);
-    try {
-      const rows = await backendGet<CustomerRow[]>(`/customers?${params.toString()}`);
-      setCustomers((items) => {
-        const next = reset ? [] : [...items];
-        const seen = new Set(next.map((item) => item.id));
-        for (const row of rows) {
-          if (!seen.has(row.id)) next.push(row);
-        }
-        return next;
-      });
-      setCustomerOffset(offset + rows.length);
-      setCustomersHasMore(rows.length === customerPageSize);
-    } catch {
-      if (reset) setCustomers([]);
-      setCustomersHasMore(false);
-    } finally {
-      setLoadingCustomers(false);
-    }
-  }, [customerOffset, customerQuery, customerType, customersHasMore, loadingCustomers, open, tariffBranchId]);
-
-  useEffect(() => {
-    if (!open || customerType !== "Registered" || !customerPopoverOpen) return;
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      if (!cancelled) void loadCustomers(true);
-    }, 250);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [customerPopoverOpen, customerQuery, customerType, open, tariffBranchId]);
-
   function handleCustomerTypeChange(value: string) {
     const type = value as "Guest" | "Registered";
     setCustomerType(type);
-    setSelectedCustomerId(null);
-    setCustomerQuery("");
-    setCustomers([]);
-    setCustomerOffset(0);
-    setCustomersHasMore(true);
-    setCustomerPopoverOpen(type === "Registered");
-    if (type === "Guest") {
-      setCustomerName("Guest");
-      setPhone("");
-    } else {
-      setCustomerName("");
-      setPhone("");
-    }
+    setPicked(null);
+    setPhone("");
+    setCustomerName(type === "Guest" ? "Guest" : "");
   }
 
-  function selectCustomer(customer: CustomerRow) {
-    setSelectedCustomerId(customer.id);
-    setCustomerName(customer.name);
-    setPhone(normalizeUzPhone(String(customer.phone ?? "")));
-    setCustomerQuery(`${customer.name}${customer.phone ? ` - ${formatUzPhone(String(customer.phone))}` : ""}`);
-    setCustomerPopoverOpen(false);
-  }
-
-  function handleCustomerScroll(event: React.UIEvent<HTMLDivElement>) {
-    const element = event.currentTarget;
-    const nearBottom = element.scrollTop + element.clientHeight >= element.scrollHeight - 24;
-    if (nearBottom) void loadCustomers(false);
+  function handleCustomerPick(customer: SelectedCustomer | null) {
+    setPicked(customer);
+    setCustomerName(customer?.name ?? "");
+    setPhone(customer?.phone ?? "");
   }
 
   function handleTariffChange(value: string) {
@@ -305,45 +209,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
           <div className="space-y-2">
             <Label htmlFor="start-customer-name">Customer name</Label>
             {customerType === "Registered" ? (
-              <div className="relative">
-                <Input
-                  id="start-customer-name"
-                  value={customerQuery}
-                  onFocus={() => setCustomerPopoverOpen(true)}
-                  onChange={(event) => {
-                    setCustomerQuery(event.target.value);
-                    setSelectedCustomerId(null);
-                    setCustomerName("");
-                    setPhone("");
-                    setCustomers([]);
-                    setCustomerOffset(0);
-                    setCustomersHasMore(true);
-                    setCustomerPopoverOpen(true);
-                  }}
-                  placeholder="Mijoz ismi yoki telefon..."
-                />
-                {customerPopoverOpen ? (
-                  <div
-                    className="absolute left-0 right-0 top-[calc(100%+8px)] z-[120] max-h-[min(16rem,42dvh)] min-w-0 overflow-auto rounded-xl border border-slate-700 bg-slate-950 p-1 shadow-2xl shadow-black/50 thin-scrollbar"
-                    onScroll={handleCustomerScroll}
-                  >
-                    {customers.map((customer) => (
-                      <button
-                        key={customer.id}
-                        type="button"
-                        className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${selectedCustomerId === customer.id ? "bg-sky-500 text-slate-950" : "hover:bg-slate-800"}`}
-                        onClick={() => selectCustomer(customer)}
-                      >
-                        <span className="block truncate font-bold">{customer.name}</span>
-                        <span className="block truncate text-xs opacity-75">{customer.phone ? formatUzPhone(String(customer.phone)) : "Telefon yo'q"} · Balans: {money(Number(customer.balance ?? 0))}</span>
-                      </button>
-                    ))}
-                    {loadingCustomers ? <ListSkeleton rows={4} /> : null}
-                    {!loadingCustomers && !customers.length ? <div className="px-3 py-2 text-sm font-semibold text-slate-500">Mijoz topilmadi</div> : null}
-                    {!loadingCustomers && customers.length > 0 && !customersHasMore ? <div className="px-3 py-2 text-xs font-semibold text-slate-600">Boshqa mijoz yo'q</div> : null}
-                  </div>
-                ) : null}
-              </div>
+              <CustomerSelect branchId={tariffBranchId} value={picked} onChange={handleCustomerPick} />
             ) : (
               <Input id="start-customer-name" value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
             )}
