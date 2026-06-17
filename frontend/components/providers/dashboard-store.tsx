@@ -10,6 +10,7 @@ import { CashTransaction, Shift } from "@/types/report";
 import { Branch } from "@/types/user";
 import { backendDate, backendDateTime, backendTime, localDate, localDateTimeWithOffset } from "@/lib/datetime";
 import { backendDelete, backendGet, backendPatch, backendPost, getBackendWsToken } from "@/server/api";
+import { confirmWithdrawalRequest, createWithdrawalRequest, fetchWithdrawalRequests, rejectWithdrawalRequest, WithdrawalRequest } from "@/lib/withdrawals-api";
 import {
   listRigs as fetchRigList,
   lockRig as lockAdminRig,
@@ -46,6 +47,13 @@ type DashboardStore = {
   selected?: Simulator;
   setSelectedId: (id: string | null) => void;
   revenue: number;
+  profit: number;
+  expenses: number;
+  shopSales: number;
+  withdrawalRequests: WithdrawalRequest[];
+  requestWithdrawal: (amount: number, note?: string) => Promise<void>;
+  confirmWithdrawal: (id: string) => Promise<void>;
+  rejectWithdrawal: (id: string) => Promise<void>;
   revenueEvents: RevenueEvent[];
   logs: LogEntry[];
   lockUnlockLogs: LockUnlockEntry[];
@@ -94,7 +102,7 @@ type DashboardStore = {
   updateQty: (id: string, qty: number) => void;
   clearOrder: () => void;
   payOrder: (attachTo?: string, paymentMethod?: string, customerId?: string, payment?: Partial<PaymentPayload>) => void;
-  openShift: (operator: string, shiftType: "Kunduzgi (09:00 - 18:00)" | "Tungi (18:01 - 09:00)", startingCash: number) => void;
+  openShift: (operator: string, shiftType: string, startingCash: number) => void;
   closeShift: (actualCash: number, cashWithdrawn: number, notes?: string) => void;
   addCashTransaction: (type: "income" | "expense", amount: number, source: string, method: string) => void;
   refreshRigs: () => void;
@@ -333,7 +341,7 @@ function mapRepair(row: Record<string, unknown>): RepairRequest {
 function mapShift(row: Record<string, unknown>, operator: string): Shift {
   const openedAt = String(row.opened_at ?? "");
   const closedAt = row.closed_at ? String(row.closed_at) : undefined;
-  const shiftType = String(row.shift_type ?? "") === "Tungi (18:01 - 09:00)" ? "Tungi (18:01 - 09:00)" : "Kunduzgi (09:00 - 18:00)";
+  const shiftType = String(row.shift_type ?? ""); // yorliq backenddagi qiymat (eski/yangi)
   return {
     id: String(row.id),
     operator: String(row.opened_by_name ?? operator),
@@ -417,6 +425,10 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
   const [revenueEvents, setRevenueEvents] = useState<RevenueEvent[]>([]);
   const [repairRequests, setRepairRequests] = useState<RepairRequest[]>([]);
   const [revenue, setRevenue] = useState(0);
+  const [profit, setProfit] = useState(0);
+  const [expenses, setExpenses] = useState(0);
+  const [shopSales, setShopSales] = useState(0);
+  const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>([]);
   const [order, setOrder] = useState<OrderItem[]>([]);
   const [inventory, setInventory] = useState<Product[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -430,6 +442,9 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
 
   const operator = data?.user?.name ?? "Admin";
   const role = data?.user?.role;
+  const myUserId = data?.user?.id ?? "";
+  // Oddiy admin (va dev_admin) faqat o'zi qilganni ko'radi; super admin butun filialni ko'radi.
+  const scopeToOwn = role === "admin";
   const allowedBranchIds = data?.user?.branchIds ?? [];
   const canUseAllBranches = role === "super_admin";
   const realBranches = branchList.filter((branch) => branch.id !== fallbackBranch.id);
@@ -511,7 +526,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       const productBranchId = dataBranchId === "all" ? branchSource[0]?.id ?? "all" : dataBranchId;
       const query = `branch_id=${encodeURIComponent(dataBranchId)}`;
       const productQuery = `branch_id=${encodeURIComponent(productBranchId)}`;
-      const [rigs, productRows, bookingRows, repairRows, logRows, shiftRows, saleRows, paymentRows] = await Promise.all([
+      const [rigs, productRows, bookingRows, repairRows, logRows, shiftRows, saleRows, paymentRows, withdrawalRows] = await Promise.all([
         fetchRigList(dataBranchId),
         backendGet<Array<Record<string, unknown>>>(`/cashier/products?${productQuery}`),
         backendGet<Array<Record<string, unknown>>>(`/bookings?${query}`),
@@ -520,6 +535,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         backendGet<Array<Record<string, unknown>>>(`/shifts?${query}`),
         backendGet<Array<Record<string, unknown>>>(`/cashier/sales?${query}`),
         backendGet<Array<Record<string, unknown>>>(`/payments?${query}`),
+        fetchWithdrawalRequests(dataBranchId),
       ]);
       const nextRepairs = repairRows.map(mapRepair);
       const nextSimulators = rigsToSimulators(rigs, branchSource).map((simulator) => {
@@ -534,10 +550,28 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       setRepairRequests(nextRepairs);
       setLogs(logRows.map(mapLog));
       setShifts(shiftRows.map((row) => mapShift(row, operator)));
-      setBarSales(saleRows.map((row) => mapSale(row, operator)));
-      setCashTransactions(paymentRows.map((row) => mapPayment(row, operator)));
-      setRevenue(paymentRows.reduce((sum, row) => sum + numberValue(row.amount), 0));
-      setRevenueEvents(paymentRows.map((row) => {
+      // Per-admin: oddiy admin (va dev_admin) faqat o'zi qilgan to'lov/savdo/выemka'ni ko'radi;
+      // super admin (va dev_super_admin) — barcha filiallar bo'yicha hammasini.
+      const myPaymentRows = scopeToOwn ? paymentRows.filter((row) => String(row.paid_by_admin_id ?? "") === myUserId) : paymentRows;
+      const mySaleRows = scopeToOwn ? saleRows.filter((row) => String(row.sold_by ?? "") === myUserId) : saleRows;
+      const today = localDate();
+
+      setBarSales(mySaleRows.map((row) => mapSale(row, operator)));
+      setCashTransactions(myPaymentRows.map((row) => mapPayment(row, operator)));
+      setRevenue(myPaymentRows.reduce((sum, row) => sum + numberValue(row.amount), 0));
+      setProfit(mySaleRows.filter((row) => String(row.payment_status) === "paid").reduce((sum, row) => sum + numberValue(row.profit), 0));
+      setShopSales(
+        mySaleRows
+          .filter((row) => String(row.payment_status) === "paid" && shortDate(String(row.created_at ?? "")) === today)
+          .reduce((sum, row) => sum + numberValue(row.total), 0),
+      );
+      setWithdrawalRequests(withdrawalRows);
+      setExpenses(
+        withdrawalRows
+          .filter((w) => w.status === "confirmed" && (!scopeToOwn || w.adminId === myUserId))
+          .reduce((sum, w) => sum + w.amount, 0),
+      );
+      setRevenueEvents(myPaymentRows.map((row) => {
         const created = String(row.paid_at ?? row.created_at ?? "");
         return {
           id: String(row.id),
@@ -616,6 +650,8 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       "booking_created",
       "shift_opened",
       "shift_closed",
+      "withdrawal_requested",
+      "withdrawal_resolved",
       "log_created",
     ]);
 
@@ -719,6 +755,10 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     selected: allSimulators.find((item) => item.id === selectedId && visibleBranchIds.includes(item.branchId)),
     setSelectedId,
     revenue,
+    profit,
+    expenses,
+    shopSales,
+    withdrawalRequests: withdrawalRequests.filter((w) => !w.branchId || visibleBranchIds.includes(w.branchId)),
     revenueEvents: revenueEvents.filter((event) => !event.branchId || visibleBranchIds.includes(event.branchId)),
     logs,
     lockUnlockLogs,
@@ -1301,6 +1341,19 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         appendLog(`expense recorded: ${source} - ${amount.toLocaleString()}`, undefined, method);
       }
     },
+    async requestWithdrawal(amount, note) {
+      const branchId = effectiveBranchId !== "all" && effectiveBranchId !== fallbackBranch.id ? effectiveBranchId : undefined;
+      await createWithdrawalRequest({ ...(branchId ? { branch_id: branchId } : {}), amount, ...(note ? { note } : {}) });
+      await refreshBackendData();
+    },
+    async confirmWithdrawal(id) {
+      await confirmWithdrawalRequest(id);
+      await refreshBackendData();
+    },
+    async rejectWithdrawal(id) {
+      await rejectWithdrawalRequest(id);
+      await refreshBackendData();
+    },
     refreshRigs() {
       void refreshBackendData();
     },
@@ -1343,6 +1396,10 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     period,
     repairRequests,
     revenue,
+    profit,
+    expenses,
+    shopSales,
+    withdrawalRequests,
     revenueEvents,
     role,
     scopedRepairRequests,

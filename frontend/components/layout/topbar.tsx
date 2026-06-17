@@ -17,6 +17,18 @@ import { money } from "@/lib/format";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { CreateBranchDialog } from "@/components/layout/create-branch-dialog";
 import { ChangePasswordDialog } from "@/components/shared/change-password-dialog";
+import { WithdrawalCenter } from "@/components/shift/withdrawal-center";
+
+// Smena turlari: Kunduzgi 10:00–19:00, Tungi 19:00–03:00. Tanlov yorliqlari (admin o'zgartira oladi).
+const SHIFT_DAY = "Kunduzgi (10:00 - 19:00)";
+const SHIFT_NIGHT = "Tungi (19:00 - 03:00)";
+type ShiftTypeOption = typeof SHIFT_DAY | typeof SHIFT_NIGHT;
+
+// Joriy vaqt bo'yicha smena turini taklif qiladi: 10:00–19:00 oralig'i kunduzgi, qolgani tungi.
+function currentShiftType(): ShiftTypeOption {
+  const hour = new Date().getHours();
+  return hour >= 10 && hour < 19 ? SHIFT_DAY : SHIFT_NIGHT;
+}
 
 export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start" | "addTime" | "payment" | "stop") => void; onOpenSidebar: () => void }) {
   const { data } = useSession();
@@ -41,7 +53,7 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [branchSelectOpen, setBranchSelectOpen] = useState(false);
   const [startingCash, setStartingCash] = useState("");
-  const [shiftType, setShiftType] = useState<"Kunduzgi (09:00 - 18:00)" | "Tungi (18:01 - 09:00)">("Kunduzgi (09:00 - 18:00)");
+  const [shiftType, setShiftType] = useState<ShiftTypeOption>(SHIFT_DAY);
   const [actualCash, setActualCash] = useState("");
   const [cashWithdrawn, setCashWithdrawn] = useState("");
   const [closeNotes, setCloseNotes] = useState("");
@@ -72,6 +84,7 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
   useEffect(() => {
     if (shiftModalOpen && !activeShift) {
       setStartingCash(previousRemaining ? String(previousRemaining) : "");
+      setShiftType(currentShiftType()); // joriy vaqt bo'yicha avto-tanlov
     }
   }, [shiftModalOpen, activeShift, previousRemaining]);
 
@@ -125,6 +138,7 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
               })}
             </div>
           </TooltipProvider>
+          <WithdrawalCenter />
           <Button className="h-9 w-9 shrink-0" size="icon" variant="ghost"><FiMoon /><span className="sr-only"><FiSun /></span></Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -315,8 +329,8 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
                 <Select value={shiftType} onValueChange={(val) => setShiftType(val as any)}>
                   <SelectTrigger className="bg-slate-950 border-slate-800"><SelectValue /></SelectTrigger>
                   <SelectContent className="bg-slate-900 border-slate-800 text-slate-100">
-                    <SelectItem value="Kunduzgi (09:00 - 18:00)">Kunduzgi (09:00 - 18:00)</SelectItem>
-                    <SelectItem value="Tungi (18:01 - 09:00)">Tungi (18:01 - 09:00)</SelectItem>
+                    <SelectItem value={SHIFT_DAY}>{SHIFT_DAY}</SelectItem>
+                    <SelectItem value={SHIFT_NIGHT}>{SHIFT_NIGHT}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

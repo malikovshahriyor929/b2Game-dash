@@ -1,6 +1,6 @@
 import { Request } from "express";
 import { prisma } from "../../db/prisma";
-import { baseRole, isDevRole } from "../../types/auth.types";
+import { baseRole, canSeeDev } from "../../types/auth.types";
 
 const MAX_LIMIT = 200;
 const DEFAULT_LIMIT = 50;
@@ -24,8 +24,9 @@ export function list(req: Request) {
       : strParam(q.branch_id);
   if (branch) conds.push(`l.branch_id = ${add(branch)}::uuid`);
 
-  // Developer activity (dev_admin / dev_super_admin) is hidden from regular viewers.
-  if (!isDevRole(req.user?.role)) conds.push(`(l.actor_role is null or l.actor_role not in ('dev_admin','dev_super_admin'))`);
+  // Developer activity (dev_admin / dev_super_admin) is hidden from plain branch admins;
+  // super admins and developers see everything.
+  if (!canSeeDev(req.user?.role)) conds.push(`(l.actor_role is null or l.actor_role not in ('dev_admin','dev_super_admin'))`);
 
   // Action type — substring match so category values ("payment", "session") hit
   // "payment_received", "start_session", etc. Also matches entity_type.

@@ -50,9 +50,9 @@ const roleLabel = (role: AdminRole) =>
 export default function AdminsPage() {
   const { data: session } = useSession();
   const confirm = useConfirm();
+  // Super admins (incl. dev_super_admin) reach this page and manage every account,
+  // including the hidden developer roles.
   const isSuper = session?.user?.role === "super_admin";
-  // Only a dev sees and can manage the hidden developer accounts.
-  const isDev = Boolean(session?.user?.isDev);
 
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [branches, setBranches] = useState<AdminBranch[]>([]);
@@ -266,8 +266,8 @@ export default function AdminsPage() {
                 <SelectContent>
                   <SelectItem value="admin">Admin</SelectItem>
                   <SelectItem value="super_admin">Super admin</SelectItem>
-                  {isDev ? <SelectItem value="dev_admin">Dev admin (yashirin)</SelectItem> : null}
-                  {isDev ? <SelectItem value="dev_super_admin">Dev super admin (yashirin)</SelectItem> : null}
+                  <SelectItem value="dev_admin">Dev admin (yashirin)</SelectItem>
+                  <SelectItem value="dev_super_admin">Dev super admin (yashirin)</SelectItem>
                 </SelectContent>
               </Select>
             </div>

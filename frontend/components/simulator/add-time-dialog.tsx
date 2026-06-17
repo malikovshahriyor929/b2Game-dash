@@ -21,11 +21,19 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
   const tariffs = useBackendTariffs(simulator?.branchId, open);
   const presets = useMemo(() => {
     const zone = simulator?.zone === "VIP" ? "vip" : "main";
+    const seen = new Set<string>();
     return tariffs
       .filter((item) => (item.simulatorZone === zone || item.simulatorZone === "all") && item.type !== "night")
-      .map((item) => ({ min: item.durationMinutes, price: item.price, bonus: item.bonus, name: item.name }));
+      .map((item) => ({ id: item.id, min: item.durationMinutes, price: item.price, bonus: item.bonus, name: item.name }))
+      // Ko'rinishi bir xil (daqiqa + narx + bonus) kartalarni bir martadan ko'rsatamiz.
+      .filter((preset) => {
+        const key = `${preset.min}-${preset.price}-${preset.bonus ?? ""}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
   }, [simulator?.zone, tariffs]);
-  const fallbackPreset = useMemo(() => presets[0] ?? { min: 60, price: 0, bonus: undefined, name: "" }, [presets]);
+  const fallbackPreset = useMemo(() => presets[0] ?? { id: "", min: 60, price: 0, bonus: undefined, name: "" }, [presets]);
   const [selectedPreset, setSelectedPreset] = useState(fallbackPreset);
   const [customMin, setCustomMin] = useState("");
   const [customPrice, setCustomPrice] = useState("");
@@ -75,12 +83,12 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
         <div className="grid gap-3 sm:grid-cols-2">
           {presets.map((preset) => (
             <Button
-              key={preset.min}
+              key={preset.id}
               type="button"
               variant="secondary"
               className={cn(
                 "h-auto min-h-16 justify-between rounded-xl border border-transparent px-4 py-4 text-left",
-                !isCustom && selectedPreset.min === preset.min && "border-sky-400 bg-sky-500/15 text-sky-100 ring-2 ring-sky-500/20",
+                !isCustom && selectedPreset.id === preset.id && "border-sky-400 bg-sky-500/15 text-sky-100 ring-2 ring-sky-500/20",
               )}
               onClick={() => {
                 setSelectedPreset(preset);

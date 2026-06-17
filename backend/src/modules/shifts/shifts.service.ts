@@ -36,8 +36,18 @@ async function computeShiftMoney(shiftId: string) {
   return { cash, card, bank, balance, total: cash + card + bank };
 }
 
+// Smena davomida tasdiqlangan naqd выemka (inkassatsiya) yig'indisi — kassadan olib chiqilgan.
+async function confirmedWithdrawnCash(shiftId: string) {
+  const rows = await prisma.$queryRawUnsafe<Array<{ total: string }>>(
+    "select coalesce(sum(amount),0) as total from cash_withdrawal_requests where shift_id=$1::uuid and status='confirmed'",
+    shiftId,
+  );
+  return Number(rows[0]?.total ?? 0);
+}
+
 // Smena qatoriga jonli hisoblangan pul ko'rsatkichlarini qo'shadi (ochiq smena uchun).
-function decorateOpenShift(shift: any, money: { cash: number; card: number; bank: number; balance: number; total: number }) {
+// withdrawnCash — smena davomida tasdiqlangan выemka (kassadan olib chiqilgan naqd).
+function decorateOpenShift(shift: any, money: { cash: number; card: number; bank: number; balance: number; total: number }, withdrawnCash = 0) {
   const startingCash = Number(shift.starting_cash ?? 0);
   return {
     ...shift,
@@ -46,7 +56,8 @@ function decorateOpenShift(shift: any, money: { cash: number; card: number; bank
     qr_total: money.bank,
     balance_sales: money.balance,
     total_revenue: money.total,
-    expected_cash: startingCash + money.cash, // kassada bo'lishi kerak bo'lgan naqd
+    cash_withdrawn: withdrawnCash, // smena ichida olib chiqilgan naqd (выemka)
+    expected_cash: startingCash + money.cash - withdrawnCash, // kassada bo'lishi kerak bo'lgan naqd
   };
 }
 
@@ -66,7 +77,7 @@ export async function list(req: Request) {
   for (const row of rows) {
     if (row.status === "open") {
       const money = await computeShiftMoney(row.id);
-      result.push(decorateOpenShift(row, money));
+      result.push(decorateOpenShift(row, money, await confirmedWithdrawnCash(row.id)));
     } else {
       result.push(row);
     }
@@ -80,7 +91,7 @@ export async function current(req: Request) {
   const shift = rows[0];
   if (!shift) return null;
   const money = await computeShiftMoney(shift.id);
-  return decorateOpenShift(shift, money);
+  return decorateOpenShift(shift, money, await confirmedWithdrawnCash(shift.id));
 }
 
 // Yangi smena ochishdan oldingi ma'lumot: oldingi smena qoldirgan naqd (carry-over).
@@ -127,7 +138,8 @@ export async function close(req: Request) {
   const money = await computeShiftMoney(shift.id);
 
   const startingCash = Number(shift.starting_cash ?? 0);
-  const expectedCash = startingCash + money.cash; // kassada bo'lishi kerak bo'lgan naqd
+  const midShiftWithdrawn = await confirmedWithdrawnCash(shift.id); // smena ichida olib chiqilgan naqd (выemka)
+  const expectedCash = startingCash + money.cash - midShiftWithdrawn; // kassada bo'lishi kerak bo'lgan naqd
   const actualCash = req.body.actual_cash == null ? expectedCash : Number(req.body.actual_cash);
   const cashWithdrawn = Math.max(0, Number(req.body.cash_withdrawn ?? 0));
   if (cashWithdrawn > expectedCash) throw new ApiError(400, "Cash withdrawn exceeds expected cash");
@@ -229,7 +241,113 @@ export async function get(req: Request) {
   assertBranchAccess(req, row.branch_id);
   if (row.status === "open") {
     const money = await computeShiftMoney(row.id);
-    return decorateOpenShift(row, money);
+    return decorateOpenShift(row, money, await confirmedWithdrawnCash(row.id));
   }
   return row;
+}
+
+// ─── Naqd выemka (inkassatsiya) so'rov + tasdiqlash ───────────────────────────
+// Boshliq (super_admin) yoki smenadagi admin so'rov yuboradi; qarama-qarshi tomon
+// tasdiqlaydi. Faqat tasdiqlangan so'rov adminning kutilgan naqdini kamaytiradi.
+
+export async function listWithdrawalRequests(req: Request) {
+  const branch = baseRole(req.user?.role) === "admin"
+    ? (req.user?.branch_id ?? null)
+    : req.query.branch_id === "all" ? null : req.query.branch_id ?? null;
+  return prisma.$queryRawUnsafe(
+    `select w.*,
+       ib.name as initiated_by_name,
+       ad.name as admin_name,
+       cb.name as confirmed_by_name
+     from cash_withdrawal_requests w
+     left join users ib on ib.id = w.initiated_by
+     left join users ad on ad.id = w.admin_id
+     left join users cb on cb.id = w.confirmed_by
+     where ($1::uuid is null or w.branch_id=$1::uuid)
+     order by w.created_at desc limit 200`,
+    branch,
+  );
+}
+
+export async function createWithdrawalRequest(req: Request) {
+  const branch = branchId(req);
+  if (!branch) throw new ApiError(400, "branch_id is required");
+  assertBranchAccess(req, branch);
+  const amount = Math.round(Number(req.body.amount ?? 0));
+  if (!(amount > 0)) throw new ApiError(400, "amount must be positive");
+
+  const shift = (await prisma.$queryRawUnsafe<any[]>("select * from shifts where branch_id=$1::uuid and status='open' limit 1", branch))[0];
+  if (!shift) throw new ApiError(409, "No open shift for this branch");
+
+  // Kassada hozir bor naqd: boshlang'ich + naqd savdo − allaqachon olib chiqilgan.
+  const money = await computeShiftMoney(shift.id);
+  const already = await confirmedWithdrawnCash(shift.id);
+  const available = Number(shift.starting_cash ?? 0) + money.cash - already;
+  if (amount > available) throw new ApiError(400, "Amount exceeds cash in register");
+
+  const initiatorRole = baseRole(req.user?.role); // 'admin' | 'super_admin'
+  const row = (
+    await prisma.$queryRawUnsafe<any[]>(
+      `insert into cash_withdrawal_requests(branch_id,shift_id,admin_id,amount,initiated_by,initiator_role,status,note)
+       values($1::uuid,$2::uuid,$3::uuid,$4,$5::uuid,$6,'pending',$7) returning *`,
+      branch,
+      shift.id,
+      shift.opened_by, // выemka shu smenadagi admin kassasidan
+      amount,
+      req.user!.user_id,
+      initiatorRole,
+      req.body.note ?? null,
+    )
+  )[0];
+
+  await auditLog({ actor: req.user, branch_id: branch, action_type: "withdrawal_requested", entity_type: "cash_withdrawal", entity_id: row.id, amount, details: { initiator_role: initiatorRole } });
+  broadcastDashboard("withdrawal_requested", row, branch);
+  return row;
+}
+
+export async function confirmWithdrawalRequest(req: Request) {
+  const row = (await prisma.$queryRawUnsafe<any[]>("select * from cash_withdrawal_requests where id=$1::uuid", req.params.id))[0];
+  if (!row) throw new ApiError(404, "Request not found");
+  assertBranchAccess(req, row.branch_id);
+  if (row.status !== "pending") throw new ApiError(409, "Request already resolved");
+  // Tasdiqlovchi — so'rov yuboruvchining qarama-qarshi tomoni.
+  if (baseRole(req.user?.role) === row.initiator_role) throw new ApiError(403, "Initiator cannot confirm own request");
+
+  // Tasdiqlash paytida ham summa kassadagi naqddan oshmasligini tekshiramiz.
+  const shift = row.shift_id ? (await prisma.$queryRawUnsafe<any[]>("select * from shifts where id=$1::uuid", row.shift_id))[0] : null;
+  if (shift && shift.status === "open") {
+    const money = await computeShiftMoney(shift.id);
+    const already = await confirmedWithdrawnCash(shift.id);
+    const available = Number(shift.starting_cash ?? 0) + money.cash - already;
+    if (Number(row.amount) > available) throw new ApiError(400, "Amount exceeds cash in register");
+  }
+
+  const updated = (
+    await prisma.$queryRawUnsafe<any[]>(
+      "update cash_withdrawal_requests set status='confirmed', confirmed_by=$1::uuid, resolved_at=now() where id=$2::uuid returning *",
+      req.user!.user_id,
+      req.params.id,
+    )
+  )[0];
+  await auditLog({ actor: req.user, branch_id: row.branch_id, action_type: "withdrawal_confirmed", entity_type: "cash_withdrawal", entity_id: row.id, amount: Number(row.amount) });
+  broadcastDashboard("withdrawal_resolved", updated, row.branch_id);
+  return updated;
+}
+
+export async function rejectWithdrawalRequest(req: Request) {
+  const row = (await prisma.$queryRawUnsafe<any[]>("select * from cash_withdrawal_requests where id=$1::uuid", req.params.id))[0];
+  if (!row) throw new ApiError(404, "Request not found");
+  assertBranchAccess(req, row.branch_id);
+  if (row.status !== "pending") throw new ApiError(409, "Request already resolved");
+
+  const updated = (
+    await prisma.$queryRawUnsafe<any[]>(
+      "update cash_withdrawal_requests set status='rejected', confirmed_by=$1::uuid, resolved_at=now() where id=$2::uuid returning *",
+      req.user!.user_id,
+      req.params.id,
+    )
+  )[0];
+  await auditLog({ actor: req.user, branch_id: row.branch_id, action_type: "withdrawal_rejected", entity_type: "cash_withdrawal", entity_id: row.id, amount: Number(row.amount) });
+  broadcastDashboard("withdrawal_resolved", updated, row.branch_id);
+  return updated;
 }
