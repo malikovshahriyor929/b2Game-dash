@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { money } from "@/lib/format";
 import { ProductIcon, productIcons } from "@/lib/product-icons";
@@ -32,6 +33,7 @@ function normalizeScanCode(value: string) {
 
 export function CashierTabs() {
   const { loading, products, addProduct, addProductByQr, createProduct, updateProduct, deleteProduct, recordCashierTransaction, simulators, pay, addCashTransaction } = useDashboardStore();
+  const confirm = useConfirm();
   const paymentMethods = usePaymentMethods();
   const [activeTab, setActiveTab] = useState("shop");
   const [category, setCategory] = useState("Barchasi");
@@ -228,7 +230,14 @@ export function CashierTabs() {
     resetProductForm();
   }
 
-  function removeProduct(product: Product) {
+  async function removeProduct(product: Product) {
+    const ok = await confirm({
+      title: "Mahsulot o'chirilsinmi?",
+      description: `"${product.name}" mahsuloti o'chiriladi.`,
+      confirmLabel: "O'chirish",
+      tone: "destructive",
+    });
+    if (!ok) return;
     deleteProduct(product.id);
     setScanMessage(`${product.name} o'chirildi.`);
     if (editingProductId === product.id) resetProductForm();

@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CardGridSkeleton } from "@/components/ui/skeletons";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { PageHeader } from "@/components/shared/page-header";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { money } from "@/lib/format";
@@ -190,6 +191,7 @@ const emptyForm = { name: "", type: "time", simulatorZone: "main", duration: "60
 
 export default function TariffsPage() {
   const { selectedBranchId, branches, products } = useDashboardStore();
+  const confirm = useConfirm();
   const [tariffs, setTariffs] = useState<BackendTariff[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -266,8 +268,14 @@ export default function TariffsPage() {
     setOpen(true);
   }
 
-  function remove(item: BackendTariff) {
-    if (!window.confirm(`"${item.name}" tarifini o'chirishni tasdiqlaysizmi?`)) return;
+  async function remove(item: BackendTariff) {
+    const ok = await confirm({
+      title: "Tarif o'chirilsinmi?",
+      description: `"${item.name}" tarifi o'chiriladi. Bu amalni qaytarib bo'lmaydi.`,
+      confirmLabel: "O'chirish",
+      tone: "destructive",
+    });
+    if (!ok) return;
     void backendDelete(`/tariffs/${item.id}`).then(refreshTariffs).catch(() => undefined);
   }
 

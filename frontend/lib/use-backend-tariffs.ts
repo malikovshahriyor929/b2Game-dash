@@ -19,7 +19,8 @@ export type BackendTariff = {
   bonus?: string;
   isWeekend?: boolean;
   isEvening?: boolean;
-  pricePeriod?: "weekday" | "evening" | "weekend";
+  isHappyHour?: boolean;
+  pricePeriod?: "weekday" | "evening" | "weekend" | "happy_hour";
 };
 
 export function mapTariffRow(row: Record<string, unknown>): BackendTariff {
@@ -40,6 +41,7 @@ export function mapTariffRow(row: Record<string, unknown>): BackendTariff {
     bonus: row.bonus == null ? undefined : String(row.bonus),
     isWeekend: Boolean(row.is_weekend),
     isEvening: Boolean(row.is_evening),
+    isHappyHour: Boolean(row.is_happy_hour),
     pricePeriod: row.price_period == null ? undefined : String(row.price_period) as BackendTariff["pricePeriod"],
   };
 }
@@ -55,6 +57,7 @@ export function dedupeTariffs(tariffs: BackendTariff[]) {
 }
 
 export function tariffPricePeriodLabel(item: BackendTariff) {
+  if (item.isHappyHour || item.pricePeriod === "happy_hour") return "Skidka · Dush–Pay 10:00–18:00";
   if (item.pricePeriod === "weekend" || item.isWeekend) return "Shanba-Yakshanba";
   return "Dushanba-Juma";
 }
@@ -63,6 +66,10 @@ export function formatTariffOptionLabel(item: BackendTariff) {
   const bonus = item.bonus ? ` + ${item.bonus}` : "";
   // VIP tariffs are open/hourly — show the rate per hour.
   const suffix = item.type.toLowerCase() === "vip" ? "/soat" : "";
+  // Happy hour: chegirma narxini ko'rsatamiz (eski narx ustidan).
+  if (item.isHappyHour) {
+    return `${item.name} — ${money(item.price)}${suffix} (skidka)${bonus}`;
+  }
   if (item.weekdayPrice != null && item.weekendPrice != null && item.weekdayPrice !== item.weekendPrice) {
     return `${item.name} — ${money(item.weekdayPrice)}${suffix} / ${money(item.weekendPrice)}${suffix}${bonus}`;
   }

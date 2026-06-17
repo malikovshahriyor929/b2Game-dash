@@ -10,11 +10,13 @@ import { money, seconds } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { usePaymentMethods } from "@/lib/use-payment-methods";
 import { useBackendTariffs } from "@/lib/use-backend-tariffs";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { Simulator } from "@/types/simulator";
 
 export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator }) {
   const { addTime } = useDashboardStore();
+  const confirm = useConfirm();
   const paymentMethods = usePaymentMethods(simulator?.branchId, open);
   const tariffs = useBackendTariffs(simulator?.branchId, open);
   const presets = useMemo(() => {
@@ -49,8 +51,15 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
     setMethod("Karta");
   }, [fallbackPreset, open, simulator?.id]);
 
-  function submit() {
+  async function submit() {
     if (!canSubmit || !simulator) return;
+    const ok = await confirm({
+      title: "Vaqt qo'shilsinmi?",
+      description: `${simulator.name} — ${selectedMinutes} min · ${money(selectedAmount)}`,
+      confirmLabel: "Qo'shish",
+      tone: "default",
+    });
+    if (!ok) return;
     addTime(simulator.id, selectedMinutes, selectedAmount, method);
     onOpenChange(false);
   }

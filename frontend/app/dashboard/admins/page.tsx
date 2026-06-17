@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCardsSkeleton, TableSkeleton } from "@/components/ui/skeletons";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   AdminBranch,
   AdminUser,
@@ -41,6 +42,7 @@ const emptyForm: FormState = { name: "", email: "", password: "", role: "admin",
 
 export default function AdminsPage() {
   const { data: session } = useSession();
+  const confirm = useConfirm();
   const isSuper = session?.user?.role === "super_admin";
 
   const [admins, setAdmins] = useState<AdminUser[]>([]);
@@ -131,7 +133,13 @@ export default function AdminsPage() {
 
   async function remove(admin: AdminUser) {
     if (admin.id === session?.user?.id) return toast.error("O'zingizni o'chira olmaysiz");
-    if (!window.confirm(`${admin.name} o'chirilsinmi?`)) return;
+    const ok = await confirm({
+      title: "Admin o'chirilsinmi?",
+      description: `${admin.name} o'chiriladi. Bu amalni qaytarib bo'lmaydi.`,
+      confirmLabel: "O'chirish",
+      tone: "destructive",
+    });
+    if (!ok) return;
     try {
       await deleteAdmin(admin.id);
       toast.success("O'chirildi");

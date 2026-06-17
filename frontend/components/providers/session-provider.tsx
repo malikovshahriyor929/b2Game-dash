@@ -6,6 +6,7 @@ import { SessionProvider as NextAuthSessionProvider, signOut } from "next-auth/r
 import toast, { Toaster } from "react-hot-toast";
 import { isAxiosError } from "axios";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import { appAxiosInstance, axiosInstance, axiosMessage } from "@/server/api";
 
 export function SessionProvider({ children, session }: { children: React.ReactNode; session: Session | null }) {
@@ -46,7 +47,9 @@ export function SessionProvider({ children, session }: { children: React.ReactNo
           error: { iconTheme: { primary: "#ef4444", secondary: "#0f172a" } },
         }}
       />
-      <TooltipProvider delayDuration={150}>{children}</TooltipProvider>
+      <TooltipProvider delayDuration={150}>
+        <ConfirmProvider>{children}</ConfirmProvider>
+      </TooltipProvider>
     </NextAuthSessionProvider>
   );
 }

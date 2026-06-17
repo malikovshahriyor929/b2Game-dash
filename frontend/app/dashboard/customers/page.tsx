@@ -6,6 +6,7 @@ import { FiCalendar, FiChevronLeft, FiChevronRight, FiEdit2, FiEye, FiPlus, FiSe
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -219,6 +220,7 @@ function DatePicker({ value, onChange }: { value: string; onChange: (value: stri
 
 export default function CustomersPage() {
   const { data: session } = useSession();
+  const confirm = useConfirm();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(true);
   const [branchId, setBranchId] = useState("");
@@ -355,10 +357,18 @@ export default function CustomersPage() {
     resetForm();
   }
 
-  function removeCustomer(customer: Customer) {
+  async function removeCustomer(customer: Customer, closeProfile = false) {
+    const ok = await confirm({
+      title: "Mijoz o'chirilsinmi?",
+      description: `${customer.name} o'chiriladi. Bu amalni qaytarib bo'lmaydi.`,
+      confirmLabel: "O'chirish",
+      tone: "destructive",
+    });
+    if (!ok) return;
     void backendDelete(`/customers/${customer.id}`).then(refreshCustomers).catch(() => undefined);
     setCustomers((items) => items.filter((item) => item.id !== customer.id));
     if (selectedCustomer?.id === customer.id) setSelectedCustomer(null);
+    if (closeProfile) setProfileModalOpen(false);
   }
 
   return (
@@ -558,7 +568,7 @@ export default function CustomersPage() {
               </div>
               <div className="flex justify-end gap-2">
                 <Button variant="secondary" onClick={() => openEdit(selectedCustomer)}><FiEdit2 /> Edit profile</Button>
-                <Button variant="destructive" onClick={() => { removeCustomer(selectedCustomer); setProfileModalOpen(false); }}><FiTrash2 /> Delete</Button>
+                <Button variant="destructive" onClick={() => removeCustomer(selectedCustomer, true)}><FiTrash2 /> Delete</Button>
               </div>
             </div>
           ) : null}

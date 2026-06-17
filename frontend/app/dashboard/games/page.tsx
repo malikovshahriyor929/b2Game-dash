@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/shared/page-header";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { backendGet, backendPatch } from "@/server/api";
 
 type GameStatus = "installed" | "ready" | "updating" | "disabled";
@@ -68,6 +69,7 @@ function GameImage({ src, name, className = "" }: { src: string; name: string; c
 }
 
 export default function GamesPage() {
+  const confirm = useConfirm();
   const [games, setGames] = useState<Game[]>([]);
   const [query, setQuery] = useState("");
   const [zoneFilter, setZoneFilter] = useState<"all" | GameZone>("all");
@@ -131,8 +133,15 @@ export default function GamesPage() {
     setForm(emptyForm);
   }
 
-  function removeGame(id: string) {
-    saveGames(games.filter((game) => game.id !== id));
+  async function removeGame(game: Game) {
+    const ok = await confirm({
+      title: "O'yin o'chirilsinmi?",
+      description: `"${game.name}" o'yini ro'yxatdan o'chiriladi.`,
+      confirmLabel: "O'chirish",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    saveGames(games.filter((item) => item.id !== game.id));
   }
 
   return (
@@ -201,7 +210,7 @@ export default function GamesPage() {
                 </div>
                 <div className="absolute right-3 top-3 flex gap-2 opacity-100 transition md:opacity-0 md:group-hover:opacity-100">
                   <Button size="icon" variant="secondary" aria-label={`Edit ${game.name}`} onClick={() => openEdit(game)}><FiEdit2 /></Button>
-                  <Button size="icon" variant="destructive" aria-label={`Delete ${game.name}`} onClick={() => removeGame(game.id)}><FiTrash2 /></Button>
+                  <Button size="icon" variant="destructive" aria-label={`Delete ${game.name}`} onClick={() => removeGame(game)}><FiTrash2 /></Button>
                 </div>
               </div>
               <div className="space-y-4 p-4">

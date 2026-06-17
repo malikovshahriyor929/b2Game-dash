@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { FiCheckCircle, FiClock, FiCreditCard, FiLock, FiPlay, FiPower, FiTool, FiXCircle } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -23,7 +24,19 @@ function simulatorKind(simulator: Simulator) {
 
 export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator; onAction: (action: "start" | "addTime" | "payment" | "stop") => void }) {
   const { approveRepair, askRepairDetails, confirmFixed, rejectFix, rejectRepair, repairRequests, startFixing, markFixed, toggleLock, notifyRig, pushRigUpdate, removeOfflineRig } = useDashboardStore();
+  const confirm = useConfirm();
   const { data } = useSession();
+
+  async function confirmRemoveOfflineRig() {
+    if (!simulator) return;
+    const ok = await confirm({
+      title: "Offline rig o'chirilsinmi?",
+      description: `${simulator.name} ro'yxatdan olib tashlanadi.`,
+      confirmLabel: "Olib tashlash",
+      tone: "destructive",
+    });
+    if (ok) removeOfflineRig(simulator.id);
+  }
   const [fixOpen, setFixOpen] = useState(false);
   if (!simulator) return null;
   const role = data?.user?.role;
@@ -125,7 +138,7 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
             <div className="grid gap-2 sm:grid-cols-2">
               {simulator.rigId && simulator.rigOnline ? <Button variant="secondary" onClick={() => notifyRig(simulator.id, "Hello")}><FiClock /> Notify</Button> : null}
               {simulator.rigId && simulator.rigOnline ? <Button variant="secondary" onClick={() => pushRigUpdate(simulator.id)}><FiTool /> Push update</Button> : null}
-              {simulator.rigId && !simulator.rigOnline ? <Button variant="destructive" onClick={() => removeOfflineRig(simulator.id)}><FiXCircle /> Remove offline rig</Button> : null}
+              {simulator.rigId && !simulator.rigOnline ? <Button variant="destructive" onClick={confirmRemoveOfflineRig}><FiXCircle /> Remove offline rig</Button> : null}
             </div>
           </div>
         ) : null}

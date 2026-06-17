@@ -11,6 +11,7 @@ import { money } from "@/lib/format";
 import { formatTariffOptionLabel, tariffPricePeriodLabel, useBackendTariffs } from "@/lib/use-backend-tariffs";
 import { usePaymentMethods } from "@/lib/use-payment-methods";
 import { useStartSessionOptions } from "@/lib/use-start-session-options";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { backendGet } from "@/server/api";
 import { Simulator } from "@/types/simulator";
@@ -64,6 +65,7 @@ function localPhoneDigits(value: string) {
 
 export function StartSessionDialog({ open, onOpenChange, simulator, prefill, fulfillBookingId }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator; prefill?: { customerName?: string; phone?: string; tariffName?: string; prepayment?: number }; fulfillBookingId?: string }) {
   const { startSession, selectedBranchId, bookings } = useDashboardStore();
+  const confirm = useConfirm();
   const tariffBranchId = simulator?.branchId ?? (selectedBranchId === "all" ? undefined : selectedBranchId);
   const tariffs = useBackendTariffs(tariffBranchId, open);
   const paymentMethods = usePaymentMethods(tariffBranchId, open);
@@ -236,8 +238,18 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
     if (item) setTariffId(item.id);
   }
 
-  function submit() {
+  async function submit() {
     if (!canSubmit || !simulator) return;
+    const amountLine = isOpenTariff
+      ? `Soatlik: ${money(hourlyRate)}/soat`
+      : `To'lov: ${money(totalAmount)}`;
+    const ok = await confirm({
+      title: "Sessiya boshlansinmi?",
+      description: `${simulator.name} — ${customerName.trim()} · ${selectedTariff.name} · ${amountLine}`,
+      confirmLabel: "Boshlash",
+      tone: "success",
+    });
+    if (!ok) return;
     startSession(simulator.id, {
       customerName: customerName.trim(),
       phone,
@@ -367,6 +379,11 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
               isOpenTariff ? (
                 <p className="text-xs font-semibold text-amber-300">
                   Soatlik (VIP): {money(hourlyRate)}/soat — vaqt bo'yicha, to'xtatishda hisoblanadi
+                </p>
+              ) : selectedTariff.isHappyHour ? (
+                <p className="text-xs font-semibold text-emerald-300">
+                  Bugun to'lov: <span className="line-through text-slate-500">{money(selectedTariff.weekdayPrice ?? selectedTariff.price)}</span>{" "}
+                  {money(selectedTariff.price)} <span className="text-emerald-400">({tariffPricePeriodLabel(selectedTariff)})</span>
                 </p>
               ) : (
                 <p className="text-xs font-semibold text-slate-500">
