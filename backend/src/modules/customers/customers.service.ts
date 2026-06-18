@@ -41,8 +41,6 @@ export const customersService = {
 export async function customerSessions(req: Request) { return prisma.$queryRawUnsafe("select * from sessions where customer_id=$1::uuid order by created_at desc", req.params.id); }
 export async function customerSales(req: Request) { return prisma.$queryRawUnsafe("select * from sales where customer_id=$1::uuid order by created_at desc", req.params.id); }
 
-// Balansni to'ldirish (deposit): real pul (naqd/karta/QR) kassaga tushadi, mijoz balansi oshadi.
-// Ochiq smena talab qilinadi — pul smena hisobiga to'g'ri tushishi uchun. To'lov payments ga yoziladi.
 export async function topUpBalance(req: Request) {
   const amount = Math.round(Number(req.body.amount));
   const method = String(req.body.method ?? "");
@@ -67,4 +65,18 @@ export async function topUpBalance(req: Request) {
   await auditLog({ actor: req.user, branch_id: branchId, action_type: "customer_balance_topup", entity_type: "customer", entity_id: customer.id, amount, details: { method, payment_id: payment.id, balance_after: Number(updated.balance) } });
   broadcastDashboard("payment_created", payment, branchId);
   return updated;
+}
+
+// "balance" usulida to'langanda mijoz balansidan pulni ayiradi.
+// Yetarli mablag' bo'lmasa yoki mijoz topilmasa xato tashlaydi — chaqiruvchi sessiya/sotuvni yaratishdan OLDIN chaqirishi kerak.
+export async function debitCustomerBalance(customerId: string | null | undefined, branchId: string, amount: number) {
+  if (!(amount > 0)) return;
+  if (!customerId) throw new ApiError(400, "Balansdan to'lov uchun mijoz tanlanishi shart");
+  const rows = await prisma.$queryRawUnsafe<Array<{ balance: unknown }>>(
+    "select balance from customers where id=$1::uuid and branch_id=$2::uuid",
+    customerId, branchId,
+  );
+  if (!rows.length) throw new ApiError(404, "Mijoz topilmadi");
+  if (Number(rows[0].balance) < amount) throw new ApiError(409, "Mijoz balansida mablag' yetarli emas");
+  await prisma.$executeRawUnsafe("update customers set balance=balance-$1, updated_at=now() where id=$2::uuid", amount, customerId);
 }

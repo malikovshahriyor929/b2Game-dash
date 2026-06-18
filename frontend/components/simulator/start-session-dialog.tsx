@@ -40,6 +40,15 @@ function localPhoneDigits(value: string) {
   return digits.startsWith("998") ? digits.slice(3, 12) : digits.slice(0, 9);
 }
 
+function formatGap(minutes: number) {
+  if (!Number.isFinite(minutes)) return "";
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours && mins) return `${hours} soat ${mins} daqiqa`;
+  if (hours) return `${hours} soat`;
+  return `${mins} daqiqa`;
+}
+
 export function StartSessionDialog({ open, onOpenChange, simulator, prefill, fulfillBookingId }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator; prefill?: { customerName?: string; phone?: string; tariffName?: string; prepayment?: number }; fulfillBookingId?: string }) {
   const { startSession, selectedBranchId, bookings } = useDashboardStore();
   const confirm = useConfirm();
@@ -92,24 +101,34 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
     setPaymentMethod(paymentMethods[0]?.label ?? "Karta");
   }, [open, paymentMethods, simulator?.id, startOptions.paymentModes, zoneTariffs, prefill?.customerName, prefill?.phone, prefill?.tariffName]);
 
-  // Walk-in / band PC ogohlantirishlari (bloklamaydi — admin xohlasa davom etadi).
+  // Band PC ogohlantirishi (bloklamaydi — admin xohlasa almashtiradi).
   const simulatorBusy = Boolean(simulator && ["busy", "unpaid"].includes(simulator.status));
-  const conflictBooking = useMemo(() => {
+  // Shu PC uchun eng yaqin kelayotgan/faol bron (tugashi hozirdan keyin bo'lganlari).
+  const nextBooking = useMemo(() => {
     if (!simulator) return undefined;
-    const startMs = Date.now();
-    const durMin = isOpenTariff ? 60 : Number(duration) || 0;
-    const endMs = startMs + durMin * 60000;
-    return bookings.find((booking) => {
-      if (booking.id === fulfillBookingId) return false;
-      if (booking.simulatorId !== simulator.id) return false;
-      if (!["Pending", "Confirmed", "Arrived"].includes(booking.status)) return false;
-      if (!booking.startAt || !booking.endAt) return false;
-      const bs = Date.parse(booking.startAt);
-      const be = Date.parse(booking.endAt);
-      if (!Number.isFinite(bs) || !Number.isFinite(be)) return false;
-      return startMs < be && endMs > bs;
-    });
-  }, [bookings, simulator, duration, isOpenTariff, fulfillBookingId]);
+    const nowMs = Date.now();
+    return bookings
+      .filter((booking) =>
+        booking.id !== fulfillBookingId &&
+        booking.simulatorId === simulator.id &&
+        ["Pending", "Confirmed", "Arrived"].includes(booking.status) &&
+        Boolean(booking.startAt) && Boolean(booking.endAt) &&
+        Number.isFinite(Date.parse(booking.startAt ?? "")) &&
+        Number.isFinite(Date.parse(booking.endAt ?? "")) &&
+        Date.parse(booking.endAt ?? "") > nowMs,
+      )
+      .sort((a, b) => Date.parse(a.startAt ?? "") - Date.parse(b.startAt ?? ""))[0];
+  }, [bookings, simulator, fulfillBookingId]);
+
+  // Bron boshlanishigacha qancha daqiqa bo'sh (bron yo'q bo'lsa cheksiz).
+  const availableMinutes = useMemo(() => {
+    if (!nextBooking?.startAt) return Infinity;
+    return Math.max(0, Math.floor((Date.parse(nextBooking.startAt) - Date.now()) / 60000));
+  }, [nextBooking]);
+
+  // So'ralayotgan vaqt bron oralig'iga kirib ketadimi? Ochiq (VIP) cheksiz — bron bo'lsa sig'maydi.
+  const requestedMinutes = isOpenTariff ? Infinity : Number(duration) || 0;
+  const bookingBlocks = Boolean(nextBooking) && requestedMinutes > availableMinutes;
 
   // Open (VIP) sessions are postpaid — the amount is only known at stop.
   useEffect(() => {
@@ -164,6 +183,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
       amount: totalAmount,
       paymentStatus,
       paymentMethod,
+      bookingId: fulfillBookingId,
     });
     onOpenChange(false);
   }
@@ -186,9 +206,16 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
             ⚠️ Bu simulyator hozir band (faol sessiya bor). Yangi sessiya boshlash uni almashtiradi.
           </div>
         ) : null}
-        {conflictBooking ? (
+        {bookingBlocks ? (
+          <div className="rounded-xl border border-red-500/50 bg-red-500/10 p-3 text-sm font-semibold text-red-200">
+            ⛔ Bu PC {nextBooking?.startTime} da bron qilingan{nextBooking?.customerName ? ` (${nextBooking.customerName})` : ""}.{" "}
+            {isOpenTariff
+              ? "Ochiq (VIP) sessiya cheksiz davom etadi — bron borligi sabab boshlab bo'lmaydi."
+              : `Hozirdan atigi ${formatGap(availableMinutes)} bo'sh. Shu vaqtga sig'adigan qisqaroq tarif/davomiylik tanlang.`}
+          </div>
+        ) : nextBooking ? (
           <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm font-semibold text-amber-200">
-            ⚠️ Bu simulyatorda shu vaqt oralig'ida bron bor: {conflictBooking.customerName} ({conflictBooking.startTime}–{conflictBooking.endTime}). Davom etsangiz bron egasiga PC qolmasligi mumkin.
+            ⏳ Keyingi bron: {nextBooking.startTime}{nextBooking.customerName ? ` (${nextBooking.customerName})` : ""} — hozirdan {formatGap(availableMinutes)} bo'sh.
           </div>
         ) : null}
 
@@ -270,7 +297,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
               <Select value={duration} onValueChange={handleDurationChange}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {durationOptions.map((minutes) => <SelectItem key={minutes} value={String(minutes)}>{minutes} min</SelectItem>)}
+                  {durationOptions.map((minutes) => <SelectItem key={minutes} value={String(minutes)} disabled={minutes > availableMinutes}>{minutes} min{minutes > availableMinutes ? " (bron)" : ""}</SelectItem>)}
                 </SelectContent>
               </Select>
             )}
@@ -315,7 +342,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
         <DialogFooter className="flex-col-reverse gap-3 sm:flex-row sm:items-center">
           <div className="mr-auto rounded-xl bg-slate-950/70 px-3 py-2 text-sm font-semibold text-slate-300">{summary}</div>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit} disabled={!canSubmit}>Start session</Button>
+          <Button onClick={submit} disabled={!canSubmit || bookingBlocks}>Start session</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

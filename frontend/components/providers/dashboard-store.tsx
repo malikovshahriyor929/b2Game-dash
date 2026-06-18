@@ -21,7 +21,7 @@ import {
   unlockRig as unlockAdminRig,
 } from "@/lib/rig-admin-api";
 
-type StartPayload = { customerName: string; phone: string; tariff: string; tariffId?: string; customerId?: string; duration: number; amount: number; paymentStatus: "paid" | "unpaid"; paymentMethod?: string };
+type StartPayload = { customerName: string; phone: string; tariff: string; tariffId?: string; customerId?: string; duration: number; amount: number; paymentStatus: "paid" | "unpaid"; paymentMethod?: string; bookingId?: string };
 type PeriodFilter = "today" | "yesterday" | "week" | "month" | "year" | "custom";
 type RepairPayload = { title: string; description: string; errorType: RepairErrorType; priority: RepairPriority; note?: string };
 type RevenueEvent = { id: string; time: string; date?: string; amount: number; source: string; branchId?: string; operator?: string };
@@ -135,7 +135,7 @@ function toApiPaymentMethod(method?: string): PaymentMethod {
   const value = (method ?? "").toLowerCase();
   if (value.includes("naqd") || value.includes("cash")) return "cash";
   if (value.includes("qr")) return "qr";
-  if (value.includes("balance")) return "balance";
+  if (value.includes("balance") || value.includes("balans")) return "balance";
   if (value.includes("aralash") || value.includes("mixed")) return "mixed";
   return "card";
 }
@@ -536,14 +536,17 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       setShifts(shiftRows.map((row) => mapShift(row, operator)));
       setBarSales(saleRows.map((row) => mapSale(row, operator)));
       setCashTransactions(paymentRows.map((row) => mapPayment(row, operator)));
-      setRevenue(paymentRows.reduce((sum, row) => sum + numberValue(row.amount), 0));
+      // Daromad = real olingan pul (naqd+karta+QR). Balansdan to'lov chiqariladi —
+      // u deposit (balans to'ldirish) paytida allaqachon sanalgan, ikki marta hisoblanmasligi uchun.
+      const realRevenue = (row: Record<string, unknown>) => numberValue(row.cash_amount) + numberValue(row.card_amount) + numberValue(row.qr_amount);
+      setRevenue(paymentRows.reduce((sum, row) => sum + realRevenue(row), 0));
       setRevenueEvents(paymentRows.map((row) => {
         const created = String(row.paid_at ?? row.created_at ?? "");
         return {
           id: String(row.id),
           time: shortTime(created),
           date: shortDate(created),
-          amount: numberValue(row.amount),
+          amount: realRevenue(row),
           source: row.sale_id ? "shop sale" : row.session_id ? "session payment" : "payment",
           branchId: String(row.branch_id ?? ""),
           operator: String(row.paid_by_admin_name ?? operator),
@@ -774,6 +777,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         duration_minutes: payload.duration,
         paid_amount: isPaid ? payload.amount : 0,
         method,
+        booking_id: payload.bookingId ?? null,
       }).then(refreshAfterAction).catch(() => undefined);
       patchSimulator(id, {
         status: "busy",

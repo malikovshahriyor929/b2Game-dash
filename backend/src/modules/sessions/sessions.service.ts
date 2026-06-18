@@ -7,6 +7,7 @@ import { broadcastDashboard } from "../../websocket/dashboardConnection.manager"
 import { getRigMvpRig, lockRigMvp, sendRigMvpCommand, unlockRigMvp } from "../../services/rigMvp.service";
 import { isUuid } from "../../utils/ids";
 import { requireOpenShift } from "../shifts/shift.guard";
+import { debitCustomerBalance } from "../customers/customers.service";
 
 async function getSessionScoped(req: Request) {
   const rows = await prisma.$queryRawUnsafe<any[]>("select * from sessions where id=$1::uuid and ($2::uuid is null or branch_id=$2::uuid)", req.params.id, baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : null);
@@ -164,8 +165,28 @@ export async function start(req: Request) {
   const durationMinutes = billing.open ? 0 : Number(req.body.duration_minutes ?? 0);
   const remainingSeconds = billing.open ? 0 : durationMinutes * 60;
   const sessionAmount = billing.open ? 0 : amount;
+  // Bron to'qnashuvi: bu PC sessiya vaqti oralig'ida bron qilingan bo'lsa rad etamiz.
+  // Bajarilayotgan bronni (booking_id) hisobga olmaymiz. Ochiq (VIP) sessiya cheksiz — oralig'i 'infinity'.
+  const upperExpr = billing.open ? "'infinity'::timestamptz" : "now() + make_interval(mins => $3::int)";
+  const conflictParams = billing.open ? [sim.id, req.body.booking_id ?? null] : [sim.id, req.body.booking_id ?? null, durationMinutes];
+  const bookingConflict = await prisma.$queryRawUnsafe<Array<{ start_label: string; customer_name: string | null }>>(
+    `select to_char(start_time,'HH24:MI') as start_label, customer_name
+       from bookings
+      where simulator_id=$1::uuid
+        and status not in ('cancelled','no_show','completed')
+        and ($2::uuid is null or id <> $2::uuid)
+        and tstzrange(start_time, end_time) && tstzrange(now(), ${upperExpr})
+      order by start_time asc limit 1`,
+    ...conflictParams,
+  );
+  if (bookingConflict.length) {
+    const conflict = bookingConflict[0];
+    throw new ApiError(409, `Bu PC ${conflict.start_label} da bron qilingan${conflict.customer_name ? ` (${conflict.customer_name})` : ""} — sessiya bron vaqtiga to'g'ri keladi. Qisqaroq vaqt tanlang.`);
+  }
   // To'lov bo'ladigan bo'lsa, ochiq smena shart — sessiya yaratishdan oldin tekshiramiz (orphan bo'lmasligi uchun).
   const shiftId = amount > 0 ? await requireOpenShift(sim.branch_id) : null;
+  // "balance" usulida — sessiya yaratishdan OLDIN balansdan ayiramiz (mablag' yetmasa bu yerda to'xtaydi).
+  if (req.body.method === "balance" && amount > 0) await debitCustomerBalance(req.body.customer_id ?? null, sim.branch_id, amount);
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `insert into sessions(branch_id,simulator_id,customer_id,customer_name,phone,tariff_id,status,payment_mode,billing_mode,hourly_rate,duration_minutes,remaining_seconds,session_amount,total_amount,paid_amount,debt_amount,created_by)
      values($1::uuid,$2::uuid,$3::uuid,$4,$5,$6::uuid,'active',$7,$8,$9,$10,$11,$12,$12,$13,greatest($12-$13,0),$14::uuid) returning *`,
@@ -315,6 +336,8 @@ export async function addTime(req: Request) {
   if (!Number.isFinite(minutes) || minutes <= 0) throw new ApiError(400, "minutes must be positive");
   // To'lov bo'ladigan bo'lsa, ochiq smena shart — sessiyani o'zgartirishdan oldin tekshiramiz.
   const shiftId = amount > 0 ? await requireOpenShift(s.branch_id) : null;
+  // "balance" usulida — o'zgartirishdan oldin balansdan ayiramiz (mablag' yetmasa to'xtaydi).
+  if (req.body.method === "balance" && amount > 0) await debitCustomerBalance(s.customer_id ?? null, s.branch_id, amount);
 
   await prisma.$executeRawUnsafe(
     `update sessions
