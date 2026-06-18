@@ -1,1 +1,1 @@
-import { Router } from "express"; import { summary } from "./dashboard.controller"; export const dashboardRoutes=Router(); dashboardRoutes.get("/summary",summary);
+import { Router } from "express"; import { summary, revenue7d } from "./dashboard.controller"; export const dashboardRoutes=Router(); dashboardRoutes.get("/summary",summary); dashboardRoutes.get("/revenue-7d",revenue7d);

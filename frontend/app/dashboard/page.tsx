@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { SimulatorMap } from "@/components/simulator/simulator-map";
 import { ReportCard } from "@/components/reports/report-card";
 import { RevenueChart } from "@/components/reports/revenue-chart";
+import { WeeklyRevenueChart } from "@/components/reports/weekly-revenue-chart";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { StatCardsSkeleton, ChartSkeleton, MapSkeleton } from "@/components/ui/skeletons";
 
@@ -60,7 +61,10 @@ export default function DashboardPage() {
             <ReportCard label="Faol sessiyalar" value={activeCount} icon={FiActivity} format="number" />
             <ReportCard label="Tayyor simulyatorlar" value={freeCount} icon={FiMonitor} format="number" />
           </div>
-          <div className="mb-4"><RevenueChart /></div>
+          <div className="mb-4 grid gap-4 xl:grid-cols-2">
+            <RevenueChart />
+            <WeeklyRevenueChart />
+          </div>
           <SimulatorMap />
         </>
       )}

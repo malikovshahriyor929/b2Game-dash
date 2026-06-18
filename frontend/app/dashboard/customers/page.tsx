@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
-import { FiCalendar, FiChevronLeft, FiChevronRight, FiEdit2, FiEye, FiPlus, FiSearch, FiTrash2 } from "react-icons/fi";
+import toast from "react-hot-toast";
+import { FiCalendar, FiChevronLeft, FiChevronRight, FiCreditCard, FiEdit2, FiEye, FiInfo, FiPlus, FiSearch, FiTrash2 } from "react-icons/fi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -13,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatCardsSkeleton, TableSkeleton } from "@/components/ui/skeletons";
 import { PageHeader } from "@/components/shared/page-header";
@@ -26,7 +28,6 @@ type Customer = {
   name: string;
   phone: string;
   balance: number;
-  bonus: number;
   lastVisit: string;
   totalSpent: number;
   sessions: number;
@@ -56,8 +57,6 @@ const emptyForm = {
   name: "",
   phone: "",
   email: "",
-  balance: "",
-  bonus: "",
   lastVisit: toIsoDate(new Date()),
   totalSpent: "",
   sessions: "",
@@ -78,7 +77,6 @@ function mapCustomer(row: Record<string, unknown>): Customer {
     name: String(row.name ?? ""),
     phone: String(row.phone ?? ""),
     balance: Number(row.balance ?? 0),
-    bonus: Number(row.bonus ?? 0),
     lastVisit: row.last_visit_at ? String(row.last_visit_at).slice(0, 10) : "",
     totalSpent: Number(row.total_spent ?? 0),
     sessions: Number(row.sessions_count ?? 0),
@@ -93,8 +91,6 @@ function customerBody(customer: Customer, branchId: string) {
     branch_id: branchId,
     name: customer.name,
     phone: customer.phone,
-    balance: customer.balance,
-    bonus: customer.bonus,
     total_spent: customer.totalSpent,
     sessions_count: customer.sessions,
     last_visit_at: customer.lastVisit ? new Date(`${customer.lastVisit}T00:00:00`).toISOString() : null,
@@ -155,6 +151,22 @@ function dateFromIso(value: string) {
   const [year, month, day] = value.split("-").map(Number);
   if (!year || !month || !day) return new Date();
   return new Date(year, month - 1, day);
+}
+
+function FieldLabel({ label, hint }: { label: string; hint: string }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Label>{label}</Label>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button type="button" tabIndex={-1} aria-label={`${label} haqida ma'lumot`} className="text-slate-500 transition hover:text-slate-300">
+            <FiInfo className="h-3.5 w-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[230px] leading-snug">{hint}</TooltipContent>
+      </Tooltip>
+    </div>
+  );
 }
 
 function DatePicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
@@ -233,6 +245,9 @@ export default function CustomersPage() {
   const [selectedSessions, setSelectedSessions] = useState<CustomerSessionRow[]>([]);
   const [selectedSales, setSelectedSales] = useState<CustomerSaleRow[]>([]);
   const [form, setForm] = useState(emptyForm);
+  const [topUpFor, setTopUpFor] = useState<Customer | null>(null);
+  const [topUpForm, setTopUpForm] = useState({ amount: "", method: "cash" });
+  const [topUpBusy, setTopUpBusy] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState("5");
   const isSuperAdmin = session?.user?.role === "super_admin";
@@ -246,7 +261,7 @@ export default function CustomersPage() {
       setBranchId((current) => current || String(branchRows[0]?.id ?? ""));
       const next = rows.map(mapCustomer);
       setCustomers(next);
-      setSelectedCustomer((current) => current && next.some((item) => item.id === current.id) ? current : next[0] ?? null);
+      setSelectedCustomer((current) => (current ? next.find((item) => item.id === current.id) ?? next[0] ?? null : next[0] ?? null));
     } finally {
       setLoadingCustomers(false);
     }
@@ -300,8 +315,6 @@ export default function CustomersPage() {
       name: customer.name,
       phone: customer.phone,
       email: customer.email ?? "",
-      balance: String(customer.balance),
-      bonus: String(customer.bonus),
       lastVisit: customer.lastVisit,
       totalSpent: String(customer.totalSpent),
       sessions: String(customer.sessions),
@@ -338,8 +351,7 @@ export default function CustomersPage() {
       name: form.name.trim(),
       phone,
       email: form.email.trim(),
-      balance: Number(form.balance || 0),
-      bonus: Number(form.bonus || 0),
+      balance: existing?.balance ?? 0,
       lastVisit: form.lastVisit || toIsoDate(new Date()),
       totalSpent: isSuperAdmin ? Number(form.totalSpent || 0) : existing?.totalSpent ?? 0,
       sessions: Number(form.sessions || 0),
@@ -371,10 +383,36 @@ export default function CustomersPage() {
     if (closeProfile) setProfileModalOpen(false);
   }
 
+  function openTopUp(customer: Customer) {
+    setTopUpFor(customer);
+    setTopUpForm({ amount: "", method: "cash" });
+  }
+
+  async function submitTopUp(event: React.FormEvent) {
+    event.preventDefault();
+    if (!topUpFor) return;
+    const amount = Number(topUpForm.amount || 0);
+    if (amount <= 0) {
+      toast.error("Summani kiriting");
+      return;
+    }
+    setTopUpBusy(true);
+    try {
+      await backendPost(`/customers/${topUpFor.id}/topup`, { amount, method: topUpForm.method });
+      toast.success(`Balans to'ldirildi: ${money(amount)}`);
+      setTopUpFor(null);
+      await refreshCustomers();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Balansni to'ldirib bo'lmadi");
+    } finally {
+      setTopUpBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <PageHeader title="Mijozlar" description="Customer profile, balance, bonus, spend and visit history." />
+        <PageHeader title="Mijozlar" description="Customer profile, balance, spend and visit history." />
         <Button onClick={openCreate}><FiPlus /> Add customer</Button>
       </div>
 
@@ -415,7 +453,6 @@ export default function CustomersPage() {
           <TableRow>
             <TableHead>Name</TableHead>
             <TableHead>Balance</TableHead>
-            <TableHead>Bonus</TableHead>
             <TableHead>Last visit</TableHead>
             <TableHead>Total spent</TableHead>
             <TableHead>Sessions</TableHead>
@@ -433,13 +470,13 @@ export default function CustomersPage() {
                 </button>
               </TableCell>
               <TableCell>{money(customer.balance)}</TableCell>
-              <TableCell>{money(customer.bonus)}</TableCell>
               <TableCell>{customer.lastVisit}</TableCell>
               <TableCell>{money(customer.totalSpent)}</TableCell>
               <TableCell>{customer.sessions}</TableCell>
               <TableCell><Badge variant={statusVariant(customer.status)}>{customer.status}</Badge></TableCell>
               <TableCell>
                 <div className="flex justify-end gap-2 whitespace-nowrap">
+                  <IconButton tooltip="Balans to'ldirish" variant="secondary" onClick={() => openTopUp(customer)}><FiCreditCard /></IconButton>
                   <IconButton tooltip="Profil" variant="secondary" onClick={() => openProfile(customer)}><FiEye /></IconButton>
                   <IconButton tooltip="Tahrirlash" variant="secondary" onClick={() => openEdit(customer)}><FiEdit2 /></IconButton>
                   <IconButton tooltip="O'chirish" variant="destructive" onClick={() => removeCustomer(customer)}><FiTrash2 /></IconButton>
@@ -481,12 +518,15 @@ export default function CustomersPage() {
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>{editingId ? "Mijozni tahrirlash" : "Yangi mijoz qo'shish"}</DialogTitle>
-            <DialogDescription>Profil, balans, bonus va status ma'lumotlarini boshqaring.</DialogDescription>
+            <DialogDescription>Profil, balans va status ma'lumotlarini boshqaring.</DialogDescription>
           </DialogHeader>
           <form onSubmit={submitCustomer} className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-2"><Label>Name</Label><Input value={form.name} onChange={(event) => setForm((item) => ({ ...item, name: event.target.value }))} placeholder="Mijoz ismi" /></div>
             <div className="space-y-2">
-              <Label>Phone</Label>
+              <FieldLabel label="Name" hint="Mijozning to'liq ismi. Majburiy maydon." />
+              <Input value={form.name} onChange={(event) => setForm((item) => ({ ...item, name: event.target.value }))} placeholder="Mijoz ismi" />
+            </div>
+            <div className="space-y-2">
+              <FieldLabel label="Phone" hint="O'zbekiston raqami (+998). Mijozni aniqlash uchun asosiy identifikator. Majburiy." />
               <div className="grid grid-cols-[84px,1fr] gap-2">
                 <div className="flex h-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-950/70 text-sm font-bold text-slate-300">+998</div>
                 <Input
@@ -502,27 +542,41 @@ export default function CustomersPage() {
               </div>
               <div className="text-xs text-slate-500">Ko'rinishi: {form.phone ? formatUzPhone(form.phone) : "+998 XX XXX XX XX"}</div>
             </div>
-            <div className="space-y-2 sm:col-span-2"><Label>Email</Label><Input value={form.email} onChange={(event) => setForm((item) => ({ ...item, email: event.target.value }))} placeholder="customer@example.com" /></div>
-            <div className="space-y-2"><Label>Balance</Label><Input inputMode="numeric" value={formatNumber(form.balance)} onChange={(event) => setForm((item) => ({ ...item, balance: event.target.value.replace(/\D/g, "") }))} placeholder="120 000" /></div>
-            <div className="space-y-2"><Label>Bonus</Label><Input inputMode="numeric" value={formatNumber(form.bonus)} onChange={(event) => setForm((item) => ({ ...item, bonus: event.target.value.replace(/\D/g, "") }))} placeholder="7 000" /></div>
-            <div className="space-y-2">
-              <Label>Total spent</Label>
-              <Input
-                inputMode="numeric"
-                value={formatNumber(form.totalSpent)}
-                onChange={(event) => setForm((item) => ({ ...item, totalSpent: event.target.value.replace(/\D/g, "") }))}
-                placeholder="2 350 000"
-                disabled={!isSuperAdmin}
-              />
-              {!isSuperAdmin ? <div className="text-xs text-slate-500">Admin total spentni qo'lda o'zgartira olmaydi.</div> : null}
+            <div className="space-y-2 sm:col-span-2">
+              <FieldLabel label="Email" hint="Ixtiyoriy. Chek yoki bildirishnoma yuborish uchun ishlatiladi." />
+              <Input value={form.email} onChange={(event) => setForm((item) => ({ ...item, email: event.target.value }))} placeholder="customer@example.com" />
             </div>
-            <div className="space-y-2"><Label>Sessions</Label><Input inputMode="numeric" value={form.sessions} onChange={(event) => setForm((item) => ({ ...item, sessions: event.target.value.replace(/\D/g, "") }))} placeholder="38" /></div>
             <div className="space-y-2">
-              <Label>Last visit</Label>
-              <DatePicker value={form.lastVisit} onChange={(lastVisit) => setForm((item) => ({ ...item, lastVisit }))} />
+              <FieldLabel label="Status" hint="Active — oddiy mijoz, Debt — qarzi bor, Blocked — bloklangan (xizmatdan foydalana olmaydi)." />
+              <Select value={form.status} onValueChange={(status) => setForm((item) => ({ ...item, status: status as CustomerStatus }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["Active", "Debt", "Blocked"].map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select>
             </div>
-            <div className="space-y-2"><Label>Status</Label><Select value={form.status} onValueChange={(status) => setForm((item) => ({ ...item, status: status as CustomerStatus }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["Active", "Debt", "Blocked"].map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2 sm:col-span-2"><Label>Note</Label><Input value={form.note} onChange={(event) => setForm((item) => ({ ...item, note: event.target.value }))} placeholder="Izoh" /></div>
+            {editingId ? (
+              <>
+                <div className="space-y-2">
+                  <FieldLabel label="Total spent" hint="Jami sarflagan summasi. Sessiya va sotuvlardan avtomatik yig'iladi, qo'lda o'zgartirish tavsiya etilmaydi." />
+                  <Input
+                    inputMode="numeric"
+                    value={formatNumber(form.totalSpent)}
+                    onChange={(event) => setForm((item) => ({ ...item, totalSpent: event.target.value.replace(/\D/g, "") }))}
+                    placeholder="2 350 000"
+                    disabled={!isSuperAdmin}
+                  />
+                  {!isSuperAdmin ? <div className="text-xs text-slate-500">Admin total spentni qo'lda o'zgartira olmaydi.</div> : null}
+                </div>
+                <div className="space-y-2">
+                  <FieldLabel label="Sessions" hint="O'ynagan sessiyalar soni. Har yangi sessiyada avtomatik o'sadi." />
+                  <Input inputMode="numeric" value={form.sessions} onChange={(event) => setForm((item) => ({ ...item, sessions: event.target.value.replace(/\D/g, "") }))} placeholder="38" />
+                </div>
+                <div className="space-y-2">
+                  <FieldLabel label="Last visit" hint="Oxirgi tashrif sanasi. Mijoz yangi sessiya boshlaganda avtomatik yangilanadi." />
+                  <DatePicker value={form.lastVisit} onChange={(lastVisit) => setForm((item) => ({ ...item, lastVisit }))} />
+                </div>
+              </>
+            ) : null}
+            <div className="space-y-2 sm:col-span-2">
+              <FieldLabel label="Note" hint="Ixtiyoriy izoh (masalan: VIP mijoz, doimiy mijoz, maxsus shartlar)." />
+              <Input value={form.note} onChange={(event) => setForm((item) => ({ ...item, note: event.target.value }))} placeholder="Izoh" />
+            </div>
             <div className="grid gap-2 sm:col-span-2 sm:grid-cols-2">
               <Button type="button" variant="secondary" onClick={resetForm}>Cancel</Button>
               <Button type="submit" disabled={!branchId || !form.name.trim() || normalizeUzPhone(form.phone).length !== 12 || !normalizeUzPhone(form.phone).startsWith("998")}><FiPlus /> {editingId ? "Save customer" : "Create customer"}</Button>
@@ -541,7 +595,6 @@ export default function CustomersPage() {
             <div className="space-y-4">
               <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3">
                 <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Balance</div><div className="mt-1 text-xl font-black text-sky-200">{money(selectedCustomer.balance)}</div></Card>
-                <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Bonus</div><div className="mt-1 text-xl font-black text-emerald-200">{money(selectedCustomer.bonus)}</div></Card>
                 <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Total spent</div><div className="mt-1 text-xl font-black text-white">{money(selectedCustomer.totalSpent)}</div></Card>
                 <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Sessions</div><div className="mt-1 text-xl font-black text-white">{selectedCustomer.sessions}</div></Card>
               </div>
@@ -566,12 +619,44 @@ export default function CustomersPage() {
                   </div>
                 </Card>
               </div>
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button variant="secondary" onClick={() => openTopUp(selectedCustomer)}><FiCreditCard /> Balans to'ldirish</Button>
                 <Button variant="secondary" onClick={() => openEdit(selectedCustomer)}><FiEdit2 /> Edit profile</Button>
                 <Button variant="destructive" onClick={() => removeCustomer(selectedCustomer, true)}><FiTrash2 /> Delete</Button>
               </div>
             </div>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(topUpFor)} onOpenChange={(open) => (open ? undefined : setTopUpFor(null))}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Balans to'ldirish</DialogTitle>
+            <DialogDescription>{topUpFor ? `${topUpFor.name} - joriy balans: ${money(topUpFor.balance)}` : ""}</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={submitTopUp} className="space-y-3">
+            <div className="space-y-2">
+              <FieldLabel label="Summa" hint="To'ldiriladigan summa. Mijoz balansiga qo'shiladi." />
+              <Input inputMode="numeric" autoFocus value={formatNumber(topUpForm.amount)} onChange={(event) => setTopUpForm((item) => ({ ...item, amount: event.target.value.replace(/\D/g, "") }))} placeholder="100 000" />
+            </div>
+            <div className="space-y-2">
+              <FieldLabel label="To'lov usuli" hint="Pul qaysi usulda olindi. Naqd kassa hisobiga, karta/QR bankga tushadi." />
+              <Select value={topUpForm.method} onValueChange={(method) => setTopUpForm((item) => ({ ...item, method }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Naqd</SelectItem>
+                  <SelectItem value="card">Karta</SelectItem>
+                  <SelectItem value="qr">QR</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="text-xs text-slate-500">Eslatma: balans to'ldirish uchun ochiq smena bo'lishi shart.</div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button type="button" variant="secondary" onClick={() => setTopUpFor(null)}>Cancel</Button>
+              <Button type="submit" disabled={topUpBusy || Number(topUpForm.amount || 0) <= 0}><FiCreditCard /> {topUpBusy ? "..." : "To'ldirish"}</Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </div>
