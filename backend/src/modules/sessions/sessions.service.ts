@@ -215,8 +215,6 @@ async function finalizeSessionStop(
   options: { stoppedBy?: string | null; expired?: boolean } = {},
 ) {
   let debtAmount = Number(session.debt_amount ?? 0);
-  // Open (VIP) sessions are billed at stop: elapsed minutes (rounded up) * hourly rate / 60,
-  // computed in SQL with the DB clock to avoid app/DB time skew.
   if (String(session.billing_mode) === "open") {
     const billed = await prisma.$queryRawUnsafe<Array<{ debt_amount: unknown }>>(
       `update sessions
@@ -242,6 +240,18 @@ async function finalizeSessionStop(
     "update simulators set status=$1, current_session_id=null where id=$2::uuid",
     nextStatus === "unpaid" ? "unpaid" : "ready_to_play",
     session.simulator_id,
+  );
+  // Ro'yxatdan o'tgan mijoz statistikasi: tashriflar soni, oxirgi tashrif va sarflangan summa.
+  // Join customer_id orqali — guest (customer_id=null) sessiyalarda hech narsa o'zgarmaydi.
+  await prisma.$executeRawUnsafe(
+    `update customers c
+     set sessions_count = sessions_count + 1,
+         last_visit_at = now(),
+         total_spent = total_spent + coalesce(s.total_amount, 0),
+         updated_at = now()
+     from sessions s
+     where s.id = $1::uuid and c.id = s.customer_id`,
+    session.id,
   );
   await lockRigForSession(String(session.simulator_id));
   broadcastDashboard("session_stopped", { id: session.id, expired: Boolean(options.expired) }, session.branch_id);

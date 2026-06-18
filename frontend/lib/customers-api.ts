@@ -5,7 +5,6 @@ export type CustomerLite = {
   name: string;
   phone: string;
   balance: number;
-  bonus: number;
   status: string;
 };
 
@@ -15,7 +14,6 @@ function mapCustomerLite(row: Record<string, unknown>): CustomerLite {
     name: String(row.name ?? ""),
     phone: String(row.phone ?? ""),
     balance: Number(row.balance ?? 0),
-    bonus: Number(row.bonus ?? 0),
     status: String(row.status ?? "active"),
   };
 }

@@ -22,7 +22,9 @@ function scope(req: Request, alias = "") {
 
 function placeholder(column: string, index: number) {
   const token = `$${index}`;
-  return column === "id" || column === "branch_id" || column.endsWith("_id") ? `${token}::uuid` : token;
+  if (column === "id" || column === "branch_id" || column.endsWith("_id")) return `${token}::uuid`;
+  if (column.endsWith("_at")) return `${token}::timestamptz`;
+  return token;
 }
 
 export function createGenericService(config: ModuleConfig) {

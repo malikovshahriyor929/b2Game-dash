@@ -91,7 +91,6 @@ model Customer {
   name          String
   phone         String
   balance       Decimal   @default(0)
-  bonus         Decimal   @default(0)
   totalSpent    Decimal   @default(0) @map("total_spent")
   sessionsCount Int       @default(0) @map("sessions_count")
   lastVisitAt   DateTime? @map("last_visit_at")
