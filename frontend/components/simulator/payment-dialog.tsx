@@ -42,14 +42,14 @@ export function PaymentDialog({ open, onOpenChange, simulator }: { open: boolean
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] w-[min(94vw,720px)] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Payment</DialogTitle>
-          <DialogDescription>{simulator?.name} - {simulator?.currentUser ?? "Guest"} - amount due {money(due)}</DialogDescription>
+          <DialogTitle>To&apos;lov</DialogTitle>
+          <DialogDescription>{simulator?.name} - {simulator?.currentUser ?? "Mehmon"} - to&apos;lov summasi {money(due)}</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-xl bg-slate-950 p-3"><Label>Tariff / package</Label><div className="mt-2 font-semibold">{simulator?.tariff ?? "Manual payment"}</div></div>
-          <div className="rounded-xl bg-slate-950 p-3"><Label>Amount due</Label><div className="mt-2 text-xl font-black text-sky-200">{money(due)}</div></div>
+          <div className="rounded-xl bg-slate-950 p-3"><Label>Tarif / paket</Label><div className="mt-2 font-semibold">{simulator?.tariff ?? "Qo'lda to'lov"}</div></div>
+          <div className="rounded-xl bg-slate-950 p-3"><Label>To&apos;lov summasi</Label><div className="mt-2 text-xl font-black text-sky-200">{money(due)}</div></div>
           <div className="space-y-2 sm:col-span-2">
-            <Label>Payment method</Label>
+            <Label>To&apos;lov usuli</Label>
             <Select value={method} onValueChange={setMethod}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>{paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}</SelectContent>
@@ -58,15 +58,15 @@ export function PaymentDialog({ open, onOpenChange, simulator }: { open: boolean
         </div>
         {method === "Aralash" ? (
           <div className="grid gap-3 rounded-2xl border border-slate-800 p-3 sm:grid-cols-2">
-            <div className="space-y-2"><Label>Cash</Label><Input inputMode="numeric" min={0} type="number" value={cash} onChange={(e) => setCash(e.target.value)} /></div>
-            <div className="space-y-2"><Label>Card</Label><Input inputMode="numeric" min={0} type="number" value={card} onChange={(e) => setCard(e.target.value)} /></div>
-            <div className="text-sm text-slate-400 sm:col-span-2">Mixed total: {money(mixedTotal)} {mixedTotal !== due ? <span className="text-amber-300">- amount due bilan teng emas</span> : <span className="text-emerald-300">- valid</span>}</div>
+            <div className="space-y-2"><Label>Naqd</Label><Input inputMode="numeric" min={0} type="number" value={cash} onChange={(e) => setCash(e.target.value)} /></div>
+            <div className="space-y-2"><Label>Karta</Label><Input inputMode="numeric" min={0} type="number" value={card} onChange={(e) => setCard(e.target.value)} /></div>
+            <div className="text-sm text-slate-400 sm:col-span-2">Aralash jami: {money(mixedTotal)} {mixedTotal !== due ? <span className="text-amber-300">- to&apos;lov summasiga teng emas</span> : <span className="text-emerald-300">- to&apos;g&apos;ri</span>}</div>
           </div>
         ) : null}
         <DialogFooter className="flex-col-reverse gap-3 sm:flex-row sm:items-center">
-          <div className="mr-auto rounded-xl bg-slate-950/70 px-3 py-2 text-sm font-semibold text-slate-300">Paying: {money(amount)}</div>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>Close</Button>
-          <Button onClick={submit} disabled={!canSubmit || (method === "Aralash" && mixedTotal !== due)}>Pay</Button>
+          <div className="mr-auto rounded-xl bg-slate-950/70 px-3 py-2 text-sm font-semibold text-slate-300">To&apos;lanmoqda: {money(amount)}</div>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>Yopish</Button>
+          <Button onClick={submit} disabled={!canSubmit || (method === "Aralash" && mixedTotal !== due)}>To&apos;lash</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

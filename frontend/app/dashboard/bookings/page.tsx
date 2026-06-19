@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/shared/page-header";
 export default function BookingsPage() {
   return (
     <div>
-      <PageHeader title="Bronlar" description="Reservations with conflict warning and reserved simulator visibility." />
+      <PageHeader title="Bronlar" description="Ziddiyat ogohlantirishi va band qilingan simulyatorlarni ko'rsatuvchi bronlar." />
       <BookingsWorkspace />
     </div>
   );

@@ -145,7 +145,7 @@ export default function LogsPage() {
 
   return (
     <div>
-      <PageHeader title="Loglar" description="Admin actions, simulator events, payments and repair reports." />
+      <PageHeader title="Loglar" description="Admin amallari, simulyator hodisalari, to'lovlar va ta'mirlash hisobotlari." />
 
       <Card className="mb-4">
         <CardContent className="space-y-3 pt-4">

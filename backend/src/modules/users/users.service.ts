@@ -42,11 +42,13 @@ export const usersService = {
   async list(req: Request) {
     const branchId = scopedBranch(req);
     const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-      `select id,name,email,role,branch_id,is_active,created_at,updated_at
-       from users
-       where ($1::uuid is null or branch_id=$1::uuid)
-         and ($2::boolean or role not in ('dev_admin','dev_super_admin'))
-       order by created_at desc
+      `select u.id,u.name,u.email,u.role,u.branch_id,u.is_active,u.created_at,u.updated_at,
+              coalesce((select sum(rr.charge_amount) from repair_requests rr
+                        where rr.requested_by=u.id and rr.review_status='charged'),0) as penalty_total
+       from users u
+       where ($1::uuid is null or u.branch_id=$1::uuid)
+         and ($2::boolean or u.role not in ('dev_admin','dev_super_admin'))
+       order by u.created_at desc
        limit 200`,
       branchId,
       isDev(req),

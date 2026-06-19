@@ -40,7 +40,7 @@ export function CashierTabs() {
   const [query, setQuery] = useState("");
   const [scanCode, setScanCode] = useState("");
   const [scannerMode, setScannerMode] = useState(true);
-  const [scanMessage, setScanMessage] = useState("Scanner tayyor. QR kodni skan qiling yoki kodni kiriting.");
+  const [scanMessage, setScanMessage] = useState("Skaner tayyor. QR kodni skanerlang yoki kodni kiriting.");
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [newProduct, setNewProduct] = useState({ name: "", qrCode: "", price: "", cost: "", stock: "", category: "Ichimliklar" as Product["category"], icon: "snack", imageUrl: "" });
@@ -80,7 +80,7 @@ export function CashierTabs() {
 
     const existingProduct = products.find((item) => item.qrCode.toLowerCase() === normalizedCode.toLowerCase() || item.id.toLowerCase() === normalizedCode.toLowerCase());
     if (existingProduct && existingProduct.stock <= 0) {
-      setScanMessage(`${existingProduct.name} stock tugagan. QR: ${existingProduct.qrCode}`);
+      setScanMessage(`${existingProduct.name} qoldigi tugagan. QR: ${existingProduct.qrCode}`);
       setScanCode("");
       focusScannerInput();
       return;
@@ -189,7 +189,7 @@ export function CashierTabs() {
         icon: product.icon || "snack",
         imageUrl: product.imageUrl ?? "",
       });
-      setScanMessage(`${product.name} topildi. Stock, olingan narx va sotuv narxi autofill qilindi.`);
+      setScanMessage(`${product.name} topildi. Qoldiq, olingan narx va sotuv narxi avtomatik to'ldirildi.`);
       return;
     }
     setEditingProductId(null);
@@ -246,7 +246,7 @@ export function CashierTabs() {
   function uploadProductImage(file?: File) {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
-      setScanMessage("Faqat image fayl yuklash mumkin.");
+      setScanMessage("Faqat rasm fayl yuklash mumkin.");
       return;
     }
     const reader = new FileReader();
@@ -272,7 +272,7 @@ export function CashierTabs() {
     const saleAmount = Number(returnForm.saleAmount);
     const receivedAmount = Number(returnForm.receivedAmount);
     if (!Number.isFinite(saleAmount) || !Number.isFinite(receivedAmount) || saleAmount <= 0 || receivedAmount < saleAmount) return;
-    setCashierMessage(`Qaytim: ${money(receivedAmount - saleAmount)}. Payment method: ${returnForm.method}.`);
+    setCashierMessage(`Qaytim: ${money(receivedAmount - saleAmount)}. To'lov turi: ${returnForm.method}.`);
     setReturnForm({ saleAmount: "", receivedAmount: "", method: "Naqd" });
   }
 
@@ -325,13 +325,13 @@ export function CashierTabs() {
                         scanProduct(event.currentTarget.value);
                       }
                     }}
-                    placeholder="QR scanner input: masalan B2-QR-0001"
+                    placeholder="QR skaner kiritish: masalan B2-QR-0001"
                     autoComplete="off"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-2 sm:flex">
-                  <Button className="h-10 rounded-lg px-4" onClick={() => scanProduct()} disabled={!scanCode.trim()}><RiQrScan2Line /> Scan</Button>
-                  <Button className="h-10 rounded-lg px-4" variant="secondary" onClick={startCreateProduct}><FiPlusCircle /> New product</Button>
+                  <Button className="h-10 rounded-lg px-4" onClick={() => scanProduct()} disabled={!scanCode.trim()}><RiQrScan2Line /> Skanerlash</Button>
+                  <Button className="h-10 rounded-lg px-4" variant="secondary" onClick={startCreateProduct}><FiPlusCircle /> Yangi mahsulot</Button>
                 </div>
               </div>
               <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
@@ -339,7 +339,7 @@ export function CashierTabs() {
                   setScannerMode((value) => !value);
                   qrInputRef.current?.focus();
                 }}>
-                  <RiQrScan2Line /> Scanner mode {scannerMode ? "ON" : "OFF"}
+                  <RiQrScan2Line /> Skaner rejimi {scannerMode ? "YONIQ" : "O'CHIQ"}
                 </Button>
                 <span className="truncate text-xs text-slate-500">USB scanner: kod + Enter. Qo'lda ham QR kodni yozib Enter bosing.</span>
               </div>
@@ -348,7 +348,7 @@ export function CashierTabs() {
             <div className="mb-3 flex items-center gap-2 overflow-auto rounded-xl border border-slate-800 bg-slate-950/50 p-1 thin-scrollbar">
               {cats.map((item) => <button key={item} onClick={() => setCategory(item)} className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${category === item ? "bg-sky-500 text-slate-950" : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"}`}>{item}</button>)}
             </div>
-            <Input className="mb-3 h-9 max-w-md rounded-lg" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search product or QR..." />
+            <Input className="mb-3 h-9 max-w-md rounded-lg" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Mahsulot yoki QR qidirish..." />
             {loading ? (
               <CardGridSkeleton count={8} columns="sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" />
             ) : (
@@ -380,7 +380,7 @@ export function CashierTabs() {
                     autoComplete="off"
                   />
                 </div>
-                <Button className="h-10 rounded-lg px-4" onClick={() => searchManageProduct()} disabled={!manageQrCode.trim()}><RiQrScan2Line /> Search QR</Button>
+                <Button className="h-10 rounded-lg px-4" onClick={() => searchManageProduct()} disabled={!manageQrCode.trim()}><RiQrScan2Line /> QR qidirish</Button>
               </div>
               <form onSubmit={submitProduct} className="grid gap-4 lg:grid-cols-[220px,1fr]">
                 <div className="space-y-3">
@@ -392,14 +392,14 @@ export function CashierTabs() {
                   </div>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-2 sm:col-span-2"><Label>Name</Label><Input value={newProduct.name} onChange={(event) => setNewProduct((item) => ({ ...item, name: event.target.value }))} placeholder="Product name" /></div>
-                  <div className="space-y-2"><Label>QR code</Label><Input value={newProduct.qrCode} onChange={(event) => setNewProduct((item) => ({ ...item, qrCode: event.target.value }))} placeholder="478000..." /></div>
-                  <div className="space-y-2"><Label>Category</Label><Select value={newProduct.category} onValueChange={(value) => setNewProduct((item) => ({ ...item, category: value as Product["category"] }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{productCategories.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
+                  <div className="space-y-2 sm:col-span-2"><Label>Nomi</Label><Input value={newProduct.name} onChange={(event) => setNewProduct((item) => ({ ...item, name: event.target.value }))} placeholder="Mahsulot nomi" /></div>
+                  <div className="space-y-2"><Label>QR kod</Label><Input value={newProduct.qrCode} onChange={(event) => setNewProduct((item) => ({ ...item, qrCode: event.target.value }))} placeholder="478000..." /></div>
+                  <div className="space-y-2"><Label>Kategoriya</Label><Select value={newProduct.category} onValueChange={(value) => setNewProduct((item) => ({ ...item, category: value as Product["category"] }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{productCategories.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
                   <div className="space-y-2"><Label>Qanchaga olingan</Label><Input inputMode="numeric" value={formatNumber(newProduct.cost)} onChange={(event) => setNewProduct((item) => ({ ...item, cost: event.target.value.replace(/\D/g, "") }))} placeholder="6 000" /></div>
                   <div className="space-y-2"><Label>Qanchaga sotilmoqda</Label><Input inputMode="numeric" value={formatNumber(newProduct.price)} onChange={(event) => setNewProduct((item) => ({ ...item, price: event.target.value.replace(/\D/g, "") }))} placeholder="9 000" /></div>
-                  <div className="space-y-2"><Label>Stock</Label><Input inputMode="numeric" value={newProduct.stock} onChange={(event) => setNewProduct((item) => ({ ...item, stock: event.target.value.replace(/\D/g, "") }))} placeholder="72" /></div>
+                  <div className="space-y-2"><Label>Qoldiq</Label><Input inputMode="numeric" value={newProduct.stock} onChange={(event) => setNewProduct((item) => ({ ...item, stock: event.target.value.replace(/\D/g, "") }))} placeholder="72" /></div>
                   <div className="space-y-2 sm:col-span-2">
-                    <Label>Icon</Label>
+                    <Label>Ikona</Label>
                     <div className="grid grid-cols-5 gap-2 sm:grid-cols-10">
                       {productIcons.map(({ key, label }) => (
                         <button
@@ -418,8 +418,8 @@ export function CashierTabs() {
                     <Button type="button" variant="secondary" onClick={() => {
                       resetProductForm();
                       setManageQrCode("");
-                    }}><FiX /> Clear</Button>
-                    <Button type="submit" disabled={!newProduct.name.trim() || !newProduct.qrCode.trim() || !newProduct.price || !newProduct.stock}><FiPlusCircle /> {editingProductId ? "Update product" : "Create product"}</Button>
+                    }}><FiX /> Tozalash</Button>
+                    <Button type="submit" disabled={!newProduct.name.trim() || !newProduct.qrCode.trim() || !newProduct.price || !newProduct.stock}><FiPlusCircle /> {editingProductId ? "Mahsulotni yangilash" : "Mahsulot yaratish"}</Button>
                   </div>
                 </div>
               </form>
@@ -435,8 +435,8 @@ export function CashierTabs() {
               <form onSubmit={submitBalance} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <div className="space-y-2 xl:col-span-2"><Label>Mijoz</Label><Input value={balanceForm.customer} onChange={(event) => setBalanceForm((item) => ({ ...item, customer: event.target.value }))} placeholder="Mijoz ismi" /></div>
                 <div className="space-y-2"><Label>Telefon</Label><Input value={balanceForm.phone} onChange={(event) => setBalanceForm((item) => ({ ...item, phone: event.target.value }))} placeholder="+998..." /></div>
-                <div className="space-y-2"><Label>Payment</Label><Select value={balanceForm.method} onValueChange={(method) => setBalanceForm((item) => ({ ...item, method }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}</SelectContent></Select></div>
-                <div className="space-y-2 xl:col-span-2"><Label>Amount</Label><Input inputMode="numeric" value={formatNumber(balanceForm.amount)} onChange={(event) => setBalanceForm((item) => ({ ...item, amount: event.target.value.replace(/\D/g, "") }))} placeholder="50 000" /></div>
+                <div className="space-y-2"><Label>To'lov turi</Label><Select value={balanceForm.method} onValueChange={(method) => setBalanceForm((item) => ({ ...item, method }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}</SelectContent></Select></div>
+                <div className="space-y-2 xl:col-span-2"><Label>Summa</Label><Input inputMode="numeric" value={formatNumber(balanceForm.amount)} onChange={(event) => setBalanceForm((item) => ({ ...item, amount: event.target.value.replace(/\D/g, "") }))} placeholder="50 000" /></div>
                 <Button className="xl:col-span-2" type="submit" disabled={!balanceForm.customer.trim() || !balanceForm.amount}><FiCreditCard /> Balansga qo'shish</Button>
               </form>
               {cashierMessage ? <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm font-semibold text-emerald-200">{cashierMessage}</div> : null}
@@ -452,7 +452,7 @@ export function CashierTabs() {
               <form onSubmit={submitReturn} className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-2"><Label>Savdo summasi</Label><Input inputMode="numeric" value={formatNumber(returnForm.saleAmount)} onChange={(event) => setReturnForm((item) => ({ ...item, saleAmount: event.target.value.replace(/\D/g, "") }))} placeholder="35 000" /></div>
                 <div className="space-y-2"><Label>Berilgan pul</Label><Input inputMode="numeric" value={formatNumber(returnForm.receivedAmount)} onChange={(event) => setReturnForm((item) => ({ ...item, receivedAmount: event.target.value.replace(/\D/g, "") }))} placeholder="50 000" /></div>
-                <div className="space-y-2"><Label>Payment</Label><Select value={returnForm.method} onValueChange={(method) => setReturnForm((item) => ({ ...item, method }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}</SelectContent></Select></div>
+                <div className="space-y-2"><Label>To'lov turi</Label><Select value={returnForm.method} onValueChange={(method) => setReturnForm((item) => ({ ...item, method }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}</SelectContent></Select></div>
                 <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 md:col-span-2">
                   <div className="text-xs font-semibold uppercase text-slate-500">Qaytim</div>
                   <div className="mt-1 text-3xl font-black text-sky-200">{money(changeAmount)}</div>
@@ -471,14 +471,14 @@ export function CashierTabs() {
               </div>
               <form onSubmit={submitPostPay} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <div className="space-y-2 xl:col-span-2">
-                  <Label>Session</Label>
+                  <Label>Sessiya</Label>
                   <Select value={postPayForm.simulatorId} onValueChange={(simulatorId) => setPostPayForm((item) => ({ ...item, simulatorId }))}>
                     <SelectTrigger><SelectValue placeholder="Sessiya tanlang" /></SelectTrigger>
-                    <SelectContent>{unpaidSimulators.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} - {item.currentUser ?? "Guest"} - {item.paymentStatus}</SelectItem>)}</SelectContent>
+                    <SelectContent>{unpaidSimulators.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} - {item.currentUser ?? "Mehmon"} - {item.paymentStatus}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2"><Label>Amount</Label><Input inputMode="numeric" value={formatNumber(postPayForm.amount)} onChange={(event) => setPostPayForm((item) => ({ ...item, amount: event.target.value.replace(/\D/g, "") }))} placeholder="50 000" /></div>
-                <div className="space-y-2"><Label>Payment</Label><Select value={postPayForm.method} onValueChange={(method) => setPostPayForm((item) => ({ ...item, method }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}</SelectContent></Select></div>
+                <div className="space-y-2"><Label>Summa</Label><Input inputMode="numeric" value={formatNumber(postPayForm.amount)} onChange={(event) => setPostPayForm((item) => ({ ...item, amount: event.target.value.replace(/\D/g, "") }))} placeholder="50 000" /></div>
+                <div className="space-y-2"><Label>To'lov turi</Label><Select value={postPayForm.method} onValueChange={(method) => setPostPayForm((item) => ({ ...item, method }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}</SelectContent></Select></div>
                 <Button className="md:col-span-2 xl:col-span-4" type="submit" disabled={!postPayForm.simulatorId || !postPayForm.amount}><FiCheckCircle /> To'lovni qabul qilish</Button>
               </form>
               {cashierMessage ? <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm font-semibold text-emerald-200">{cashierMessage}</div> : null}
@@ -493,14 +493,14 @@ export function CashierTabs() {
               </div>
               <form onSubmit={submitSessionPay} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <div className="space-y-2 xl:col-span-2">
-                  <Label>Simulator</Label>
+                  <Label>Simulyator</Label>
                   <Select value={sessionPayForm.simulatorId} onValueChange={(simulatorId) => setSessionPayForm((item) => ({ ...item, simulatorId }))}>
-                    <SelectTrigger><SelectValue placeholder="Simulator tanlang" /></SelectTrigger>
-                    <SelectContent>{payableSimulators.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} - {item.currentUser ?? "Guest"} - {item.status}</SelectItem>)}</SelectContent>
+                    <SelectTrigger><SelectValue placeholder="Simulyator tanlang" /></SelectTrigger>
+                    <SelectContent>{payableSimulators.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} - {item.currentUser ?? "Mehmon"} - {item.status}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2"><Label>Amount</Label><Input inputMode="numeric" value={formatNumber(sessionPayForm.amount)} onChange={(event) => setSessionPayForm((item) => ({ ...item, amount: event.target.value.replace(/\D/g, "") }))} placeholder="50 000" /></div>
-                <div className="space-y-2"><Label>Payment</Label><Select value={sessionPayForm.method} onValueChange={(method) => setSessionPayForm((item) => ({ ...item, method }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}</SelectContent></Select></div>
+                <div className="space-y-2"><Label>Summa</Label><Input inputMode="numeric" value={formatNumber(sessionPayForm.amount)} onChange={(event) => setSessionPayForm((item) => ({ ...item, amount: event.target.value.replace(/\D/g, "") }))} placeholder="50 000" /></div>
+                <div className="space-y-2"><Label>To'lov turi</Label><Select value={sessionPayForm.method} onValueChange={(method) => setSessionPayForm((item) => ({ ...item, method }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}</SelectContent></Select></div>
                 <Button className="md:col-span-2 xl:col-span-4" type="submit" disabled={!sessionPayForm.simulatorId || !sessionPayForm.amount}><FiCreditCard /> Sessiyani to'lash</Button>
               </form>
               {cashierMessage ? <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm font-semibold text-emerald-200">{cashierMessage}</div> : null}
@@ -558,10 +558,10 @@ export function CashierTabs() {
           </DialogHeader>
           <form onSubmit={submitProduct} className="grid gap-4 md:grid-cols-[240px,1fr]">
             <div className="space-y-3">
-              <Label>Rasm preview</Label>
+              <Label>Rasm ko'rinishi</Label>
               <div className="relative aspect-[4/3] overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
                 {newProduct.imageUrl.trim() ? (
-                  <img src={newProduct.imageUrl} alt={newProduct.name || "Product preview"} className="h-full w-full object-cover" />
+                  <img src={newProduct.imageUrl} alt={newProduct.name || "Mahsulot ko'rinishi"} className="h-full w-full object-cover" />
                 ) : (
                   <div className="flex h-full flex-col items-center justify-center gap-2 text-sky-200">
                     <FiImage className="text-5xl" />
@@ -577,22 +577,22 @@ export function CashierTabs() {
                 onChange={(event) => uploadProductImage(event.target.files?.[0])}
               />
               <div className="grid grid-cols-2 gap-2">
-                <Button type="button" variant="secondary" onClick={() => imageInputRef.current?.click()}><FiUpload /> Upload</Button>
-                <Button type="button" variant="outline" disabled={!newProduct.imageUrl} onClick={() => setNewProduct((item) => ({ ...item, imageUrl: "" }))}><FiX /> Remove</Button>
+                <Button type="button" variant="secondary" onClick={() => imageInputRef.current?.click()}><FiUpload /> Yuklash</Button>
+                <Button type="button" variant="outline" disabled={!newProduct.imageUrl} onClick={() => setNewProduct((item) => ({ ...item, imageUrl: "" }))}><FiX /> O'chirish</Button>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-sm text-slate-400">
                 Rasm product kartasida chiqadi. File upload yoki URL orqali qo'shish mumkin.
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-2 sm:col-span-2"><Label>Name</Label><Input value={newProduct.name} onChange={(event) => setNewProduct((item) => ({ ...item, name: event.target.value }))} placeholder="Product name" /></div>
-              <div className="space-y-2"><Label>QR code</Label><Input value={newProduct.qrCode} onChange={(event) => setNewProduct((item) => ({ ...item, qrCode: event.target.value }))} placeholder="B2-QR-0010" /></div>
-              <div className="space-y-2"><Label>Category</Label><Select value={newProduct.category} onValueChange={(value) => setNewProduct((item) => ({ ...item, category: value as Product["category"] }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{productCategories.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2 sm:col-span-2"><Label>Nomi</Label><Input value={newProduct.name} onChange={(event) => setNewProduct((item) => ({ ...item, name: event.target.value }))} placeholder="Mahsulot nomi" /></div>
+              <div className="space-y-2"><Label>QR kod</Label><Input value={newProduct.qrCode} onChange={(event) => setNewProduct((item) => ({ ...item, qrCode: event.target.value }))} placeholder="B2-QR-0010" /></div>
+              <div className="space-y-2"><Label>Kategoriya</Label><Select value={newProduct.category} onValueChange={(value) => setNewProduct((item) => ({ ...item, category: value as Product["category"] }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{productCategories.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-2"><Label>Qanchaga olingan</Label><Input inputMode="numeric" value={formatNumber(newProduct.cost)} onChange={(event) => setNewProduct((item) => ({ ...item, cost: event.target.value.replace(/\D/g, "") }))} placeholder="6 000" /></div>
               <div className="space-y-2"><Label>Qanchaga sotilmoqda</Label><Input inputMode="numeric" value={formatNumber(newProduct.price)} onChange={(event) => setNewProduct((item) => ({ ...item, price: event.target.value.replace(/\D/g, "") }))} placeholder="9 000" /></div>
-              <div className="space-y-2"><Label>Stock</Label><Input inputMode="numeric" value={newProduct.stock} onChange={(event) => setNewProduct((item) => ({ ...item, stock: event.target.value.replace(/\D/g, "") }))} placeholder="72" /></div>
+              <div className="space-y-2"><Label>Qoldiq</Label><Input inputMode="numeric" value={newProduct.stock} onChange={(event) => setNewProduct((item) => ({ ...item, stock: event.target.value.replace(/\D/g, "") }))} placeholder="72" /></div>
               <div className="space-y-2 sm:col-span-2">
-                <Label>Icon</Label>
+                <Label>Ikona</Label>
                 <div className="grid grid-cols-5 gap-2 sm:grid-cols-10">
                   {productIcons.map(({ key, label }) => (
                     <button
@@ -608,15 +608,15 @@ export function CashierTabs() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Image URL</Label>
+                <Label>Rasm URL</Label>
                 <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                  <Input value={newProduct.imageUrl.startsWith("data:") ? "Uploaded image selected" : newProduct.imageUrl} onChange={(event) => setNewProduct((item) => ({ ...item, imageUrl: event.target.value }))} placeholder="https://..." disabled={newProduct.imageUrl.startsWith("data:")} />
+                  <Input value={newProduct.imageUrl.startsWith("data:") ? "Yuklangan rasm tanlandi" : newProduct.imageUrl} onChange={(event) => setNewProduct((item) => ({ ...item, imageUrl: event.target.value }))} placeholder="https://..." disabled={newProduct.imageUrl.startsWith("data:")} />
                   <Button type="button" variant="secondary" onClick={() => imageInputRef.current?.click()}><FiUpload /></Button>
                 </div>
               </div>
               <div className="grid gap-2 sm:col-span-2 sm:grid-cols-2">
-                <Button type="button" variant="secondary" onClick={resetProductForm}><FiX /> Cancel</Button>
-                <Button type="submit" disabled={!newProduct.name.trim() || !newProduct.qrCode.trim()}><FiPlusCircle /> {editingProductId ? "Save product" : "Create product"}</Button>
+                <Button type="button" variant="secondary" onClick={resetProductForm}><FiX /> Bekor qilish</Button>
+                <Button type="submit" disabled={!newProduct.name.trim() || !newProduct.qrCode.trim()}><FiPlusCircle /> {editingProductId ? "Mahsulotni saqlash" : "Mahsulot yaratish"}</Button>
               </div>
             </div>
           </form>

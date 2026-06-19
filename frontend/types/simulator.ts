@@ -5,6 +5,7 @@ export type PaymentStatus = "paid" | "unpaid" | "partial";
 export type RepairErrorType = "game_error" | "device_error" | "network_error" | "payment_error" | "hardware_error" | "other";
 export type RepairPriority = "low" | "medium" | "high" | "critical";
 export type RepairApprovalStatus = "pending" | "approved" | "rejected" | "more_details_requested" | "fixing" | "fixed_waiting_confirmation" | "confirmed_fixed";
+export type MaintenanceReviewStatus = "open" | "pending_review" | "cleared" | "charged";
 export type SimulatorMapPosition = {
   floor?: string;
   col: number;
@@ -34,6 +35,14 @@ export type RepairRequest = {
   confirmedAt?: string;
   rejectedAt?: string;
   resolutionNote?: string;
+  // Maintenance accountability flow
+  reviewStatus: MaintenanceReviewStatus;
+  requestedByName?: string;
+  reviewedByName?: string;
+  openedAt?: string;
+  closedAt?: string;
+  durationMinutes?: number;
+  chargeAmount: number;
 };
 
 export type Simulator = {

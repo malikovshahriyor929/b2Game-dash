@@ -9,8 +9,24 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { RepairErrorType, RepairPriority, Simulator } from "@/types/simulator";
 
+const ERROR_TYPE_LABELS: Record<RepairErrorType, string> = {
+  game_error: "O'yin xatosi",
+  device_error: "Qurilma xatosi",
+  network_error: "Tarmoq xatosi",
+  payment_error: "To'lov xatosi",
+  hardware_error: "Apparat xatosi",
+  other: "Boshqa",
+};
+
+const PRIORITY_LABELS: Record<RepairPriority, string> = {
+  low: "Past",
+  medium: "O'rta",
+  high: "Yuqori",
+  critical: "Juda muhim",
+};
+
 export function RequestFixDialog({ open, onOpenChange, simulator }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator }) {
-  const { requestFix } = useDashboardStore();
+  const { openMaintenance } = useDashboardStore();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [errorType, setErrorType] = useState<RepairErrorType>("device_error");
@@ -28,7 +44,7 @@ export function RequestFixDialog({ open, onOpenChange, simulator }: { open: bool
 
   function submit() {
     if (!simulator || !title.trim() || !description.trim()) return;
-    requestFix(simulator.id, { title, description, errorType, priority, note });
+    openMaintenance(simulator.id, { title, description, errorType, priority, note });
     onOpenChange(false);
   }
 
@@ -36,46 +52,46 @@ export function RequestFixDialog({ open, onOpenChange, simulator }: { open: bool
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Request Fix</DialogTitle>
-          <DialogDescription>{simulator?.name} repair request will be sent to Super Admin.</DialogDescription>
+          <DialogTitle>Maintenance ochish</DialogTitle>
+          <DialogDescription>{simulator?.name} ta&apos;mirga olinadi. Yopilgach super admin tekshiradi — bekorga ochilsa, ketgan vaqt jarima sifatida hisobingizdan ayiriladi.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
           <div className="space-y-2">
-            <Label>Issue title</Label>
-            <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Short issue title" />
+            <Label>Muammo sarlavhasi</Label>
+            <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Qisqa muammo sarlavhasi" />
           </div>
           <div className="space-y-2">
-            <Label>Issue description</Label>
-            <Input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What happened?" />
+            <Label>Muammo tavsifi</Label>
+            <Input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Nima sodir bo'ldi?" />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>Error type</Label>
+              <Label>Xato turi</Label>
               <Select value={errorType} onValueChange={(value) => setErrorType(value as RepairErrorType)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {["game_error", "device_error", "network_error", "payment_error", "hardware_error", "other"].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                  {(["game_error", "device_error", "network_error", "payment_error", "hardware_error", "other"] as RepairErrorType[]).map((item) => <SelectItem key={item} value={item}>{ERROR_TYPE_LABELS[item]}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Priority</Label>
+              <Label>Muhimligi</Label>
               <Select value={priority} onValueChange={(value) => setPriority(value as RepairPriority)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {["low", "medium", "high", "critical"].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                  {(["low", "medium", "high", "critical"] as RepairPriority[]).map((item) => <SelectItem key={item} value={item}>{PRIORITY_LABELS[item]}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Optional note</Label>
-            <Input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Extra context" />
+            <Label>Qo&apos;shimcha izoh (ixtiyoriy)</Label>
+            <Input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Qo'shimcha ma'lumot" />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button disabled={!title.trim() || !description.trim()} onClick={submit}>Send request</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>Bekor qilish</Button>
+          <Button disabled={!title.trim() || !description.trim()} onClick={submit}>Maintenance ochish</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -137,7 +137,7 @@ export default function ReportsPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <PageHeader
           title="Hisobotlar & Otchotlar"
-          description="Superadmin hisobot paneli: Kirim/Chiqim, Bar savdosi, Kassa smenalari va Lock/Unlock jurnallari."
+          description="Superadmin hisobot paneli: Kirim/Chiqim, Bar savdosi, Kassa smenalari va Qulflash/Ochish jurnallari."
         />
         
         {/* Date Filter Widget */}
@@ -161,13 +161,13 @@ export default function ReportsPage() {
               <DatePicker
                 value={startDate}
                 onChange={setStartDate}
-                placeholder="Start date"
+                placeholder="Boshlanish sanasi"
               />
-              <span className="text-xs text-slate-500">to</span>
+              <span className="text-xs text-slate-500">dan</span>
               <DatePicker
                 value={endDate}
                 onChange={setEndDate}
-                placeholder="End date"
+                placeholder="Tugash sanasi"
               />
             </div>
           )}
@@ -398,7 +398,7 @@ export default function ReportsPage() {
                   <TableHeader className="bg-slate-950/40 sticky top-0">
                     <TableRow className="whitespace-nowrap">
                       <TableHead>Sana & Vaqt</TableHead>
-                      <TableHead>Konsol / Simulator</TableHead>
+                      <TableHead>Konsol / Simulyator</TableHead>
                       <TableHead>Operator (Admin)</TableHead>
                       <TableHead>Harakat turi</TableHead>
                     </TableRow>

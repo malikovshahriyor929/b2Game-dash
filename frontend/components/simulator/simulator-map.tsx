@@ -18,6 +18,19 @@ import { cn } from "@/lib/utils";
 import { Simulator, SimulatorMapPosition, SimulatorStatus } from "@/types/simulator";
 
 const filters = ["All", "Main", "Premium", "Ready", "Busy", "Reserved", "Unpaid", "Broken", "Repair", "Offline", "Locked"];
+const filterLabels: Record<string, string> = {
+  All: "Barchasi",
+  Main: "Asosiy",
+  Premium: "Premium",
+  Ready: "Tayyor",
+  Busy: "Band",
+  Reserved: "Bron",
+  Unpaid: "Qarz",
+  Broken: "Buzilgan",
+  Repair: "Ta'mir",
+  Offline: "Oflayn",
+  Locked: "Qulflangan",
+};
 const mapColumns = 24;
 const mapRows = 5;
 
@@ -29,7 +42,7 @@ type SimulatorMapLayout = { facilities?: Partial<Record<FacilityKey, MapPosition
 const facilities: Array<{ key: FacilityKey; label: string; icon: typeof FiCreditCard; position: MapPosition }> = [
   { key: "cashier", label: "Kassa", icon: FiCreditCard, position: { floor: "1", col: 21, row: 5, colSpan: 1, rowSpan: 1 } },
   { key: "wc", label: "WC", icon: FiUsers, position: { floor: "1", col: 22, row: 5, colSpan: 1, rowSpan: 1 } },
-  { key: "shop", label: "Shop", icon: FiCoffee, position: { floor: "1", col: 23, row: 5, colSpan: 1, rowSpan: 1 } },
+  { key: "shop", label: "Do'kon", icon: FiCoffee, position: { floor: "1", col: 23, row: 5, colSpan: 1, rowSpan: 1 } },
 ];
 
 const statusClass: Record<SimulatorStatus, string> = {
@@ -61,16 +74,16 @@ const statusDotClass: Record<SimulatorStatus, string> = {
 };
 
 const statusLabels: Record<SimulatorStatus, string> = {
-  ready_to_play: "Ready",
+  ready_to_play: "Tayyor",
   busy: "Band",
   reserved: "Bron",
   unpaid: "Qarz",
-  broken: "Broken",
-  repair_requested: "Req",
-  repair_approved: "Approved",
-  fixing: "Fixing",
-  fixed_waiting_confirmation: "Confirm",
-  offline: "Offline",
+  broken: "Buzilgan",
+  repair_requested: "So'rov",
+  repair_approved: "Tasdiqlandi",
+  fixing: "Ta'mirda",
+  fixed_waiting_confirmation: "Tasdiq kutilmoqda",
+  offline: "Oflayn",
   locked: "Qulf",
 };
 
@@ -166,7 +179,7 @@ function normalizedMapPosition(value: unknown, fallback: MapPosition): MapPositi
 function Tile({ simulator, position, selected, editing, onClick }: { simulator: Simulator; position: MapPosition; selected: boolean; editing: boolean; onClick: () => void }) {
   const detail = simulator.remainingSeconds && simulator.remainingSeconds > 0
     ? seconds(simulator.remainingSeconds)
-    : simulator.currentUser ?? (simulator.status === "ready_to_play" ? "Ready" : simulator.deviceId);
+    : simulator.currentUser ?? (simulator.status === "ready_to_play" ? "Tayyor" : simulator.deviceId);
 
   return (
     <button
@@ -254,9 +267,9 @@ export function SimulatorMap() {
   }, [facilityDraft, facilityPositions]);
 
   const selectedLayoutLabel = useMemo(() => {
-    if (layoutSelection?.type === "facility") return facilities.find((facility) => facility.key === layoutSelection.key)?.label ?? "None";
-    if (layoutSelection?.type === "simulator") return selectedLayoutSimulator?.name ?? "None";
-    return "None";
+    if (layoutSelection?.type === "facility") return facilities.find((facility) => facility.key === layoutSelection.key)?.label ?? "Yo'q";
+    if (layoutSelection?.type === "simulator") return selectedLayoutSimulator?.name ?? "Yo'q";
+    return "Yo'q";
   }, [layoutSelection, selectedLayoutSimulator]);
 
   useEffect(() => {
@@ -366,10 +379,10 @@ export function SimulatorMap() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        {filters.map((item) => <Button key={item} size="sm" variant={filter === item ? "default" : "secondary"} onClick={() => setFilter(item)}>{item}</Button>)}
+        {filters.map((item) => <Button key={item} size="sm" variant={filter === item ? "default" : "secondary"} onClick={() => setFilter(item)}>{filterLabels[item] ?? item}</Button>)}
         <div className="relative w-full sm:ml-auto sm:w-80">
           <FiSearch className="absolute left-3 top-2.5 text-slate-500" />
-          <Input className="h-9 pl-9" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Name, customer, phone, order ID" />
+          <Input className="h-9 pl-9" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Nomi, mijoz, telefon, buyurtma ID" />
         </div>
       </div>
       {selectedBranchId === "all" ? (
@@ -381,9 +394,9 @@ export function SimulatorMap() {
               <section key={branch.id} className="space-y-2">
                 <div className="flex items-center gap-2">
                   <Badge>{branch.name}</Badge>
-                  <Badge variant="muted">{branchSimulators.filter((item) => item.status === "ready_to_play").length} ready</Badge>
-                  <Badge variant="success">{branchSimulators.filter((item) => ["busy", "unpaid"].includes(item.status)).length} active</Badge>
-                  <Badge variant="warning">{branchSimulators.filter((item) => item.status.startsWith("repair") || item.status === "fixing" || item.status === "fixed_waiting_confirmation").length} repair</Badge>
+                  <Badge variant="muted">{branchSimulators.filter((item) => item.status === "ready_to_play").length} tayyor</Badge>
+                  <Badge variant="success">{branchSimulators.filter((item) => ["busy", "unpaid"].includes(item.status)).length} faol</Badge>
+                  <Badge variant="warning">{branchSimulators.filter((item) => item.status.startsWith("repair") || item.status === "fixing" || item.status === "fixed_waiting_confirmation").length} ta'mir</Badge>
                 </div>
                 <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-2.5">
                   {branchSimulators.map((item) => <SimulatorCard key={item.id} simulator={item} selected={selectedId === item.id} onClick={() => openCard(item)} compact />)}
@@ -397,12 +410,12 @@ export function SimulatorMap() {
         <>
           <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/75 p-3">
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <Badge>Logitech Main</Badge>
+              <Badge>Logitech Asosiy</Badge>
               <Badge variant="vip">Moza Premium</Badge>
               <Badge variant="success">{simulators.filter((item) => ["busy", "unpaid"].includes(item.status)).length} band</Badge>
-              <Badge variant="muted">{simulators.filter((item) => item.status === "ready_to_play").length} ready</Badge>
+              <Badge variant="muted">{simulators.filter((item) => item.status === "ready_to_play").length} tayyor</Badge>
               <Badge variant="warning">{simulators.filter((item) => item.status === "reserved").length} bron</Badge>
-              <span className="ml-auto text-xs font-semibold text-slate-500">{visible.length} / {simulators.length} shown</span>
+              <span className="ml-auto text-xs font-semibold text-slate-500">{visible.length} / {simulators.length} ko'rsatilgan</span>
               <Button className="ml-2" size="sm" variant={editingLayout ? "default" : "secondary"} disabled={!simulators.length} onClick={() => {
                 setEditingLayout((value) => {
                   const next = !value;
@@ -413,20 +426,20 @@ export function SimulatorMap() {
                 const nextId = selectedId ?? visible[0]?.id ?? null;
                 setSelectedId(nextId);
               }}>
-                {editingLayout ? "Editing layout" : "Edit layout"}
+                {editingLayout ? "Tartib tahrirlanmoqda" : "Tartibni tahrirlash"}
               </Button>
               <Button size="sm" variant="secondary" disabled={!simulators.length || savingLayout} onClick={resetDefaultLayout}>
-                Reset default
+                Standartga qaytarish
               </Button>
               <Button className="ml-2" size="sm" variant="outline" disabled={savingLayout || !simulators.length} onClick={() => void saveLayout()}>
-                {savingLayout ? "Saving..." : "Save layout"}
+                {savingLayout ? "Saqlanmoqda..." : "Tartibni saqlash"}
               </Button>
             </div>
             {editingLayout ? (
               <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/65 px-3 py-2">
-                <Badge variant="muted">Selected</Badge>
+                <Badge variant="muted">Tanlangan</Badge>
                 <span className="text-sm font-bold text-slate-100">{selectedLayoutLabel}</span>
-                <span className="text-xs font-semibold text-slate-500">click any map cell to move</span>
+                <span className="text-xs font-semibold text-slate-500">ko'chirish uchun istalgan katakni bosing</span>
               </div>
             ) : null}
 
@@ -443,18 +456,18 @@ export function SimulatorMap() {
                 className="pointer-events-none z-0 flex items-center justify-center rounded-[30px] border border-slate-700/80 bg-slate-900/80 text-sm font-black uppercase text-slate-500 shadow-xl shadow-black/20"
                 style={{ gridColumn: "1 / span 7", gridRow: "1 / span 5" }}
               >
-                2 floor
+                2-qavat
               </div>
               <div
                 className="pointer-events-none z-0 flex items-center justify-center rounded-[30px] border border-slate-700/80 bg-slate-900/80 text-sm font-black uppercase text-slate-500 shadow-xl shadow-black/20"
                 style={{ gridColumn: "8 / span 17", gridRow: "1 / span 5" }}
               >
-                1 floor
+                1-qavat
               </div>
               <div
                 className="pointer-events-none z-20 overflow-hidden rounded-2xl border border-slate-600/70 bg-slate-900/70 shadow-2xl shadow-black/30 ring-1 ring-white/5"
                 style={{ gridColumn: "22 / span 3", gridRow: "3 / span 2" }}
-                aria-label="Entrance"
+                aria-label="Kirish"
               >
                 <div className="relative flex h-full min-h-0 w-full items-stretch justify-center gap-3 px-5 py-4">
                   <div className="absolute inset-x-4 top-4 h-px bg-gradient-to-r from-transparent via-sky-300/45 to-transparent" />
@@ -466,7 +479,7 @@ export function SimulatorMap() {
                     />
                   ))}
                   <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-600/70 bg-slate-950/95 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.16em] text-slate-100 shadow-xl shadow-black/40">
-                    Entrance
+                    Kirish
                   </span>
                 </div>
               </div>
@@ -475,7 +488,7 @@ export function SimulatorMap() {
                 <button
                   type="button"
                   key={`empty-${index}`}
-                  aria-label={`Move selected simulator to column ${(index % mapColumns) + 1}, row ${Math.floor(index / mapColumns) + 1}`}
+                  aria-label={`Tanlangan simulatorni ${(index % mapColumns) + 1}-ustun, ${Math.floor(index / mapColumns) + 1}-qatorga ko'chirish`}
                   disabled={!editingLayout}
                   onClick={() => moveSelectedTo((index % mapColumns) + 1, Math.floor(index / mapColumns) + 1)}
                   className={cn(

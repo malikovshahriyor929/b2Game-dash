@@ -15,6 +15,24 @@ import { backendGet, backendPatch } from "@/server/api";
 type TicketPriority = "Low" | "Medium" | "High" | "Critical";
 type TicketStatus = "Open" | "In progress" | "Waiting" | "Solved" | "Closed";
 
+const PRIORITY_LABELS: Record<TicketPriority, string> = {
+  Low: "Past",
+  Medium: "O'rta",
+  High: "Yuqori",
+  Critical: "Juda muhim",
+};
+
+const STATUS_LABELS: Record<TicketStatus, string> = {
+  Open: "Ochiq",
+  "In progress": "Jarayonda",
+  Waiting: "Kutilmoqda",
+  Solved: "Hal qilingan",
+  Closed: "Yopilgan",
+};
+
+const PRIORITY_VALUES: TicketPriority[] = ["Low", "Medium", "High", "Critical"];
+const STATUS_VALUES: TicketStatus[] = ["Open", "In progress", "Waiting", "Solved", "Closed"];
+
 type Ticket = {
   id: string;
   title: string;
@@ -98,7 +116,7 @@ export function SupportWorkspace() {
     const nextMessages = [
       ...messages,
       { from: "Admin", text: `${ticket.simulator}: ${ticket.title}. ${ticket.description}`, time: ticket.createdAt, own: true, ticketId: ticket.id },
-      { from: "Support Bot", text: `Ticket #${ticket.id} created and assigned to Super Admin monitoring.`, time: ticket.createdAt, own: false, ticketId: ticket.id },
+      { from: "Yordam Boti", text: `#${ticket.id} murojaati yaratildi va Super Admin nazoratiga biriktirildi.`, time: ticket.createdAt, own: false, ticketId: ticket.id },
     ];
     setTickets(nextTickets);
     setSelectedTicketId(ticket.id);
@@ -111,7 +129,7 @@ export function SupportWorkspace() {
   function updateSelectedStatus(status: TicketStatus) {
     if (!selectedTicketId) return;
     const nextTickets = tickets.map((ticket) => (ticket.id === selectedTicketId ? { ...ticket, status } : ticket));
-    const nextMessages = [...messages, { from: "Support Bot", text: `Ticket status changed to ${status}.`, time: now(), own: false, ticketId: selectedTicketId }];
+    const nextMessages = [...messages, { from: "Yordam Boti", text: `Murojaat holati o'zgartirildi: ${STATUS_LABELS[status]}.`, time: now(), own: false, ticketId: selectedTicketId }];
     setTickets(nextTickets);
     setMessages(nextMessages);
     persist(nextTickets, nextMessages);
@@ -122,8 +140,8 @@ export function SupportWorkspace() {
       <Card className="min-h-[260px] overflow-hidden">
         <CardHeader className="border-b border-slate-800">
           <CardTitle className="flex items-center justify-between">
-            <span className="flex items-center gap-2">Tickets <Badge variant={openCount ? "destructive" : "success"}>{openCount}</Badge></span>
-            <Button size="icon" onClick={() => setCreateOpen(true)} aria-label="Create ticket"><FiPlus /></Button>
+            <span className="flex items-center gap-2">Murojaatlar <Badge variant={openCount ? "destructive" : "success"}>{openCount}</Badge></span>
+            <Button size="icon" onClick={() => setCreateOpen(true)} aria-label="Murojaat yaratish"><FiPlus /></Button>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 p-3">
@@ -131,7 +149,7 @@ export function SupportWorkspace() {
             className={cn("flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm", selectedTicketId === null ? "bg-sky-500/15 text-sky-200" : "text-slate-400 hover:bg-slate-800")}
             onClick={() => setSelectedTicketId(null)}
           >
-            <span className="flex items-center gap-2"><FiMessageCircle /> General chat</span>
+            <span className="flex items-center gap-2"><FiMessageCircle /> Umumiy chat</span>
           </button>
           {tickets.map((ticket) => (
             <button
@@ -141,7 +159,7 @@ export function SupportWorkspace() {
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="truncate font-semibold">#{ticket.id}</span>
-                <Badge variant={statusVariant(ticket.status)}>{ticket.status}</Badge>
+                <Badge variant={statusVariant(ticket.status)}>{STATUS_LABELS[ticket.status]}</Badge>
               </div>
               <div className="mt-1 truncate text-xs text-slate-400">{ticket.simulator} - {ticket.title}</div>
             </button>
@@ -152,13 +170,13 @@ export function SupportWorkspace() {
       <Card className="flex min-h-[560px] min-w-0 flex-col overflow-hidden xl:h-[calc(100vh-220px)]">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 p-4">
           <div>
-            <div className="font-semibold text-emerald-300">{selectedTicket ? `#${selectedTicket.id} - ${selectedTicket.title}` : "Support - Yao, Jonathan, Daniela online"}</div>
-            <div className="mt-1 text-xs text-slate-500">{selectedTicket ? `${selectedTicket.simulator} - ${selectedTicket.priority}` : "General operational support chat"}</div>
+            <div className="font-semibold text-emerald-300">{selectedTicket ? `#${selectedTicket.id} - ${selectedTicket.title}` : "Yordam — Yao, Jonathan, Daniela onlayn"}</div>
+            <div className="mt-1 text-xs text-slate-500">{selectedTicket ? `${selectedTicket.simulator} - ${PRIORITY_LABELS[selectedTicket.priority]}` : "Umumiy operatsion yordam chati"}</div>
           </div>
           {selectedTicket ? (
             <Select value={selectedTicket.status} onValueChange={(value) => updateSelectedStatus(value as TicketStatus)}>
               <SelectTrigger className="h-9 w-40"><SelectValue /></SelectTrigger>
-              <SelectContent>{["Open", "In progress", "Waiting", "Solved", "Closed"].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
+              <SelectContent>{STATUS_VALUES.map((item) => <SelectItem key={item} value={item}>{STATUS_LABELS[item]}</SelectItem>)}</SelectContent>
             </Select>
           ) : null}
         </div>
@@ -179,7 +197,7 @@ export function SupportWorkspace() {
             onKeyDown={(event) => {
               if (event.key === "Enter") sendMessage();
             }}
-            placeholder={selectedTicket ? `Message for #${selectedTicket.id}` : "Message..."}
+            placeholder={selectedTicket ? `#${selectedTicket.id} uchun xabar` : "Xabar..."}
           />
           <Button onClick={sendMessage} disabled={!text.trim()}><FiSend /></Button>
         </div>
@@ -187,16 +205,16 @@ export function SupportWorkspace() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-h-[92vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create ticket</DialogTitle>
-            <DialogDescription>Create an operational support ticket for a branch simulator or admin issue.</DialogDescription>
+            <DialogTitle>Murojaat yaratish</DialogTitle>
+            <DialogDescription>Filial simulyatori yoki admin muammosi uchun operatsion yordam murojaatini yarating.</DialogDescription>
           </DialogHeader>
           <form onSubmit={createTicket} className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-2"><Label>Title</Label><Input value={form.title} onChange={(event) => setForm((item) => ({ ...item, title: event.target.value }))} /></div>
-            <div className="space-y-2"><Label>Simulator</Label><Input value={form.simulator} onChange={(event) => setForm((item) => ({ ...item, simulator: event.target.value }))} placeholder="LOGITECH-01" /></div>
-            <div className="space-y-2"><Label>Priority</Label><Select value={form.priority} onValueChange={(value) => setForm((item) => ({ ...item, priority: value as TicketPriority }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["Low", "Medium", "High", "Critical"].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2"><Label>Status</Label><Select value={form.status} onValueChange={(value) => setForm((item) => ({ ...item, status: value as TicketStatus }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["Open", "In progress", "Waiting", "Solved", "Closed"].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2 sm:col-span-2"><Label>Description</Label><Input value={form.description} onChange={(event) => setForm((item) => ({ ...item, description: event.target.value }))} /></div>
-            <Button className="sm:col-span-2" type="submit" disabled={!form.title.trim() || !form.simulator.trim() || !form.description.trim()}><FiPlus /> Create ticket</Button>
+            <div className="space-y-2"><Label>Sarlavha</Label><Input value={form.title} onChange={(event) => setForm((item) => ({ ...item, title: event.target.value }))} /></div>
+            <div className="space-y-2"><Label>Simulyator</Label><Input value={form.simulator} onChange={(event) => setForm((item) => ({ ...item, simulator: event.target.value }))} placeholder="LOGITECH-01" /></div>
+            <div className="space-y-2"><Label>Muhimligi</Label><Select value={form.priority} onValueChange={(value) => setForm((item) => ({ ...item, priority: value as TicketPriority }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PRIORITY_VALUES.map((item) => <SelectItem key={item} value={item}>{PRIORITY_LABELS[item]}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>Holat</Label><Select value={form.status} onValueChange={(value) => setForm((item) => ({ ...item, status: value as TicketStatus }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STATUS_VALUES.map((item) => <SelectItem key={item} value={item}>{STATUS_LABELS[item]}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2 sm:col-span-2"><Label>Tavsif</Label><Input value={form.description} onChange={(event) => setForm((item) => ({ ...item, description: event.target.value }))} /></div>
+            <Button className="sm:col-span-2" type="submit" disabled={!form.title.trim() || !form.simulator.trim() || !form.description.trim()}><FiPlus /> Murojaat yaratish</Button>
           </form>
         </DialogContent>
       </Dialog>

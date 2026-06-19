@@ -15,23 +15,23 @@ export default function AnalyticsPage() {
   const peak = revenueEvents.reduce((max, event) => Math.max(max, event.amount), 0);
   const repeatCustomers = 0;
   const insights = [
-    `Backend events: ${revenueEvents.length}`,
-    `Active simulators: ${active}`,
-    `Total simulators: ${simulators.length}`,
-    `Cash transactions: ${cashTransactions.length}`,
+    `Tushum hodisalari: ${revenueEvents.length}`,
+    `Faol simulyatorlar: ${active}`,
+    `Jami simulyatorlar: ${simulators.length}`,
+    `Naqd tranzaksiyalar: ${cashTransactions.length}`,
   ];
 
   return (
     <div>
-      <PageHeader title="Analitika" description="Management view for occupancy, average check and repeat customer behavior." />
+      <PageHeader title="Analitika" description="Bandlik darajasi, o'rtacha chek va qayta keluvchi mijozlar xatti-harakatini boshqaruv ko'rinishi." />
       <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <ReportCard label="Occupancy rate" value={occupancy} icon={FiActivity} />
-        <ReportCard label="Average check" value={averageCheck} icon={FiTrendingUp} />
-        <ReportCard label="Peak event revenue" value={peak} icon={FiClock} />
-        <ReportCard label="Repeat customers" value={repeatCustomers} icon={FiRepeat} />
+        <ReportCard label="Bandlik darajasi" value={occupancy} icon={FiActivity} />
+        <ReportCard label="O'rtacha chek" value={averageCheck} icon={FiTrendingUp} />
+        <ReportCard label="Eng yuqori tushum" value={peak} icon={FiClock} />
+        <ReportCard label="Qayta keluvchi mijozlar" value={repeatCustomers} icon={FiRepeat} />
       </div>
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <RevenueChart title="Daily / weekly revenue trend" />
+        <RevenueChart title="Kunlik / haftalik tushum dinamikasi" />
         <Card className="space-y-3 p-4">
           {insights.map((item) => <div key={item} className="rounded-xl bg-slate-950 p-3 text-sm text-slate-300">{item}</div>)}
         </Card>

@@ -9,7 +9,7 @@ export default function SimulatorsPage() {
   const { loading } = useDashboardStore();
   return (
     <div>
-      <PageHeader title="Maket / Simulator Map" description="Dense room map with zones, status colors, and fast operator actions." />
+      <PageHeader title="Maket / Simulyator xaritasi" description="Zonalar, holat ranglari va tezkor operator amallari bilan zal xaritasi." />
       {loading ? <MapSkeleton count={16} /> : <SimulatorMap />}
     </div>
   );

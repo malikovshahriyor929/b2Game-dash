@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import toast from "react-hot-toast";
 import { useSession } from "next-auth/react";
 import { Booking } from "@/types/booking";
 import { LogEntry, LockUnlockEntry } from "@/types/log";
@@ -72,14 +73,9 @@ type DashboardStore = {
   pay: (id: string, amount: number, method: string) => void;
   stopSession: (id: string, override?: boolean) => void;
   toggleLock: (id: string) => void;
-  requestFix: (id: string, payload: RepairPayload) => void;
-  approveRepair: (requestId: string) => void;
-  rejectRepair: (requestId: string) => void;
-  askRepairDetails: (requestId: string) => void;
-  startFixing: (id: string) => void;
-  markFixed: (id: string) => void;
-  confirmFixed: (requestId: string) => void;
-  rejectFix: (requestId: string) => void;
+  openMaintenance: (id: string, payload: RepairPayload) => void;
+  closeMaintenance: (id: string) => void;
+  reviewMaintenance: (requestId: string, decision: "cleared" | "charged", note?: string) => void;
   addBooking: (booking: Booking) => void;
   updateBooking: (booking: Booking) => void;
   deleteBooking: (id: string) => void;
@@ -223,7 +219,7 @@ function rigsToSimulators(rigs: RigRecord[], branchList: Branch[]) {
       status,
       deviceId: rig.rig_id,
       ipAddress: rig.hostname,
-      currentUser: hasSessionTimer ? rig.active_customer_name || "Active rig" : undefined,
+      currentUser: hasSessionTimer ? rig.active_customer_name || "Faol rig" : undefined,
       phone: rig.active_phone ?? undefined,
       tariff: rig.active_tariff_name || "Rig Admin",
       startedAt: timestampTime(rig.active_started_at),
@@ -327,6 +323,13 @@ function mapRepair(row: Record<string, unknown>): RepairRequest {
     fixingStartedAt: row.fixing_started_at ? String(row.fixing_started_at) : undefined,
     fixedAt: row.marked_fixed_at ? String(row.marked_fixed_at) : undefined,
     confirmedAt: row.confirmed_at ? String(row.confirmed_at) : undefined,
+    reviewStatus: (["open", "pending_review", "cleared", "charged"].includes(String(row.review_status)) ? String(row.review_status) : "open") as RepairRequest["reviewStatus"],
+    requestedByName: row.requested_by_name ? String(row.requested_by_name) : undefined,
+    reviewedByName: row.reviewed_by_name ? String(row.reviewed_by_name) : undefined,
+    openedAt: backendDateTime(String(row.created_at ?? row.requested_at ?? "")),
+    closedAt: row.closed_at ? backendDateTime(String(row.closed_at)) : undefined,
+    durationMinutes: row.duration_minutes != null ? Number(row.duration_minutes) : undefined,
+    chargeAmount: numberValue(row.charge_amount),
   };
 }
 
@@ -381,7 +384,7 @@ function mapPayment(row: Record<string, unknown>, operator: string): CashTransac
     id: String(row.id),
     type: "income",
     amount: numberValue(row.amount),
-    source: row.sale_id ? "Shop sale" : row.session_id ? "Session payment" : "Payment",
+    source: row.sale_id ? "Do'kon savdosi" : row.session_id ? "Sessiya to'lovi" : "To'lov",
     operator: String(row.paid_by_admin_name ?? operator),
     date: shortDate(created),
     time: shortTime(created),
@@ -523,7 +526,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       ]);
       const nextRepairs = repairRows.map(mapRepair);
       const nextSimulators = rigsToSimulators(rigs, branchSource).map((simulator) => {
-        const activeRepair = nextRepairs.find((repair) => repair.simulatorId === simulator.id && !["rejected", "confirmed_fixed"].includes(repair.status));
+        const activeRepair = nextRepairs.find((repair) => repair.simulatorId === simulator.id && repair.reviewStatus === "open");
         return activeRepair ? { ...simulator, repairRequestId: activeRepair.id } : simulator;
       });
 
@@ -705,6 +708,13 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     window.setTimeout(() => void refreshSimulatorsOnly(), 300);
   }
 
+  // Backend amal rad etganda: xatoni toast'da ko'rsatamiz va optimistik holatni
+  // backenddan qayta sinxronlab ortga qaytaramiz (masalan PC "busy" bo'lib qolmasin).
+  function revertWithError(error: unknown, fallback: string) {
+    toast.error(error instanceof Error && error.message ? error.message : fallback);
+    refreshAfterAction();
+  }
+
   function setSelectedBranchId(id: string) {
     if (!canUseAllBranches) return;
     setSelectedBranchIdState(id);
@@ -778,10 +788,10 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         paid_amount: isPaid ? payload.amount : 0,
         method,
         booking_id: payload.bookingId ?? null,
-      }).then(refreshAfterAction).catch(() => undefined);
+      }).then(refreshAfterAction).catch((error) => revertWithError(error, "Sessiyani boshlab bo'lmadi"));
       patchSimulator(id, {
         status: "busy",
-        currentUser: payload.customerName || "Guest",
+        currentUser: payload.customerName || "Mehmon",
         phone: payload.phone,
         tariff: payload.tariff,
         startedAt: now(),
@@ -822,7 +832,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
             applyLocal();
             return refreshAfterAction();
           })
-          .catch(() => undefined);
+          .catch((error) => revertWithError(error, "Vaqt qo'shib bo'lmadi"));
         return;
       }
 
@@ -848,7 +858,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         session_id: simulator.currentSessionId ?? undefined,
         method: apiMethod,
         ...splitPayment(amount, apiMethod),
-      }).then(refreshAfterAction).catch(() => undefined);
+      }).then(refreshAfterAction).catch((error) => revertWithError(error, "To'lovni amalga oshirib bo'lmadi"));
       patchSimulator(id, { paidAmount: simulator.paidAmount + amount, paymentStatus: "paid", status: simulator.status === "unpaid" ? "busy" : simulator.status });
       recordRevenue(amount, `session payment ${simulator.name}`, simulator.branchId);
       appendLog(`received ${amount.toLocaleString("uz-UZ")} by ${method}`, simulator.name, method);
@@ -889,7 +899,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         ...items,
       ]);
     },
-    requestFix(id, payload) {
+    openMaintenance(id, payload) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator || !visibleBranchIds.includes(simulator.branchId)) return;
       const request: RepairRequest = {
@@ -899,14 +909,18 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         branchId: simulator.branchId,
         branchName: simulator.branchName,
         requestedBy: operator,
+        requestedByName: operator,
         requestedAt: new Date().toLocaleString("uz-UZ"),
+        openedAt: new Date().toLocaleString("uz-UZ"),
         title: payload.title,
         description: payload.description,
         errorType: payload.errorType,
         priority: payload.priority,
         note: payload.note,
         status: "pending",
-        affectedRevenue: simulator.status === "busy" ? simulator.paidAmount : 0,
+        reviewStatus: "open",
+        affectedRevenue: 0,
+        chargeAmount: 0,
       };
       void backendPost<Record<string, unknown>>("/repair-requests", {
         simulator_id: simulator.id,
@@ -918,62 +932,22 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       }).then(refreshBackendData).catch(() => undefined);
       setRepairRequests((items) => [request, ...items]);
       patchSimulator(id, { status: "repair_requested", repairRequestId: request.id });
-      appendLog(`requested fix for ${simulator.name}`, simulator.name);
+      appendLog(`opened maintenance for ${simulator.name}`, simulator.name);
     },
-    approveRepair(requestId) {
-      const request = repairRequests.find((item) => item.id === requestId);
-      if (!request || role !== "super_admin") return;
-      void backendPost<Record<string, unknown>>(`/repair-requests/${requestId}/approve`).then(refreshBackendData).catch(() => undefined);
-      patchRepair(requestId, { status: "approved", approvedAt: new Date().toLocaleString("uz-UZ") });
-      patchSimulator(request.simulatorId, { status: "repair_approved" });
-      appendLog(`approved repair for ${request.simulatorName}`, request.simulatorName);
-    },
-    rejectRepair(requestId) {
-      const request = repairRequests.find((item) => item.id === requestId);
-      if (!request || role !== "super_admin") return;
-      void backendPost<Record<string, unknown>>(`/repair-requests/${requestId}/reject`).then(refreshBackendData).catch(() => undefined);
-      patchRepair(requestId, { status: "rejected", rejectedAt: new Date().toLocaleString("uz-UZ") });
-      patchSimulator(request.simulatorId, { status: "broken" });
-      appendLog(`rejected repair for ${request.simulatorName}`, request.simulatorName);
-    },
-    askRepairDetails(requestId) {
-      const request = repairRequests.find((item) => item.id === requestId);
-      if (!request || role !== "super_admin") return;
-      void backendPost<Record<string, unknown>>(`/repair-requests/${requestId}/need-more-details`).then(refreshBackendData).catch(() => undefined);
-      patchRepair(requestId, { status: "more_details_requested" });
-      appendLog(`asked for more details on ${request.simulatorName}`, request.simulatorName);
-    },
-    startFixing(id) {
+    closeMaintenance(id) {
       const simulator = allSimulators.find((item) => item.id === id);
-      if (!simulator || simulator.status !== "repair_approved") return;
-      if (simulator.repairRequestId) void backendPost<Record<string, unknown>>(`/repair-requests/${simulator.repairRequestId}/start-fixing`).then(refreshBackendData).catch(() => undefined);
-      patchSimulator(id, { status: "fixing" });
-      if (simulator.repairRequestId) patchRepair(simulator.repairRequestId, { status: "fixing", fixingStartedAt: new Date().toLocaleString("uz-UZ") });
-      appendLog(`started fixing ${simulator.name}`, simulator.name);
+      if (!simulator || !simulator.repairRequestId) return;
+      void backendPost<Record<string, unknown>>(`/repair-requests/${simulator.repairRequestId}/close`).then(refreshBackendData).catch(() => undefined);
+      patchRepair(simulator.repairRequestId, { reviewStatus: "pending_review", closedAt: new Date().toLocaleString("uz-UZ") });
+      patchSimulator(id, { status: "ready_to_play", repairRequestId: undefined });
+      appendLog(`closed maintenance for ${simulator.name}`, simulator.name);
     },
-    markFixed(id) {
-      const simulator = allSimulators.find((item) => item.id === id);
-      if (!simulator || simulator.status !== "fixing") return;
-      if (simulator.repairRequestId) void backendPost<Record<string, unknown>>(`/repair-requests/${simulator.repairRequestId}/mark-fixed`).then(refreshBackendData).catch(() => undefined);
-      patchSimulator(id, { status: "fixed_waiting_confirmation" });
-      if (simulator.repairRequestId) patchRepair(simulator.repairRequestId, { status: "fixed_waiting_confirmation", fixedAt: new Date().toLocaleString("uz-UZ") });
-      appendLog(`marked ${simulator.name} fixed and waiting confirmation`, simulator.name);
-    },
-    confirmFixed(requestId) {
+    reviewMaintenance(requestId, decision, note) {
       const request = repairRequests.find((item) => item.id === requestId);
       if (!request || role !== "super_admin") return;
-      void backendPost<Record<string, unknown>>(`/repair-requests/${requestId}/confirm-fixed`).then(refreshBackendData).catch(() => undefined);
-      patchRepair(requestId, { status: "confirmed_fixed", confirmedAt: new Date().toLocaleString("uz-UZ") });
-      patchSimulator(request.simulatorId, { status: "ready_to_play", repairRequestId: undefined });
-      appendLog(`confirmed fixed ${request.simulatorName}`, request.simulatorName);
-    },
-    rejectFix(requestId) {
-      const request = repairRequests.find((item) => item.id === requestId);
-      if (!request || role !== "super_admin") return;
-      void backendPost<Record<string, unknown>>(`/repair-requests/${requestId}/reject-fix`).then(refreshBackendData).catch(() => undefined);
-      patchRepair(requestId, { status: "fixing" });
-      patchSimulator(request.simulatorId, { status: "fixing" });
-      appendLog(`rejected fix confirmation for ${request.simulatorName}`, request.simulatorName);
+      void backendPost<Record<string, unknown>>(`/repair-requests/${requestId}/review`, { decision, note }).then(refreshBackendData).catch(() => undefined);
+      patchRepair(requestId, { reviewStatus: decision });
+      appendLog(`reviewed maintenance for ${request.simulatorName} (${decision})`, request.simulatorName);
     },
     addBooking(booking) {
       const simulator = allSimulators.find((item) => item.id === booking.simulatorId);

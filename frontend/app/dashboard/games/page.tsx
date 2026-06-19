@@ -35,10 +35,16 @@ const statusLabels: Record<GameStatus, string> = {
   disabled: "O'chirilgan",
 };
 
+const zoneLabels: Record<GameZone, string> = {
+  Standard: "Standart",
+  VIP: "VIP",
+  Both: "Ikkalasi",
+};
+
 const statusHelp: Record<GameStatus, string> = {
   installed: "O'rnatilgan, hali tayyor deb belgilanmagan",
   ready: "Sessiyalar uchun mavjud",
-  updating: "Texnik xizmat yoki update ketmoqda",
+  updating: "Texnik xizmat yoki yangilanish ketmoqda",
   disabled: "Aktiv simulatorlarda ko'rinmaydi",
 };
 
@@ -147,7 +153,7 @@ export default function GamesPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <PageHeader title="O'yinlar" description="Simulator zonasi va holati bo'yicha game library." />
+        <PageHeader title="O'yinlar" description="Simulyator zonasi va holati bo'yicha o'yinlar kutubxonasi." />
         <Button onClick={openCreate}><FiPlus /> O'yin qo'shish</Button>
       </div>
 
@@ -174,21 +180,21 @@ export default function GamesPage() {
         <div className="grid gap-2 lg:grid-cols-[minmax(260px,1fr)_180px_180px]">
           <div className="relative">
             <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <Input className="pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nomi, zona, status yoki versiya bo'yicha qidirish..." />
+            <Input className="pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nomi, zona, holat yoki versiya bo'yicha qidirish..." />
           </div>
           <Select value={zoneFilter} onValueChange={(value) => setZoneFilter(value as typeof zoneFilter)}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Barcha zonalar</SelectItem>
-              <SelectItem value="Standard">Standard</SelectItem>
+              <SelectItem value="Standard">Standart</SelectItem>
               <SelectItem value="VIP">VIP</SelectItem>
-              <SelectItem value="Both">Both only</SelectItem>
+              <SelectItem value="Both">Faqat ikkalasi</SelectItem>
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as typeof statusFilter)}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Barcha statuslar</SelectItem>
+              <SelectItem value="all">Barcha holatlar</SelectItem>
               <SelectItem value="ready">Tayyor</SelectItem>
               <SelectItem value="installed">O'rnatilgan</SelectItem>
               <SelectItem value="updating">Yangilanmoqda</SelectItem>
@@ -205,12 +211,12 @@ export default function GamesPage() {
               <div className="relative">
                 <GameImage src={game.imageUrl} name={game.name} className="aspect-[16/9]" />
                 <div className="absolute left-3 top-3 flex flex-wrap gap-2">
-                  <Badge variant={game.zone === "VIP" ? "vip" : "muted"}>{game.zone}</Badge>
+                  <Badge variant={game.zone === "VIP" ? "vip" : "muted"}>{zoneLabels[game.zone]}</Badge>
                   <Badge variant={statusVariant(game.status)}>{statusLabels[game.status]}</Badge>
                 </div>
                 <div className="absolute right-3 top-3 flex gap-2 opacity-100 transition md:opacity-0 md:group-hover:opacity-100">
-                  <Button size="icon" variant="secondary" aria-label={`Edit ${game.name}`} onClick={() => openEdit(game)}><FiEdit2 /></Button>
-                  <Button size="icon" variant="destructive" aria-label={`Delete ${game.name}`} onClick={() => removeGame(game)}><FiTrash2 /></Button>
+                  <Button size="icon" variant="secondary" aria-label={`${game.name} tahrirlash`} onClick={() => openEdit(game)}><FiEdit2 /></Button>
+                  <Button size="icon" variant="destructive" aria-label={`${game.name} o'chirish`} onClick={() => removeGame(game)}><FiTrash2 /></Button>
                 </div>
               </div>
               <div className="space-y-4 p-4">
@@ -225,7 +231,7 @@ export default function GamesPage() {
                   </div>
                   <div className="rounded-xl bg-slate-900/70 p-3">
                     <div className="text-xs font-semibold uppercase text-slate-500">Zona</div>
-                    <div className="mt-1 truncate font-semibold text-slate-100">{game.zone}</div>
+                    <div className="mt-1 truncate font-semibold text-slate-100">{zoneLabels[game.zone]}</div>
                   </div>
                 </div>
               </div>
@@ -236,7 +242,7 @@ export default function GamesPage() {
         <Card className="flex min-h-72 flex-col items-center justify-center gap-3 p-6 text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-800 text-3xl text-sky-300"><RiGamepadLine /></div>
           <div className="text-xl font-black text-white">O'yin topilmadi</div>
-          <div className="max-w-md text-sm text-slate-400">Filterlarni o'zgartiring yoki rasm, status, versiya va zona bilan yangi o'yin qo'shing.</div>
+          <div className="max-w-md text-sm text-slate-400">Filterlarni o'zgartiring yoki rasm, holat, versiya va zona bilan yangi o'yin qo'shing.</div>
           <Button onClick={openCreate}><FiPlus /> O'yin qo'shish</Button>
         </Card>
       )}
@@ -245,14 +251,14 @@ export default function GamesPage() {
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>{editingId ? "O'yinni tahrirlash" : "O'yin qo'shish"}</DialogTitle>
-            <DialogDescription>{editingId ? "Rasm, zona, versiya va holatini yangilang." : "Cover rasm bilan yangi game library elementi yarating."}</DialogDescription>
+            <DialogDescription>{editingId ? "Rasm, zona, versiya va holatini yangilang." : "Muqova rasmi bilan yangi o'yin kutubxonasi elementini yarating."}</DialogDescription>
           </DialogHeader>
           <form onSubmit={submit} className="grid gap-4 md:grid-cols-[260px,1fr]">
             <div className="space-y-3">
-              <Label>Rasm preview</Label>
-              <GameImage src={form.imageUrl} name={form.name || "Game cover"} className="aspect-[4/3] rounded-2xl border border-slate-800" />
+              <Label>Rasm ko'rinishi</Label>
+              <GameImage src={form.imageUrl} name={form.name || "O'yin muqovasi"} className="aspect-[4/3] rounded-2xl border border-slate-800" />
               <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-sm text-slate-400">
-                Rasm game kartasida chiqadi va adminlarga kerakli o'yinni tezroq topishga yordam beradi.
+                Rasm o'yin kartasida chiqadi va adminlarga kerakli o'yinni tezroq topishga yordam beradi.
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -264,11 +270,11 @@ export default function GamesPage() {
                 <Label>Zona</Label>
                 <Select value={form.zone} onValueChange={(value) => setForm((item) => ({ ...item, zone: value as GameZone }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{["Standard", "VIP", "Both"].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
+                  <SelectContent>{(["Standard", "VIP", "Both"] as GameZone[]).map((item) => <SelectItem key={item} value={item}>{zoneLabels[item]}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Status</Label>
+                <Label>Holat</Label>
                 <Select value={form.status} onValueChange={(value) => setForm((item) => ({ ...item, status: value as GameStatus }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>{["ready", "installed", "updating", "disabled"].map((item) => <SelectItem key={item} value={item}>{statusLabels[item as GameStatus]}</SelectItem>)}</SelectContent>

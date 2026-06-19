@@ -68,8 +68,8 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] w-[min(94vw,860px)] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
-          <DialogTitle>Add time</DialogTitle>
-          <DialogDescription>{simulator?.name ?? "No simulator selected"} - current remaining {seconds(simulator?.remainingSeconds ?? (simulator?.remainingMinutes ?? 0) * 60)}</DialogDescription>
+          <DialogTitle>Vaqt qo'shish</DialogTitle>
+          <DialogDescription>{simulator?.name ?? "Simulyator tanlanmagan"} - hozir qolgan {seconds(simulator?.remainingSeconds ?? (simulator?.remainingMinutes ?? 0) * 60)}</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -96,7 +96,7 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
 
         <div className="grid gap-3 md:grid-cols-3">
           <div className="space-y-2">
-            <Label htmlFor="custom-minutes">Custom minutes</Label>
+            <Label htmlFor="custom-minutes">Maxsus daqiqalar</Label>
             <Input
               id="custom-minutes"
               inputMode="numeric"
@@ -108,7 +108,7 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="custom-price">Custom price</Label>
+            <Label htmlFor="custom-price">Maxsus narx</Label>
             <Input
               id="custom-price"
               inputMode="numeric"
@@ -120,7 +120,7 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
             />
           </div>
           <div className="space-y-2">
-            <Label>Payment</Label>
+            <Label>To'lov</Label>
             <Select value={method} onValueChange={setMethod}>
               <SelectTrigger className="h-10">
                 <SelectValue />
@@ -134,8 +134,8 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
 
         <DialogFooter className="flex-col-reverse gap-3 sm:flex-row sm:items-center">
           <div className="mr-auto rounded-xl bg-slate-950/70 px-3 py-2 text-sm font-semibold text-slate-300">{summary}</div>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit} disabled={!canSubmit}>Add time</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>Bekor qilish</Button>
+          <Button onClick={submit} disabled={!canSubmit}>Vaqt qo'shish</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

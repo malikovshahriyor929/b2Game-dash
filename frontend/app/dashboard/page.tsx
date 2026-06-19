@@ -23,7 +23,7 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <PageHeader title="B2 dashboard" description="Branch-scoped simulator control, revenue, shop sales, and repair monitoring." badge="Admin control room" />
+      <PageHeader title="B2 boshqaruv paneli" description="Filial bo'yicha simulyator boshqaruvi, daromad, do'kon savdosi va ta'mirlash monitoringi." badge="Admin boshqaruv markazi" />
       
       {/* Active Session Info */}
       {activeShift && (
@@ -34,15 +34,15 @@ export default function DashboardPage() {
               <p className="break-words text-lg font-semibold leading-snug">{activeShift.operator}</p>
             </div>
             <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">Shift Type</p>
+              <p className="text-xs text-muted-foreground">Smena turi</p>
               <p className="break-words text-lg font-semibold leading-snug">{activeShift.shiftType}</p>
             </div>
             <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">Start Cash</p>
+              <p className="text-xs text-muted-foreground">Boshlang'ich kassa</p>
               <p className="break-words text-lg font-semibold leading-snug">{activeShift.startingCash.toLocaleString()} UZS</p>
             </div>
             <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">Today Earnings</p>
+              <p className="text-xs text-muted-foreground">Bugungi tushum</p>
               <p className="break-words text-lg font-semibold leading-snug text-green-400">{(activeShift.totalIncome).toLocaleString()} UZS</p>
             </div>
           </div>
@@ -58,10 +58,10 @@ export default function DashboardPage() {
       ) : (
         <>
           <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <ReportCard label="Today revenue" value={revenue} icon={FiCreditCard} />
-            <ReportCard label="Active sessions" value={activeCount} icon={FiActivity} format="number" />
-            <ReportCard label="Ready simulators" value={freeCount} icon={FiMonitor} format="number" />
-            <ReportCard label="Shop sales" value={shopSales} icon={FiShoppingBag} />
+            <ReportCard label="Bugungi daromad" value={revenue} icon={FiCreditCard} />
+            <ReportCard label="Faol sessiyalar" value={activeCount} icon={FiActivity} format="number" />
+            <ReportCard label="Tayyor simulyatorlar" value={freeCount} icon={FiMonitor} format="number" />
+            <ReportCard label="Do'kon savdosi" value={shopSales} icon={FiShoppingBag} />
           </div>
           <div className="mb-4 grid gap-4 xl:grid-cols-2">
             <RevenueChart />

@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useState } from "react";
 import { IconType } from "react-icons";
-import { FiBarChart2, FiCalendar, FiChevronLeft, FiChevronRight, FiCpu, FiDatabase, FiGift, FiHome, FiLogOut, FiMessageCircle, FiMonitor, FiPieChart, FiPlus, FiSettings, FiShoppingCart, FiTag, FiUserCheck, FiUsers, FiX } from "react-icons/fi";
+import { FiBarChart2, FiCalendar, FiChevronLeft, FiChevronRight, FiCpu, FiDatabase, FiGift, FiHome, FiLogOut, FiMessageCircle, FiMonitor, FiPieChart, FiPlus, FiSettings, FiShoppingCart, FiTag, FiTool, FiUserCheck, FiUsers, FiX } from "react-icons/fi";
 import { RiGamepadLine } from "react-icons/ri";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { CreateBranchDialog } from "@/components/layout/create-branch-dialog";
 
 const items: { key: string; label: string; href: string; icon: IconType }[] = [
-  { key: "dashboard", label: "Dashboard", href: "/dashboard", icon: FiHome },
+  { key: "dashboard", label: "Boshqaruv paneli", href: "/dashboard", icon: FiHome },
   { key: "simulators", label: "Simulatorlar", href: "/dashboard/simulators", icon: FiMonitor },
   { key: "cashier", label: "Kassa", href: "/dashboard/cashier", icon: FiShoppingCart },
   { key: "bookings", label: "Bronlar", href: "/dashboard/bookings", icon: FiCalendar },
@@ -27,7 +27,8 @@ const items: { key: string; label: string; href: string; icon: IconType }[] = [
   { key: "promo", label: "Promo", href: "/dashboard/promo", icon: FiGift },
   { key: "reports", label: "Hisobotlar", href: "/dashboard/reports", icon: FiBarChart2 },
   { key: "analytics", label: "Analitika", href: "/dashboard/analytics", icon: FiPieChart },
-  { key: "support", label: "Support", href: "/dashboard/support", icon: FiMessageCircle },
+  { key: "maintenance", label: "Ta'mir nazorati", href: "/dashboard/maintenance", icon: FiTool },
+  { key: "support", label: "Yordam", href: "/dashboard/support", icon: FiMessageCircle },
   { key: "settings", label: "Sozlamalar", href: "/dashboard/settings", icon: FiSettings },
 ];
 
@@ -40,7 +41,7 @@ export function Sidebar({ collapsed, mobileOpen, onCloseMobile, onToggleCollapse
 
   return (
     <>
-      {mobileOpen ? <button aria-label="Close sidebar overlay" className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={onCloseMobile} /> : null}
+      {mobileOpen ? <button aria-label="Menyuni yopish" className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={onCloseMobile} /> : null}
       <aside className={cn(
         "fixed inset-y-0 left-0 z-50 flex h-dvh shrink-0 flex-col border-r border-slate-800 bg-[#11182b] transition-transform duration-200 md:static md:z-auto md:translate-x-0",
         collapsed ? "md:w-[84px]" : "md:w-[272px]",
@@ -50,9 +51,9 @@ export function Sidebar({ collapsed, mobileOpen, onCloseMobile, onToggleCollapse
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500 font-black text-slate-950">B2</div>
         <div className={cn("min-w-0", collapsed && "md:hidden")}>
           <div className="font-bold text-white">B2 Game Club</div>
-          <div className="text-xs text-slate-400">Main Arena</div>
+          <div className="text-xs text-slate-400">Asosiy zal</div>
         </div>
-        <button className="ml-auto rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white md:hidden" onClick={onCloseMobile} aria-label="Close sidebar"><FiX /></button>
+        <button className="ml-auto rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white md:hidden" onClick={onCloseMobile} aria-label="Menyuni yopish"><FiX /></button>
       </div>
       <div className={cn("border-b border-slate-800 p-3", collapsed && "md:px-2")}>
         <div className={cn("flex items-center gap-3", collapsed && "md:justify-center")}>
@@ -106,7 +107,7 @@ export function Sidebar({ collapsed, mobileOpen, onCloseMobile, onToggleCollapse
           onClick={onToggleCollapsed}
         >
           {collapsed ? <FiChevronRight /> : <FiChevronLeft />}
-          <span className={cn(collapsed && "md:hidden")}>{collapsed ? "Open" : "Kichraytirish"}</span>
+          <span className={cn(collapsed && "md:hidden")}>{collapsed ? "Ochish" : "Kichraytirish"}</span>
         </button>
         <div className={cn("flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-400", collapsed && "md:justify-center md:px-2")}><FiLogOut /><span className={cn(collapsed && "md:hidden")}>Chiqish</span></div>
       </div>
