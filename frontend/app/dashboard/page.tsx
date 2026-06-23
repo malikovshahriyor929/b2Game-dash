@@ -30,15 +30,15 @@ export default function DashboardPage() {
               <p className="break-words text-lg font-semibold leading-snug">{activeShift.operator}</p>
             </div>
             <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">Shift Type</p>
+              <p className="text-xs text-muted-foreground">Smena turi</p>
               <p className="break-words text-lg font-semibold leading-snug">{activeShift.shiftType}</p>
             </div>
             <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">Start Cash</p>
+              <p className="text-xs text-muted-foreground">Boshlang'ich kassa</p>
               <p className="break-words text-lg font-semibold leading-snug">{activeShift.startingCash.toLocaleString()} UZS</p>
             </div>
             <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">Today Earnings</p>
+              <p className="text-xs text-muted-foreground">Bugungi tushum</p>
               <p className="break-words text-lg font-semibold leading-snug text-green-400">{(activeShift.totalIncome).toLocaleString()} UZS</p>
             </div>
           </div>

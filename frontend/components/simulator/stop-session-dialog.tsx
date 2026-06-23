@@ -40,27 +40,27 @@ export function StopSessionDialog({ open, onOpenChange, simulator, onTakePayment
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Stop session</DialogTitle>
-          <DialogDescription>Final calculation and payment control for {simulator?.name}.</DialogDescription>
+          <DialogTitle>Sessiyani to'xtatish</DialogTitle>
+          <DialogDescription>{simulator?.name} uchun yakuniy hisob-kitob va to'lov nazorati.</DialogDescription>
         </DialogHeader>
         <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-          <Label>Calculation</Label>
-          <Row label="Customer" value={simulator?.currentUser ?? "Guest"} />
-          <Row label="Started time" value={simulator?.startedAt ?? "-"} />
-          <Row label="Finished time" value={new Date().toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })} />
+          <Label>Hisob-kitob</Label>
+          <Row label="Mijoz" value={simulator?.currentUser ?? "Mehmon"} />
+          <Row label="Boshlangan vaqt" value={simulator?.startedAt ?? "-"} />
+          <Row label="Tugagan vaqt" value={new Date().toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })} />
           {isOpen ? <Row label="O'tgan vaqt" value={seconds(simulator?.elapsedSeconds ?? simulator?.remainingSeconds ?? 0)} /> : null}
           {isOpen ? <Row label="Soatlik stavka" value={`${money(simulator?.hourlyRate ?? 0)}/soat`} /> : null}
-          <Row label={isOpen ? "Vaqt to'lovi (VIP)" : "Tariff amount"} value={money(sessionAmount)} />
-          <Row label="Shop purchases" value={money(shop)} />
-          <Row label="Total" value={money(total)} />
-          <Row label="Already paid" value={money(paid)} />
-          <Row label="Remaining debt" value={money(debt)} danger={debt > 0} />
+          <Row label={isOpen ? "Vaqt to'lovi (VIP)" : "Tarif summasi"} value={money(sessionAmount)} />
+          <Row label="Do'kon xaridlari" value={money(shop)} />
+          <Row label="Jami" value={money(total)} />
+          <Row label="Avval to'langan" value={money(paid)} />
+          <Row label="Qolgan qarz" value={money(debt)} danger={debt > 0} />
         </div>
-        {debt > 0 ? <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">Unpaid amount exists. Take payment before final stop, or use admin override.</div> : null}
+        {debt > 0 ? <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">To'lanmagan summa bor. Yakuniy to'xtatishdan oldin to'lovni qabul qiling yoki admin huquqi bilan majburiy to'xtating.</div> : null}
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-          {debt > 0 ? <Button variant="warning" onClick={takePayment}>Take payment</Button> : null}
-          <Button variant={debt > 0 ? "destructive" : "default"} onClick={() => submit(true)}>{debt > 0 ? "Admin override stop" : "Stop session"}</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>Bekor qilish</Button>
+          {debt > 0 ? <Button variant="warning" onClick={takePayment}>To'lovni qabul qilish</Button> : null}
+          <Button variant={debt > 0 ? "destructive" : "default"} onClick={() => submit(true)}>{debt > 0 ? "Admin huquqi bilan to'xtatish" : "Sessiyani to'xtatish"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

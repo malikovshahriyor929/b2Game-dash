@@ -14,6 +14,15 @@ function badgeVariant(status: Booking["status"]) {
   return "warning";
 }
 
+const statusLabels: Record<Booking["status"], string> = {
+  Pending: "Kutilmoqda",
+  Confirmed: "Tasdiqlangan",
+  Arrived: "Keldi",
+  Completed: "Yakunlangan",
+  Cancelled: "Bekor qilingan",
+  "No-show": "Kelmadi",
+};
+
 function formatUzPhone(value: string) {
   const digits = value.replace(/\D/g, "");
   const local = digits.startsWith("998") ? digits.slice(3) : digits;
@@ -77,12 +86,12 @@ export function BookingTable({ onEdit, onArrive }: { onEdit?: (booking: Booking)
     <Table className="min-w-[680px]">
       <TableHeader>
         <TableRow>
-          <TableHead>Customer</TableHead>
-          <TableHead>Simulator</TableHead>
-          <TableHead>Date</TableHead>
-          <TableHead>Time</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead className="text-right">Actions</TableHead>
+          <TableHead>Mijoz</TableHead>
+          <TableHead>Simulyator</TableHead>
+          <TableHead>Sana</TableHead>
+          <TableHead>Vaqt</TableHead>
+          <TableHead>Holat</TableHead>
+          <TableHead className="text-right">Amallar</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -100,7 +109,7 @@ export function BookingTable({ onEdit, onArrive }: { onEdit?: (booking: Booking)
               <TableCell className="whitespace-nowrap">{simulatorLabel}</TableCell>
               <TableCell className="whitespace-nowrap">{item.date}</TableCell>
               <TableCell className="whitespace-nowrap">{item.startTime} - {item.endTime}</TableCell>
-              <TableCell><Badge variant={badgeVariant(item.status)}>{item.status}</Badge></TableCell>
+              <TableCell><Badge variant={badgeVariant(item.status)}>{statusLabels[item.status]}</Badge></TableCell>
               <TableCell>
                 <div className="flex justify-end gap-2 whitespace-nowrap">
                   <IconButton tooltip="Tahrirlash" variant="secondary" onClick={() => onEdit?.(item)}><FiEdit2 /></IconButton>

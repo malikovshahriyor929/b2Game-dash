@@ -49,14 +49,14 @@ export function BookingsWorkspace() {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Button onClick={openCreate}><FiPlus /> Add bron</Button>
+        <Button onClick={openCreate}><FiPlus /> Bron qo'shish</Button>
       </div>
       {loading ? <TableSkeleton rows={6} cols={6} /> : <BookingTable onEdit={openEdit} onArrive={handleArrive} />}
       <StartSessionDialog open={startOpen} onOpenChange={setStartOpen} simulator={startSim} prefill={startPrefill} fulfillBookingId={fulfillBookingId} />
       <Dialog open={modalOpen} onOpenChange={(open) => (open ? setModalOpen(true) : closeModal())}>
         <DialogContent className="max-h-[92dvh] w-[min(94vw,1040px)] max-w-none overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingBooking ? "Bronni tahrirlash" : "Add bron"}</DialogTitle>
+            <DialogTitle>{editingBooking ? "Bronni tahrirlash" : "Bron qo'shish"}</DialogTitle>
             <DialogDescription>{editingBooking ? "Bron ma'lumotlarini yangilang." : "Yangi bron yaratish uchun mijoz va vaqt ma'lumotlarini kiriting."}</DialogDescription>
           </DialogHeader>
           <BookingForm key={editingBooking?.id ?? "new"} booking={editingBooking} onSaved={closeModal} />

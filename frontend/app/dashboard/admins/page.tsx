@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/shared/page-header";
+import { money } from "@/lib/format";
 import { StatCardsSkeleton, TableSkeleton } from "@/components/ui/skeletons";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
@@ -215,6 +216,7 @@ export default function AdminsPage() {
               <TableHead>Rol</TableHead>
               <TableHead>Filial</TableHead>
               <TableHead>Simulyatorlar</TableHead>
+              <TableHead>Jarima</TableHead>
               <TableHead>Holat</TableHead>
               <TableHead className="text-right">Amallar</TableHead>
             </TableRow>
@@ -227,6 +229,7 @@ export default function AdminsPage() {
                 <TableCell><Badge variant={branchScopedRole(admin.role) ? "muted" : "vip"}>{roleLabel(admin.role)}</Badge></TableCell>
                 <TableCell className="text-slate-300">{branchScopedRole(admin.role) ? branchName(admin.branchId) : "Barchasi"}</TableCell>
                 <TableCell>{branchScopedRole(admin.role) ? `${assignedCount.get(admin.id) ?? 0} ta` : "—"}</TableCell>
+                <TableCell className={admin.penaltyTotal > 0 ? "font-semibold text-red-300" : "text-slate-500"}>{admin.penaltyTotal > 0 ? money(admin.penaltyTotal) : "—"}</TableCell>
                 <TableCell><Badge variant={admin.isActive ? "success" : "destructive"}>{admin.isActive ? "Faol" : "Bloklangan"}</Badge></TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-2 whitespace-nowrap">
@@ -237,7 +240,7 @@ export default function AdminsPage() {
                 </TableCell>
               </TableRow>
             ))}
-            {admins.length === 0 ? <TableRow><TableCell colSpan={7} className="py-8 text-center text-slate-500">Admin yo'q</TableCell></TableRow> : null}
+            {admins.length === 0 ? <TableRow><TableCell colSpan={8} className="py-8 text-center text-slate-500">Admin yo'q</TableCell></TableRow> : null}
           </TableBody>
         </Table>
       )}
@@ -319,7 +322,7 @@ export default function AdminsPage() {
                   className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left text-sm transition ${checked ? "border-sky-500 bg-sky-500/10" : "border-slate-800 hover:bg-slate-800/40"}`}
                 >
                   <div>
-                    <div className="font-semibold text-white">{sim.name} <span className="text-xs font-normal text-slate-500">({sim.zone === "vip" ? "Premium" : "Main"})</span></div>
+                    <div className="font-semibold text-white">{sim.name} <span className="text-xs font-normal text-slate-500">({sim.zone === "vip" ? "Premium" : "Asosiy"})</span></div>
                     <div className="text-xs text-slate-500">{sim.branchName} · {sim.code}{otherCount ? ` · yana ${otherCount} adminda` : ""}</div>
                   </div>
                   <span className={`flex h-5 w-5 items-center justify-center rounded-md border ${checked ? "border-sky-400 bg-sky-500 text-slate-950" : "border-slate-600"}`}>{checked ? "✓" : ""}</span>

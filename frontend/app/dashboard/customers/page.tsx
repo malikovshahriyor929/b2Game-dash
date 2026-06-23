@@ -23,6 +23,12 @@ import { backendDelete, backendGet, backendPatch, backendPost } from "@/server/a
 
 type CustomerStatus = "Active" | "Debt" | "Blocked";
 
+const CUSTOMER_STATUS_LABELS: Record<CustomerStatus, string> = {
+  Active: "Faol",
+  Debt: "Qarzdor",
+  Blocked: "Bloklangan",
+};
+
 type Customer = {
   id: string;
   name: string;
@@ -412,8 +418,8 @@ export default function CustomersPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <PageHeader title="Mijozlar" description="Customer profile, balance, spend and visit history." />
-        <Button onClick={openCreate}><FiPlus /> Add customer</Button>
+        <PageHeader title="Mijozlar" description="Mijoz profili, balans, sarflangan summa va tashriflar tarixi." />
+        <Button onClick={openCreate}><FiPlus /> Mijoz qo'shish</Button>
       </div>
 
       {loadingCustomers ? (
@@ -421,8 +427,8 @@ export default function CustomersPage() {
       ) : (
         <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
           <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Jami mijozlar</div><div className="mt-2 text-3xl font-black text-white">{stats.total}</div></Card>
-          <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Active</div><div className="mt-2 text-3xl font-black text-emerald-200">{stats.active}</div></Card>
-          <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Debt</div><div className="mt-2 text-3xl font-black text-red-200">{stats.debt}</div></Card>
+          <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Faol</div><div className="mt-2 text-3xl font-black text-emerald-200">{stats.active}</div></Card>
+          <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Qarzdor</div><div className="mt-2 text-3xl font-black text-red-200">{stats.debt}</div></Card>
           <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Balans jami</div><div className="mt-2 text-2xl font-black text-sky-200">{money(stats.balance)}</div></Card>
         </div>
       )}
@@ -431,15 +437,15 @@ export default function CustomersPage() {
         <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_180px]">
           <div className="relative">
             <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <Input className="pl-9" value={query} onChange={(event) => updateQuery(event.target.value)} placeholder="Search name, phone, email..." />
+            <Input className="pl-9" value={query} onChange={(event) => updateQuery(event.target.value)} placeholder="Ism, telefon, email bo'yicha qidirish..." />
           </div>
           <Select value={statusFilter} onValueChange={(value) => updateStatus(value as typeof statusFilter)}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="Active">Active</SelectItem>
-              <SelectItem value="Debt">Debt</SelectItem>
-              <SelectItem value="Blocked">Blocked</SelectItem>
+              <SelectItem value="all">Barcha holatlar</SelectItem>
+              <SelectItem value="Active">{CUSTOMER_STATUS_LABELS["Active"]}</SelectItem>
+              <SelectItem value="Debt">{CUSTOMER_STATUS_LABELS["Debt"]}</SelectItem>
+              <SelectItem value="Blocked">{CUSTOMER_STATUS_LABELS["Blocked"]}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -451,13 +457,13 @@ export default function CustomersPage() {
       <Table className="min-w-[940px]">
         <TableHeader>
           <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Balance</TableHead>
-            <TableHead>Last visit</TableHead>
-            <TableHead>Total spent</TableHead>
-            <TableHead>Sessions</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
+            <TableHead>Ism</TableHead>
+            <TableHead>Balans</TableHead>
+            <TableHead>Oxirgi tashrif</TableHead>
+            <TableHead>Jami sarflangan</TableHead>
+            <TableHead>Sessiyalar</TableHead>
+            <TableHead>Holat</TableHead>
+            <TableHead className="text-right">Amallar</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -473,7 +479,7 @@ export default function CustomersPage() {
               <TableCell>{customer.lastVisit}</TableCell>
               <TableCell>{money(customer.totalSpent)}</TableCell>
               <TableCell>{customer.sessions}</TableCell>
-              <TableCell><Badge variant={statusVariant(customer.status)}>{customer.status}</Badge></TableCell>
+              <TableCell><Badge variant={statusVariant(customer.status)}>{CUSTOMER_STATUS_LABELS[customer.status]}</Badge></TableCell>
               <TableCell>
                 <div className="flex justify-end gap-2 whitespace-nowrap">
                   <IconButton tooltip="Balans to'ldirish" variant="secondary" onClick={() => openTopUp(customer)}><FiCreditCard /></IconButton>
@@ -490,11 +496,11 @@ export default function CustomersPage() {
 
       <Card className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-sm text-slate-400">
-          Showing <b className="text-slate-100">{visible.length ? (currentPage - 1) * Number(pageSize) + 1 : 0}</b>
+          Ko'rsatilmoqda <b className="text-slate-100">{visible.length ? (currentPage - 1) * Number(pageSize) + 1 : 0}</b>
           {" - "}
           <b className="text-slate-100">{Math.min(currentPage * Number(pageSize), visible.length)}</b>
-          {" of "}
-          <b className="text-slate-100">{visible.length}</b> customers
+          {" / "}
+          <b className="text-slate-100">{visible.length}</b> mijoz
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Select value={pageSize} onValueChange={(value) => {
@@ -503,14 +509,14 @@ export default function CustomersPage() {
           }}>
             <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="5">5 / page</SelectItem>
-              <SelectItem value="10">10 / page</SelectItem>
-              <SelectItem value="20">20 / page</SelectItem>
+              <SelectItem value="5">5 / sahifa</SelectItem>
+              <SelectItem value="10">10 / sahifa</SelectItem>
+              <SelectItem value="20">20 / sahifa</SelectItem>
             </SelectContent>
           </Select>
-          <Button size="sm" variant="secondary" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}><FiChevronLeft /> Prev</Button>
+          <Button size="sm" variant="secondary" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}><FiChevronLeft /> Oldingi</Button>
           <div className="min-w-20 text-center text-sm font-bold text-slate-300">{currentPage} / {totalPages}</div>
-          <Button size="sm" variant="secondary" disabled={currentPage >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>Next <FiChevronRight /></Button>
+          <Button size="sm" variant="secondary" disabled={currentPage >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>Keyingi <FiChevronRight /></Button>
         </div>
       </Card>
 
@@ -522,11 +528,11 @@ export default function CustomersPage() {
           </DialogHeader>
           <form onSubmit={submitCustomer} className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
-              <FieldLabel label="Name" hint="Mijozning to'liq ismi. Majburiy maydon." />
+              <FieldLabel label="Ism" hint="Mijozning to'liq ismi. Majburiy maydon." />
               <Input value={form.name} onChange={(event) => setForm((item) => ({ ...item, name: event.target.value }))} placeholder="Mijoz ismi" />
             </div>
             <div className="space-y-2">
-              <FieldLabel label="Phone" hint="O'zbekiston raqami (+998). Mijozni aniqlash uchun asosiy identifikator. Majburiy." />
+              <FieldLabel label="Telefon" hint="O'zbekiston raqami (+998). Mijozni aniqlash uchun asosiy identifikator. Majburiy." />
               <div className="grid grid-cols-[84px,1fr] gap-2">
                 <div className="flex h-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-950/70 text-sm font-bold text-slate-300">+998</div>
                 <Input
@@ -547,13 +553,13 @@ export default function CustomersPage() {
               <Input value={form.email} onChange={(event) => setForm((item) => ({ ...item, email: event.target.value }))} placeholder="customer@example.com" />
             </div>
             <div className="space-y-2">
-              <FieldLabel label="Status" hint="Active — oddiy mijoz, Debt — qarzi bor, Blocked — bloklangan (xizmatdan foydalana olmaydi)." />
-              <Select value={form.status} onValueChange={(status) => setForm((item) => ({ ...item, status: status as CustomerStatus }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["Active", "Debt", "Blocked"].map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select>
+              <FieldLabel label="Holat" hint="Faol — oddiy mijoz, Qarzdor — qarzi bor, Bloklangan — bloklangan (xizmatdan foydalana olmaydi)." />
+              <Select value={form.status} onValueChange={(status) => setForm((item) => ({ ...item, status: status as CustomerStatus }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{(["Active", "Debt", "Blocked"] as CustomerStatus[]).map((status) => <SelectItem key={status} value={status}>{CUSTOMER_STATUS_LABELS[status]}</SelectItem>)}</SelectContent></Select>
             </div>
             {editingId ? (
               <>
                 <div className="space-y-2">
-                  <FieldLabel label="Total spent" hint="Jami sarflagan summasi. Sessiya va sotuvlardan avtomatik yig'iladi, qo'lda o'zgartirish tavsiya etilmaydi." />
+                  <FieldLabel label="Jami sarflangan" hint="Jami sarflagan summasi. Sessiya va sotuvlardan avtomatik yig'iladi, qo'lda o'zgartirish tavsiya etilmaydi." />
                   <Input
                     inputMode="numeric"
                     value={formatNumber(form.totalSpent)}
@@ -564,22 +570,22 @@ export default function CustomersPage() {
                   {!isSuperAdmin ? <div className="text-xs text-slate-500">Admin total spentni qo'lda o'zgartira olmaydi.</div> : null}
                 </div>
                 <div className="space-y-2">
-                  <FieldLabel label="Sessions" hint="O'ynagan sessiyalar soni. Har yangi sessiyada avtomatik o'sadi." />
+                  <FieldLabel label="Sessiyalar" hint="O'ynagan sessiyalar soni. Har yangi sessiyada avtomatik o'sadi." />
                   <Input inputMode="numeric" value={form.sessions} onChange={(event) => setForm((item) => ({ ...item, sessions: event.target.value.replace(/\D/g, "") }))} placeholder="38" />
                 </div>
                 <div className="space-y-2">
-                  <FieldLabel label="Last visit" hint="Oxirgi tashrif sanasi. Mijoz yangi sessiya boshlaganda avtomatik yangilanadi." />
+                  <FieldLabel label="Oxirgi tashrif" hint="Oxirgi tashrif sanasi. Mijoz yangi sessiya boshlaganda avtomatik yangilanadi." />
                   <DatePicker value={form.lastVisit} onChange={(lastVisit) => setForm((item) => ({ ...item, lastVisit }))} />
                 </div>
               </>
             ) : null}
             <div className="space-y-2 sm:col-span-2">
-              <FieldLabel label="Note" hint="Ixtiyoriy izoh (masalan: VIP mijoz, doimiy mijoz, maxsus shartlar)." />
+              <FieldLabel label="Izoh" hint="Ixtiyoriy izoh (masalan: VIP mijoz, doimiy mijoz, maxsus shartlar)." />
               <Input value={form.note} onChange={(event) => setForm((item) => ({ ...item, note: event.target.value }))} placeholder="Izoh" />
             </div>
             <div className="grid gap-2 sm:col-span-2 sm:grid-cols-2">
-              <Button type="button" variant="secondary" onClick={resetForm}>Cancel</Button>
-              <Button type="submit" disabled={!branchId || !form.name.trim() || normalizeUzPhone(form.phone).length !== 12 || !normalizeUzPhone(form.phone).startsWith("998")}><FiPlus /> {editingId ? "Save customer" : "Create customer"}</Button>
+              <Button type="button" variant="secondary" onClick={resetForm}>Bekor qilish</Button>
+              <Button type="submit" disabled={!branchId || !form.name.trim() || normalizeUzPhone(form.phone).length !== 12 || !normalizeUzPhone(form.phone).startsWith("998")}><FiPlus /> {editingId ? "Saqlash" : "Mijoz yaratish"}</Button>
             </div>
           </form>
         </DialogContent>
@@ -588,41 +594,41 @@ export default function CustomersPage() {
       <Dialog open={profileModalOpen} onOpenChange={setProfileModalOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{selectedCustomer?.name ?? "Customer"} profile</DialogTitle>
+            <DialogTitle>{selectedCustomer?.name ?? "Mijoz"} profili</DialogTitle>
             <DialogDescription>{selectedCustomer ? formatUzPhone(selectedCustomer.phone) : ""} {selectedCustomer?.email ? `- ${selectedCustomer.email}` : ""}</DialogDescription>
           </DialogHeader>
           {selectedCustomer ? (
             <div className="space-y-4">
               <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3">
-                <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Balance</div><div className="mt-1 text-xl font-black text-sky-200">{money(selectedCustomer.balance)}</div></Card>
-                <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Total spent</div><div className="mt-1 text-xl font-black text-white">{money(selectedCustomer.totalSpent)}</div></Card>
-                <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Sessions</div><div className="mt-1 text-xl font-black text-white">{selectedCustomer.sessions}</div></Card>
+                <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Balans</div><div className="mt-1 text-xl font-black text-sky-200">{money(selectedCustomer.balance)}</div></Card>
+                <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Jami sarflangan</div><div className="mt-1 text-xl font-black text-white">{money(selectedCustomer.totalSpent)}</div></Card>
+                <Card className="p-4"><div className="text-xs font-semibold uppercase text-slate-500">Sessiyalar</div><div className="mt-1 text-xl font-black text-white">{selectedCustomer.sessions}</div></Card>
               </div>
               <div className="grid gap-3 md:grid-cols-3">
-                <Card className="p-4"><div className="font-bold text-white">Profile</div><div className="mt-2 text-sm text-slate-400">Last visit: {selectedCustomer.lastVisit}<br />Status: {selectedCustomer.status}<br />Note: {selectedCustomer.note || "-"}</div></Card>
+                <Card className="p-4"><div className="font-bold text-white">Profil</div><div className="mt-2 text-sm text-slate-400">Oxirgi tashrif: {selectedCustomer.lastVisit}<br />Holat: {CUSTOMER_STATUS_LABELS[selectedCustomer.status]}<br />Izoh: {selectedCustomer.note || "-"}</div></Card>
                 <Card className="p-4">
-                  <div className="font-bold text-white">Session history</div>
+                  <div className="font-bold text-white">Sessiyalar tarixi</div>
                   <div className="mt-2 space-y-1 text-sm text-slate-400">
                     {selectedSessions.length ? selectedSessions.slice(0, 4).map((session) => (
                       <div key={session.id}>
-                        {session.simulator_id ?? "Simulator"} - {Number(session.duration_minutes ?? 0)} min - {money(Number(session.total_amount ?? 0))}
+                        {session.simulator_id ?? "Simulyator"} - {Number(session.duration_minutes ?? 0)} daqiqa - {money(Number(session.total_amount ?? 0))}
                       </div>
-                    )) : "Session data yo'q"}
+                    )) : "Sessiya ma'lumotlari yo'q"}
                   </div>
                 </Card>
                 <Card className="p-4">
-                  <div className="font-bold text-white">Shop purchases</div>
+                  <div className="font-bold text-white">Do'kon xaridlari</div>
                   <div className="mt-2 space-y-1 text-sm text-slate-400">
                     {selectedSales.length ? selectedSales.slice(0, 4).map((sale) => (
                       <div key={sale.id}>{money(Number(sale.total ?? 0))} - {sale.payment_status ?? "pending"}</div>
-                    )) : "Shop sale data yo'q"}
+                    )) : "Do'kon savdosi ma'lumotlari yo'q"}
                   </div>
                 </Card>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
                 <Button variant="secondary" onClick={() => openTopUp(selectedCustomer)}><FiCreditCard /> Balans to'ldirish</Button>
-                <Button variant="secondary" onClick={() => openEdit(selectedCustomer)}><FiEdit2 /> Edit profile</Button>
-                <Button variant="destructive" onClick={() => removeCustomer(selectedCustomer, true)}><FiTrash2 /> Delete</Button>
+                <Button variant="secondary" onClick={() => openEdit(selectedCustomer)}><FiEdit2 /> Profilni tahrirlash</Button>
+                <Button variant="destructive" onClick={() => removeCustomer(selectedCustomer, true)}><FiTrash2 /> O'chirish</Button>
               </div>
             </div>
           ) : null}
@@ -653,7 +659,7 @@ export default function CustomersPage() {
             </div>
             <div className="text-xs text-slate-500">Eslatma: balans to'ldirish uchun ochiq smena bo'lishi shart.</div>
             <div className="grid grid-cols-2 gap-2">
-              <Button type="button" variant="secondary" onClick={() => setTopUpFor(null)}>Cancel</Button>
+              <Button type="button" variant="secondary" onClick={() => setTopUpFor(null)}>Bekor qilish</Button>
               <Button type="submit" disabled={topUpBusy || Number(topUpForm.amount || 0) <= 0}><FiCreditCard /> {topUpBusy ? "..." : "To'ldirish"}</Button>
             </div>
           </form>

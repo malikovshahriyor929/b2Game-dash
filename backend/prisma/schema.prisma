@@ -276,6 +276,13 @@ model RepairRequest {
   markedFixedAt   DateTime? @map("marked_fixed_at")
   confirmedAt     DateTime? @map("confirmed_at")
   revenueImpact   Decimal   @default(0) @map("revenue_impact")
+  // Maintenance accountability flow (admin opens & closes; super admin reviews & charges)
+  closedAt        DateTime? @map("closed_at")
+  durationMinutes Int?      @map("duration_minutes")
+  chargeAmount    Decimal   @default(0) @map("charge_amount") @db.Decimal(14, 2)
+  reviewStatus    String    @default("open") @map("review_status")
+  reviewedBy      String?   @map("reviewed_by") @db.Uuid
+  reviewedAt      DateTime? @map("reviewed_at")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
 
