@@ -18,3 +18,11 @@ export const closeShiftSchema = z.object({
     notes: z.string().optional(),
   }),
 });
+
+export const withdrawalRequestSchema = z.object({
+  body: z.object({
+    branch_id: z.string().uuid().optional(),
+    amount: amount,
+    note: z.string().optional(),
+  }),
+});

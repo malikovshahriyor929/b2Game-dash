@@ -16,16 +16,16 @@ const variants: Record<SimulatorStatus, "default" | "success" | "warning" | "des
 };
 
 const labels: Record<SimulatorStatus, string> = {
-  ready_to_play: "Ready",
+  ready_to_play: "Tayyor",
   busy: "Band",
   reserved: "Bron",
   unpaid: "Qarz",
-  broken: "Broken",
-  repair_requested: "Fix requested",
-  repair_approved: "Approved",
-  fixing: "Fixing",
-  fixed_waiting_confirmation: "Waiting confirm",
-  offline: "Offline",
+  broken: "Buzilgan",
+  repair_requested: "Ta'mirda",
+  repair_approved: "Tasdiqlangan",
+  fixing: "Ta'mirlanmoqda",
+  fixed_waiting_confirmation: "Tasdiq kutilmoqda",
+  offline: "Oflayn",
   locked: "Qulflangan",
 };
 

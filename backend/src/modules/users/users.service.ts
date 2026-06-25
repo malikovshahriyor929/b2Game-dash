@@ -3,7 +3,7 @@ import bcrypt from "bcrypt";
 import { prisma } from "../../db/prisma";
 import { ApiError } from "../../utils/apiError";
 import { auditLog } from "../../services/auditLog.service";
-import { baseRole, isDevRole } from "../../types/auth.types";
+import { baseRole, canSeeDev, isDevRole } from "../../types/auth.types";
 
 function sanitizeUser<T extends Record<string, unknown>>(user: T) {
   const { password_hash: _passwordHash, passwordHash: _passwordHashCamel, ...safeUser } = user;
@@ -25,31 +25,49 @@ function scopedBranch(req: Request) {
   return baseRole(req.user?.role) === "admin" ? req.user?.branch_id ?? null : null;
 }
 
-function isDev(req: Request) {
-  return isDevRole(req.user?.role);
+function canSeeDevReq(req: Request) {
+  return canSeeDev(req.user?.role);
 }
 
-// Developer accounts (dev_admin / dev_super_admin) are fully hidden from regular
-// admins/super_admins. Block any attempt by a non-dev to read or mutate a developer row
-// by pretending the row does not exist.
+// Developer accounts (dev_admin / dev_super_admin) are hidden from plain branch admins;
+// super admins and developers may read and mutate them. Block any attempt by a non-eligible
+// viewer to read or mutate a developer row by pretending the row does not exist.
 async function assertManageable(req: Request, id: string) {
   const rows = await prisma.$queryRawUnsafe<Array<{ role: string }>>("select role from users where id=$1::uuid limit 1", id);
   if (!rows.length) throw new ApiError(404, "user not found");
-  if (isDevRole(rows[0].role) && !isDev(req)) throw new ApiError(404, "user not found");
+  if (isDevRole(rows[0].role) && !canSeeDevReq(req)) throw new ApiError(404, "user not found");
 }
 
 export const usersService = {
   async list(req: Request) {
     const branchId = scopedBranch(req);
     const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-      `select id,name,email,role,branch_id,is_active,created_at,updated_at
-       from users
-       where ($1::uuid is null or branch_id=$1::uuid)
-         and ($2::boolean or role not in ('dev_admin','dev_super_admin'))
-       order by created_at desc
+      `select u.id,u.name,u.email,u.role,u.branch_id,u.is_active,u.created_at,u.updated_at,
+              greatest(
+                coalesce((
+                  select sum(
+                    case
+                      when rr.duration_minutes > 1440
+                        then round(rr.charge_amount * 1440 / nullif(rr.duration_minutes, 0))
+                      else rr.charge_amount
+                    end
+                  )
+                  from repair_requests rr
+                  where rr.requested_by=u.id and rr.review_status='charged'
+                ),0) - coalesce((
+                  select sum(app.amount)
+                  from admin_penalty_payments app
+                  where app.admin_id=u.id
+                ),0),
+                0
+              ) as penalty_total
+       from users u
+       where ($1::uuid is null or u.branch_id=$1::uuid)
+         and ($2::boolean or u.role not in ('dev_admin','dev_super_admin'))
+       order by u.created_at desc
        limit 200`,
       branchId,
-      isDev(req),
+      canSeeDevReq(req),
     );
     return rows;
   },
@@ -64,7 +82,7 @@ export const usersService = {
        limit 1`,
       id,
       branchId,
-      isDev(req),
+      canSeeDevReq(req),
     );
     if (!rows.length) throw new ApiError(404, "user not found");
     return rows[0];
@@ -73,8 +91,8 @@ export const usersService = {
   async create(req: Request) {
     const name = String(req.body.name ?? "").trim();
     const email = String(req.body.email ?? "").trim().toLowerCase();
-    // Only a developer may create a developer account; everyone else is capped at super_admin.
-    if (isDevRole(req.body.role) && !isDev(req)) throw new ApiError(403, "Insufficient role");
+    // Only a super admin or developer may create a developer account.
+    if (isDevRole(req.body.role) && !canSeeDevReq(req)) throw new ApiError(403, "Insufficient role");
     const role =
       req.body.role === "dev_super_admin" ? "dev_super_admin"
       : req.body.role === "dev_admin" ? "dev_admin"
@@ -110,8 +128,8 @@ export const usersService = {
 
   async update(req: Request, id: string) {
     await assertManageable(req, id);
-    // A non-dev cannot promote anyone into a hidden developer role.
-    if (isDevRole(req.body.role) && !isDev(req)) throw new ApiError(403, "Insufficient role");
+    // Only a super admin or developer can promote anyone into a hidden developer role.
+    if (isDevRole(req.body.role) && !canSeeDevReq(req)) throw new ApiError(403, "Insufficient role");
     const passwordHash = await resolvePasswordHash(req.body);
     const email = req.body.email == null ? null : String(req.body.email).trim().toLowerCase();
     if (email) {

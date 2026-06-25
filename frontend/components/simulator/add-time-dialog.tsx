@@ -21,11 +21,33 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
   const tariffs = useBackendTariffs(simulator?.branchId, open);
   const presets = useMemo(() => {
     const zone = simulator?.zone === "VIP" ? "vip" : "main";
-    return tariffs
+    const byDuration = new Map<number, { id: string; min: number; price: number; bonus: string | undefined; name: string; exactZone: boolean; happy: boolean }>();
+    tariffs
       .filter((item) => (item.simulatorZone === zone || item.simulatorZone === "all") && item.type !== "night")
-      .map((item) => ({ min: item.durationMinutes, price: item.price, bonus: item.bonus, name: item.name }));
+      .forEach((item) => {
+        const preset = {
+          id: item.id,
+          min: item.durationMinutes,
+          price: item.price,
+          bonus: item.bonus,
+          name: item.name,
+          exactZone: item.simulatorZone === zone,
+          happy: Boolean(item.isHappyHour || item.pricePeriod === "happy_hour"),
+        };
+        const existing = byDuration.get(preset.min);
+        if (!existing) {
+          byDuration.set(preset.min, preset);
+          return;
+        }
+        // Add-time'da bir xil daqiqa ikki marta chiqmasin:
+        // 1) avval shu zona tarifi, 2) happy-hour/skidka, 3) arzonroq narx.
+        const presetScore = Number(preset.exactZone) * 100 + Number(preset.happy) * 10 - preset.price / 1_000_000;
+        const existingScore = Number(existing.exactZone) * 100 + Number(existing.happy) * 10 - existing.price / 1_000_000;
+        if (presetScore > existingScore) byDuration.set(preset.min, preset);
+      });
+    return Array.from(byDuration.values()).sort((a, b) => a.min - b.min);
   }, [simulator?.zone, tariffs]);
-  const fallbackPreset = useMemo(() => presets[0] ?? { min: 60, price: 0, bonus: undefined, name: "" }, [presets]);
+  const fallbackPreset = useMemo(() => presets[0] ?? { id: "", min: 60, price: 0, bonus: undefined, name: "" }, [presets]);
   const [selectedPreset, setSelectedPreset] = useState(fallbackPreset);
   const [customMin, setCustomMin] = useState("");
   const [customPrice, setCustomPrice] = useState("");
@@ -68,19 +90,19 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] w-[min(94vw,860px)] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
-          <DialogTitle>Add time</DialogTitle>
-          <DialogDescription>{simulator?.name ?? "No simulator selected"} - current remaining {seconds(simulator?.remainingSeconds ?? (simulator?.remainingMinutes ?? 0) * 60)}</DialogDescription>
+          <DialogTitle>Vaqt qo'shish</DialogTitle>
+          <DialogDescription>{simulator?.name ?? "Simulyator tanlanmagan"} - hozir qolgan {seconds(simulator?.remainingSeconds ?? (simulator?.remainingMinutes ?? 0) * 60)}</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-3 sm:grid-cols-2">
           {presets.map((preset) => (
             <Button
-              key={preset.min}
+              key={preset.id}
               type="button"
               variant="secondary"
               className={cn(
                 "h-auto min-h-16 justify-between rounded-xl border border-transparent px-4 py-4 text-left",
-                !isCustom && selectedPreset.min === preset.min && "border-sky-400 bg-sky-500/15 text-sky-100 ring-2 ring-sky-500/20",
+                !isCustom && selectedPreset.id === preset.id && "border-sky-400 bg-sky-500/15 text-sky-100 ring-2 ring-sky-500/20",
               )}
               onClick={() => {
                 setSelectedPreset(preset);
@@ -96,7 +118,7 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
 
         <div className="grid gap-3 md:grid-cols-3">
           <div className="space-y-2">
-            <Label htmlFor="custom-minutes">Custom minutes</Label>
+            <Label htmlFor="custom-minutes">Maxsus daqiqalar</Label>
             <Input
               id="custom-minutes"
               inputMode="numeric"
@@ -108,7 +130,7 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="custom-price">Custom price</Label>
+            <Label htmlFor="custom-price">Maxsus narx</Label>
             <Input
               id="custom-price"
               inputMode="numeric"
@@ -120,7 +142,7 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
             />
           </div>
           <div className="space-y-2">
-            <Label>Payment</Label>
+            <Label>To'lov</Label>
             <Select value={method} onValueChange={setMethod}>
               <SelectTrigger className="h-10">
                 <SelectValue />
@@ -134,8 +156,8 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
 
         <DialogFooter className="flex-col-reverse gap-3 sm:flex-row sm:items-center">
           <div className="mr-auto rounded-xl bg-slate-950/70 px-3 py-2 text-sm font-semibold text-slate-300">{summary}</div>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit} disabled={!canSubmit}>Add time</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>Bekor qilish</Button>
+          <Button onClick={submit} disabled={!canSubmit}>Vaqt qo'shish</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

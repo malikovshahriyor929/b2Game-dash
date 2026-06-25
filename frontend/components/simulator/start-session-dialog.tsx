@@ -40,6 +40,15 @@ function localPhoneDigits(value: string) {
   return digits.startsWith("998") ? digits.slice(3, 12) : digits.slice(0, 9);
 }
 
+function formatGap(minutes: number) {
+  if (!Number.isFinite(minutes)) return "";
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours && mins) return `${hours} soat ${mins} daqiqa`;
+  if (hours) return `${hours} soat`;
+  return `${mins} daqiqa`;
+}
+
 export function StartSessionDialog({ open, onOpenChange, simulator, prefill, fulfillBookingId }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator; prefill?: { customerName?: string; phone?: string; tariffName?: string; prepayment?: number }; fulfillBookingId?: string }) {
   const { startSession, selectedBranchId, bookings } = useDashboardStore();
   const confirm = useConfirm();
@@ -56,7 +65,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
       .sort((a, b) => a - b);
   }, [zoneTariffs]);
   const [customerType, setCustomerType] = useState<"Guest" | "Registered">("Guest");
-  const [customerName, setCustomerName] = useState("Guest");
+  const [customerName, setCustomerName] = useState("Mehmon");
   const [picked, setPicked] = useState<SelectedCustomer | null>(null);
   const [phone, setPhone] = useState("");
   const [tariffId, setTariffId] = useState("");
@@ -73,14 +82,14 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
 
   const summary = useMemo(() => {
     if (isOpenTariff) return `Soatlik: ${money(hourlyRate)}/soat - to'xtatishda hisoblanadi`;
-    const mode = startOptions.paymentModes.find((item) => item.value === paymentStatus)?.label ?? "Prepaid";
+    const mode = startOptions.paymentModes.find((item) => item.value === paymentStatus)?.label ?? "Oldindan to'langan";
     return `${duration} min - ${money(selectedTariff?.price ?? 0)}${selectedTariff?.bonus ? ` - bonus: ${selectedTariff.bonus}` : ""} - ${mode}`;
   }, [duration, hourlyRate, isOpenTariff, paymentStatus, selectedTariff?.bonus, selectedTariff?.price, startOptions.paymentModes]);
 
   useEffect(() => {
     if (!open) return;
     setCustomerType("Guest");
-    setCustomerName(prefill?.customerName || "Guest");
+    setCustomerName(prefill?.customerName || "Mehmon");
     setPicked(null);
     setPhone(prefill?.phone ? normalizeUzPhone(prefill.phone) : "");
     // Brondan kelganda tarifni nomi bo'yicha topib qo'yamiz, aks holda birinchisi.
@@ -92,24 +101,34 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
     setPaymentMethod(paymentMethods[0]?.label ?? "Karta");
   }, [open, paymentMethods, simulator?.id, startOptions.paymentModes, zoneTariffs, prefill?.customerName, prefill?.phone, prefill?.tariffName]);
 
-  // Walk-in / band PC ogohlantirishlari (bloklamaydi — admin xohlasa davom etadi).
+  // Band PC ogohlantirishi (bloklamaydi — admin xohlasa almashtiradi).
   const simulatorBusy = Boolean(simulator && ["busy", "unpaid"].includes(simulator.status));
-  const conflictBooking = useMemo(() => {
+  // Shu PC uchun eng yaqin kelayotgan/faol bron (tugashi hozirdan keyin bo'lganlari).
+  const nextBooking = useMemo(() => {
     if (!simulator) return undefined;
-    const startMs = Date.now();
-    const durMin = isOpenTariff ? 60 : Number(duration) || 0;
-    const endMs = startMs + durMin * 60000;
-    return bookings.find((booking) => {
-      if (booking.id === fulfillBookingId) return false;
-      if (booking.simulatorId !== simulator.id) return false;
-      if (!["Pending", "Confirmed", "Arrived"].includes(booking.status)) return false;
-      if (!booking.startAt || !booking.endAt) return false;
-      const bs = Date.parse(booking.startAt);
-      const be = Date.parse(booking.endAt);
-      if (!Number.isFinite(bs) || !Number.isFinite(be)) return false;
-      return startMs < be && endMs > bs;
-    });
-  }, [bookings, simulator, duration, isOpenTariff, fulfillBookingId]);
+    const nowMs = Date.now();
+    return bookings
+      .filter((booking) =>
+        booking.id !== fulfillBookingId &&
+        booking.simulatorId === simulator.id &&
+        ["Pending", "Confirmed", "Arrived"].includes(booking.status) &&
+        Boolean(booking.startAt) && Boolean(booking.endAt) &&
+        Number.isFinite(Date.parse(booking.startAt ?? "")) &&
+        Number.isFinite(Date.parse(booking.endAt ?? "")) &&
+        Date.parse(booking.endAt ?? "") > nowMs,
+      )
+      .sort((a, b) => Date.parse(a.startAt ?? "") - Date.parse(b.startAt ?? ""))[0];
+  }, [bookings, simulator, fulfillBookingId]);
+
+  // Bron boshlanishigacha qancha daqiqa bo'sh (bron yo'q bo'lsa cheksiz).
+  const availableMinutes = useMemo(() => {
+    if (!nextBooking?.startAt) return Infinity;
+    return Math.max(0, Math.floor((Date.parse(nextBooking.startAt) - Date.now()) / 60000));
+  }, [nextBooking]);
+
+  // So'ralayotgan vaqt bron oralig'iga kirib ketadimi? Ochiq (VIP) cheksiz — bron bo'lsa sig'maydi.
+  const requestedMinutes = isOpenTariff ? Infinity : Number(duration) || 0;
+  const bookingBlocks = Boolean(nextBooking) && requestedMinutes > availableMinutes;
 
   // Open (VIP) sessions are postpaid — the amount is only known at stop.
   useEffect(() => {
@@ -121,7 +140,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
     setCustomerType(type);
     setPicked(null);
     setPhone("");
-    setCustomerName(type === "Guest" ? "Guest" : "");
+    setCustomerName(type === "Guest" ? "Mehmon" : "");
   }
 
   function handleCustomerPick(customer: SelectedCustomer | null) {
@@ -164,6 +183,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
       amount: totalAmount,
       paymentStatus,
       paymentMethod,
+      bookingId: fulfillBookingId,
     });
     onOpenChange(false);
   }
@@ -172,8 +192,8 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] w-[min(94vw,860px)] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
-          <DialogTitle>Start session</DialogTitle>
-          <DialogDescription>{simulator?.name ?? "No simulator selected"} uchun yangi sessiya.</DialogDescription>
+          <DialogTitle>Sessiyani boshlash</DialogTitle>
+          <DialogDescription>{simulator?.name ?? "Simulyator tanlanmagan"} uchun yangi sessiya.</DialogDescription>
         </DialogHeader>
 
         {prefill?.prepayment ? (
@@ -186,15 +206,22 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
             ⚠️ Bu simulyator hozir band (faol sessiya bor). Yangi sessiya boshlash uni almashtiradi.
           </div>
         ) : null}
-        {conflictBooking ? (
+        {bookingBlocks ? (
+          <div className="rounded-xl border border-red-500/50 bg-red-500/10 p-3 text-sm font-semibold text-red-200">
+            ⛔ Bu PC {nextBooking?.startTime} da bron qilingan{nextBooking?.customerName ? ` (${nextBooking.customerName})` : ""}.{" "}
+            {isOpenTariff
+              ? "Ochiq (VIP) sessiya cheksiz davom etadi — bron borligi sabab boshlab bo'lmaydi."
+              : `Hozirdan atigi ${formatGap(availableMinutes)} bo'sh. Shu vaqtga sig'adigan qisqaroq tarif/davomiylik tanlang.`}
+          </div>
+        ) : nextBooking ? (
           <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm font-semibold text-amber-200">
-            ⚠️ Bu simulyatorda shu vaqt oralig'ida bron bor: {conflictBooking.customerName} ({conflictBooking.startTime}–{conflictBooking.endTime}). Davom etsangiz bron egasiga PC qolmasligi mumkin.
+            ⏳ Keyingi bron: {nextBooking.startTime}{nextBooking.customerName ? ` (${nextBooking.customerName})` : ""} — hozirdan {formatGap(availableMinutes)} bo'sh.
           </div>
         ) : null}
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <Label>Customer type</Label>
+            <Label>Mijoz turi</Label>
             <Select
               value={customerType}
               onValueChange={handleCustomerTypeChange}
@@ -207,7 +234,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="start-customer-name">Customer name</Label>
+            <Label htmlFor="start-customer-name">Mijoz ismi</Label>
             {customerType === "Registered" ? (
               <CustomerSelect branchId={tariffBranchId} value={picked} onChange={handleCustomerPick} />
             ) : (
@@ -216,7 +243,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="start-phone">Phone</Label>
+            <Label htmlFor="start-phone">Telefon</Label>
             <div className="grid grid-cols-[88px_1fr] gap-2">
               <div className="flex h-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-950/70 text-sm font-bold text-slate-300">+998</div>
               <Input
@@ -227,14 +254,14 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
                   const local = localPhoneDigits(event.target.value);
                   setPhone(local ? `998${local}` : "");
                 }}
-                placeholder="Phone number"
+                placeholder="Telefon raqami"
                 disabled={customerType === "Registered" && Boolean(selectedCustomer)}
               />
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label>Tariff / package</Label>
+            <Label>Tarif / paket</Label>
             <Select value={selectedTariff?.id ?? ""} onValueChange={handleTariffChange}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -261,7 +288,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
           </div>
 
           <div className="space-y-2">
-            <Label>Duration</Label>
+            <Label>Davomiyligi</Label>
             {isOpenTariff ? (
               <div className="flex h-10 items-center rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 text-sm font-semibold text-amber-200">
                 Ochiq — vaqt yuqoriga sanaladi
@@ -270,14 +297,14 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
               <Select value={duration} onValueChange={handleDurationChange}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {durationOptions.map((minutes) => <SelectItem key={minutes} value={String(minutes)}>{minutes} min</SelectItem>)}
+                  {durationOptions.map((minutes) => <SelectItem key={minutes} value={String(minutes)} disabled={minutes > availableMinutes}>{minutes} min{minutes > availableMinutes ? " (bron)" : ""}</SelectItem>)}
                 </SelectContent>
               </Select>
             )}
           </div>
 
           <div className="space-y-2">
-            <Label>Payment mode</Label>
+            <Label>To'lov turi</Label>
             <Select value={paymentStatus} onValueChange={(value) => setPaymentStatus(value as "paid" | "unpaid")} disabled={isOpenTariff}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -287,7 +314,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
           </div>
 
           <div className="space-y-2">
-            <Label>Payment method</Label>
+            <Label>To'lov usuli</Label>
             <Select value={paymentMethod} onValueChange={setPaymentMethod}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -297,7 +324,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
           </div>
 
           <div className="rounded-xl bg-slate-950/80 p-4">
-            <Label>Total amount</Label>
+            <Label>Umumiy summa</Label>
             {isOpenTariff ? (
               <>
                 <div className="mt-2 text-2xl font-black text-amber-200">{money(hourlyRate)}/soat</div>
@@ -314,8 +341,8 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
 
         <DialogFooter className="flex-col-reverse gap-3 sm:flex-row sm:items-center">
           <div className="mr-auto rounded-xl bg-slate-950/70 px-3 py-2 text-sm font-semibold text-slate-300">{summary}</div>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit} disabled={!canSubmit}>Start session</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>Bekor qilish</Button>
+          <Button onClick={submit} disabled={!canSubmit || bookingBlocks}>Sessiyani boshlash</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

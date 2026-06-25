@@ -154,7 +154,7 @@ export function BookingForm({ booking, onSaved }: { booking?: Booking | null; on
   const endTime = addMinutesToTime(form.startTime, 60);
   const conflict = hasConflict(bookings, form, endTime, booking?.id);
   const phoneValid = normalizeUzPhone(form.phone).length === 12;
-  const submitLabel = booking ? "Save booking" : "Create booking";
+  const submitLabel = booking ? "Bronni saqlash" : "Bron yaratish";
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -178,12 +178,12 @@ export function BookingForm({ booking, onSaved }: { booking?: Booking | null; on
               {form.phone ? `Telefon: ${formatUzPhone(form.phone)}` : "Ro'yxatdan mijoz tanlang yoki yangi mijoz qo'shing"}
             </div>
           </div>
-          <div className="space-y-2"><Label>Simulator type</Label><Select value={form.simulatorType} onValueChange={(simulatorType) => setForm((item) => ({ ...item, simulatorType, simulatorId: "" }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="VIP">Moza (Premium)</SelectItem><SelectItem value="Standard">Logitech (Main)</SelectItem></SelectContent></Select></div>
-          <div className="space-y-2"><Label>Exact simulator</Label><Select value={form.simulatorId} onValueChange={(simulatorId) => setForm((item) => ({ ...item, simulatorId }))}><SelectTrigger><SelectValue placeholder="Simulator tanlang" /></SelectTrigger><SelectContent>{simulatorsByType.map((simulator) => <SelectItem key={simulator.id} value={simulator.id}>{simulator.branchName} - {simulator.name}</SelectItem>)}</SelectContent></Select></div>
-          <div className="space-y-2"><Label>Date</Label><DatePicker value={form.date} onChange={(date) => setForm((item) => ({ ...item, date }))} /></div>
-          <div className="space-y-2"><Label>Start time</Label><TimePicker24 value={form.startTime} onChange={(startTime) => setForm((item) => ({ ...item, startTime }))} /></div>
+          <div className="space-y-2"><Label>Simulyator turi</Label><Select value={form.simulatorType} onValueChange={(simulatorType) => setForm((item) => ({ ...item, simulatorType, simulatorId: "" }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="VIP">Moza (Premium)</SelectItem><SelectItem value="Standard">Logitech (Main)</SelectItem></SelectContent></Select></div>
+          <div className="space-y-2"><Label>Aniq simulyator</Label><Select value={form.simulatorId} onValueChange={(simulatorId) => setForm((item) => ({ ...item, simulatorId }))}><SelectTrigger><SelectValue placeholder="Simulyator tanlang" /></SelectTrigger><SelectContent>{simulatorsByType.map((simulator) => <SelectItem key={simulator.id} value={simulator.id}>{simulator.branchName} - {simulator.name}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-2"><Label>Sana</Label><DatePicker value={form.date} onChange={(date) => setForm((item) => ({ ...item, date }))} /></div>
+          <div className="space-y-2"><Label>Boshlanish vaqti</Label><TimePicker24 value={form.startTime} onChange={(startTime) => setForm((item) => ({ ...item, startTime }))} /></div>
           <div className="space-y-2"><Label>Tugash vaqti (avto +1 soat)</Label><div className="flex h-10 items-center rounded-xl border border-slate-700 bg-slate-950/40 px-3 text-sm font-semibold text-slate-300">{form.startTime} – {endTime}</div></div>
-          <div className="space-y-2 lg:col-span-2"><Label>Note</Label><Input value={form.note} onChange={(event) => setForm((item) => ({ ...item, note: event.target.value }))} placeholder="Izoh" /></div>
+          <div className="space-y-2 lg:col-span-2"><Label>Izoh</Label><Input value={form.note} onChange={(event) => setForm((item) => ({ ...item, note: event.target.value }))} placeholder="Izoh" /></div>
           {conflict ? (
             <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm font-semibold text-red-200 lg:col-span-2">
               Bu simulyator shu vaqt oralig'ida band. Boshqa vaqt yoki simulyator tanlang.

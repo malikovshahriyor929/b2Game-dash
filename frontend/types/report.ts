@@ -15,6 +15,7 @@ export type CashTransaction = {
   paymentMethod: string;
   branchId: string;
   shiftId?: string;
+  sourceType?: string;
 };
 
 export type Shift = {
@@ -22,7 +23,7 @@ export type Shift = {
   operator: string;
   branchId?: string;
   date: string;
-  shiftType: "Kunduzgi (09:00 - 18:00)" | "Tungi (18:01 - 09:00)";
+  shiftType: string;
   status: "open" | "closed";
   openTime: string;
   closeTime?: string;
@@ -43,4 +44,3 @@ export type Shift = {
   withdrawRecipient?: string;
   notes?: string;
 };
-

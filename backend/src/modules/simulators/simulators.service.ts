@@ -313,9 +313,8 @@ async function listDbSimulatorRows(requestedBranchId?: unknown, user?: Request["
       : null;
 
   if (baseRole(user?.role) === "admin" && !branchId) return [];
-  // Admins only see simulators explicitly assigned to them by a super_admin.
-  const adminId = baseRole(user?.role) === "admin" ? (user?.user_id ?? null) : null;
 
+  // Every admin sees all simulators in their branch (branch-scoped, not per-admin).
   return prisma.$queryRawUnsafe<any[]>(
     `select
        s.*,
@@ -336,27 +335,16 @@ async function listDbSimulatorRows(requestedBranchId?: unknown, user?: Request["
      left join sessions sess on sess.id = s.current_session_id and sess.status in ('active','paused','unpaid')
      left join tariffs t on t.id = sess.tariff_id
      where ($1::uuid is null or s.branch_id = $1::uuid)
-       and ($2::uuid is null or exists (select 1 from simulator_admins sa where sa.simulator_id = s.id and sa.admin_id = $2::uuid))
      order by b.created_at asc, s.zone asc, s.code asc`,
     branchId,
-    adminId,
   );
 }
 
 export async function listRows(requestedBranchId?: unknown, user?: Request["user"]) {
   try {
     const rigs = await filterRigsForScope(await listRigMvpRigs(), requestedBranchId, user);
-    const rows = await Promise.all(rigs.map((rig) => rigToSimulatorRow(rig)));
-    // Admins only see simulators a super_admin assigned to them (many-to-many).
-    if (baseRole(user?.role) === "admin") {
-      const assigned = await prisma.$queryRawUnsafe<Array<{ simulator_id: string }>>(
-        "select simulator_id from simulator_admins where admin_id=$1::uuid",
-        (user?.user_id ?? null),
-      );
-      const ids = new Set(assigned.map((a) => String(a.simulator_id)));
-      return rows.filter((row) => ids.has(String(row.id)));
-    }
-    return rows;
+    // Every admin sees all simulators in their branch (scoped above), not just assigned ones.
+    return await Promise.all(rigs.map((rig) => rigToSimulatorRow(rig)));
   } catch {
     // Keep the dashboard usable from the seeded PostgreSQL data when Rig-MVP is down.
   }

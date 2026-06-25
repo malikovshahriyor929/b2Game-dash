@@ -91,7 +91,6 @@ model Customer {
   name          String
   phone         String
   balance       Decimal   @default(0)
-  bonus         Decimal   @default(0)
   totalSpent    Decimal   @default(0) @map("total_spent")
   sessionsCount Int       @default(0) @map("sessions_count")
   lastVisitAt   DateTime? @map("last_visit_at")
@@ -152,9 +151,50 @@ model Payment {
   createdAt      DateTime @default(now()) @map("created_at")
   receivedAmount Decimal? @map("received_amount") @db.Decimal(14, 2)
   changeAmount   Decimal  @default(0) @map("change_amount") @db.Decimal(14, 2)
+  sourceType     String   @default("payment") @map("source_type")
+  sourceNote     String?  @map("source_note")
 
   @@index([shiftId])
   @@map("payments")
+}
+
+model Expense {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+  shiftId   String?  @map("shift_id") @db.Uuid
+  amount    Decimal  @db.Decimal(14, 2)
+  method    String   @default("cash")
+  source    String
+  note      String?
+  spentBy   String   @map("spent_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([branchId])
+  @@index([shiftId])
+  @@index([spentBy])
+  @@map("expenses")
+}
+
+model AdminPenaltyPayment {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  branchId       String   @map("branch_id") @db.Uuid
+  shiftId        String?  @map("shift_id") @db.Uuid
+  adminId        String   @map("admin_id") @db.Uuid
+  amount         Decimal  @db.Decimal(14, 2)
+  method         String   @default("cash")
+  cashAmount     Decimal  @default(0) @map("cash_amount") @db.Decimal(14, 2)
+  cardAmount     Decimal  @default(0) @map("card_amount") @db.Decimal(14, 2)
+  qrAmount       Decimal  @default(0) @map("qr_amount") @db.Decimal(14, 2)
+  receivedAmount Decimal? @map("received_amount") @db.Decimal(14, 2)
+  changeAmount   Decimal  @default(0) @map("change_amount") @db.Decimal(14, 2)
+  recordedBy     String   @map("recorded_by") @db.Uuid
+  note           String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([branchId])
+  @@index([shiftId])
+  @@index([adminId])
+  @@map("admin_penalty_payments")
 }
 
 model Product {
@@ -261,6 +301,8 @@ model RepairRequest {
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   branchId        String    @map("branch_id") @db.Uuid
   simulatorId     String    @map("simulator_id") @db.Uuid
+  sessionId       String?   @map("session_id") @db.Uuid
+  openedDuringSession Boolean @default(false) @map("opened_during_session")
   requestedBy     String    @map("requested_by") @db.Uuid
   approvedBy      String?   @map("approved_by") @db.Uuid
   confirmedBy     String?   @map("confirmed_by") @db.Uuid
@@ -277,6 +319,13 @@ model RepairRequest {
   markedFixedAt   DateTime? @map("marked_fixed_at")
   confirmedAt     DateTime? @map("confirmed_at")
   revenueImpact   Decimal   @default(0) @map("revenue_impact")
+  // Maintenance accountability flow (admin opens & closes; super admin reviews & charges)
+  closedAt        DateTime? @map("closed_at")
+  durationMinutes Int?      @map("duration_minutes")
+  chargeAmount    Decimal   @default(0) @map("charge_amount") @db.Decimal(14, 2)
+  reviewStatus    String    @default("open") @map("review_status")
+  reviewedBy      String?   @map("reviewed_by") @db.Uuid
+  reviewedAt      DateTime? @map("reviewed_at")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
 
@@ -330,6 +379,27 @@ model ShiftWithdrawal {
   @@index([shiftId])
   @@index([branchId])
   @@map("shift_withdrawals")
+}
+
+model CashWithdrawalRequest {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  branchId      String    @map("branch_id") @db.Uuid
+  shiftId       String?   @map("shift_id") @db.Uuid
+  adminId       String    @map("admin_id") @db.Uuid
+  amount        Decimal   @db.Decimal(14, 2)
+  initiatedBy   String    @map("initiated_by") @db.Uuid
+  initiatorRole String    @map("initiator_role")
+  status        String    @default("pending") // 'pending' | 'confirmed' | 'rejected'
+  note          String?
+  confirmedBy   String?   @map("confirmed_by") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at")
+  resolvedAt    DateTime? @map("resolved_at")
+
+  @@index([branchId])
+  @@index([shiftId])
+  @@index([adminId])
+  @@index([status])
+  @@map("cash_withdrawal_requests")
 }
 
 model Log {

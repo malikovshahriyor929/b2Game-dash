@@ -174,10 +174,10 @@ export function OrderPanel() {
 
   return (
     <Card className="flex flex-col overflow-hidden xl:sticky xl:top-0 xl:h-[calc(100dvh-112px)] xl:max-h-[calc(100dvh-112px)]">
-      <CardHeader><CardTitle>Current order</CardTitle></CardHeader>
+      <CardHeader><CardTitle>Joriy buyurtma</CardTitle></CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
         <div className="min-h-[132px] flex-1 space-y-2 overflow-auto thin-scrollbar">
-          {order.length === 0 ? <div className="flex min-h-[112px] items-center justify-center rounded-xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-500">Order empty</div> : null}
+          {order.length === 0 ? <div className="flex min-h-[112px] items-center justify-center rounded-xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-500">Buyurtma bo&apos;sh</div> : null}
           {order.map((item) => (
             <div key={item.id} className="rounded-xl bg-slate-950/70 p-3">
               <div className="flex justify-between gap-2"><div className="font-semibold">{item.name}</div><button onClick={() => updateQty(item.id, 0)}><FiTrash2 className="text-red-300" /></button></div>
@@ -190,16 +190,16 @@ export function OrderPanel() {
         </div>
         <Separator />
         <div className="space-y-2 text-sm">
-          <div className="flex justify-between"><span className="text-slate-400">Subtotal</span><b>{money(total)}</b></div>
-          <div className="flex justify-between"><span className="text-slate-400">Discount</span><b>{money(0)}</b></div>
-          <div className="flex justify-between text-lg"><span>Total</span><b className="text-sky-200">{money(total)}</b></div>
+          <div className="flex justify-between"><span className="text-slate-400">Oraliq jami</span><b>{money(total)}</b></div>
+          <div className="flex justify-between"><span className="text-slate-400">Chegirma</span><b>{money(0)}</b></div>
+          <div className="flex justify-between text-lg"><span>Jami</span><b className="text-sky-200">{money(total)}</b></div>
         </div>
         <Select value={attachTarget} onValueChange={setAttachTarget}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="general">General sale</SelectItem>
-            {active.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} session</SelectItem>)}
-            <SelectItem value="user">Registered user</SelectItem>
+            <SelectItem value="general">Umumiy savdo</SelectItem>
+            {active.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} sessiyasi</SelectItem>)}
+            <SelectItem value="user">Ro&apos;yxatdan o&apos;tgan mijoz</SelectItem>
           </SelectContent>
         </Select>
         <Select value={paymentMethod} onValueChange={setPaymentMethod}>
@@ -207,7 +207,7 @@ export function OrderPanel() {
           <SelectContent>{paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}</SelectContent>
         </Select>
         {paymentFields()}
-        <div className="grid gap-2 sm:grid-cols-3"><Button variant="secondary">Save</Button><Button onClick={() => setPayOpen(true)} disabled={!order.length || paymentInvalid}>Pay</Button><Button variant="destructive" onClick={clearOrder} disabled={!order.length}>Clear</Button></div>
+        <div className="grid gap-2 sm:grid-cols-3"><Button variant="secondary">Saqlash</Button><Button onClick={() => setPayOpen(true)} disabled={!order.length || paymentInvalid}>To&apos;lash</Button><Button variant="destructive" onClick={clearOrder} disabled={!order.length}>Tozalash</Button></div>
       </CardContent>
       <Dialog open={payOpen} onOpenChange={(open) => {
         setPayOpen(open);
@@ -215,7 +215,7 @@ export function OrderPanel() {
       }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Order payment</DialogTitle>
+            <DialogTitle>Buyurtma to&apos;lovi</DialogTitle>
             <DialogDescription>Avval mijoz turini tanlang, keyin to'lovni yakunlang.</DialogDescription>
           </DialogHeader>
 
@@ -226,10 +226,10 @@ export function OrderPanel() {
                 onClick={() => submitPayment()}
                 disabled={paymentValue === "balance"}
               >
-                <div className="flex items-center gap-3 text-lg font-black text-white"><FiUser /> Guest</div>
+                <div className="flex items-center gap-3 text-lg font-black text-white"><FiUser /> Mehmon</div>
                 <div className="mt-2 text-sm text-slate-400">Mijoz ro'yxatidan tanlanmaydi. To'lov darhol yakunlanadi.</div>
-                <div className="mt-3 text-xs font-semibold text-slate-500">Payment: {paymentMethod}</div>
-                {paymentValue === "balance" ? <div className="mt-2 text-xs font-semibold text-red-300">Balans bilan to'lash uchun registered mijoz tanlang.</div> : null}
+                <div className="mt-3 text-xs font-semibold text-slate-500">To'lov: {paymentMethod}</div>
+                {paymentValue === "balance" ? <div className="mt-2 text-xs font-semibold text-red-300">Balans bilan to'lash uchun ro'yxatdan o'tgan mijoz tanlang.</div> : null}
                 {paymentValue === "cash" ? <div className="mt-2 text-xs font-semibold text-emerald-200">Berdi: {money(cashReceivedAmount)} · Qaytim: {money(cashChange)}</div> : null}
                 <div className="mt-4 text-2xl font-black text-sky-200">{money(total)}</div>
               </button>
@@ -237,7 +237,7 @@ export function OrderPanel() {
                 className="rounded-2xl border border-slate-700 bg-slate-950/70 p-4 text-left transition hover:border-emerald-400 hover:bg-emerald-500/10"
                 onClick={() => setPayStep("registered")}
               >
-                <div className="flex items-center gap-3 text-lg font-black text-white"><FiUserCheck /> Registered</div>
+                <div className="flex items-center gap-3 text-lg font-black text-white"><FiUserCheck /> Ro&apos;yxatdan o&apos;tgan</div>
                 <div className="mt-2 text-sm text-slate-400">Online mijozlar birinchi chiqadi, keyin offline mijozlar.</div>
                 <div className="mt-4 text-2xl font-black text-emerald-200">{money(total)}</div>
               </button>
@@ -246,14 +246,14 @@ export function OrderPanel() {
             <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-[1fr_180px]">
                 <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
-                  <div className="text-xs font-semibold uppercase text-slate-500">Selected customer balance</div>
+                  <div className="text-xs font-semibold uppercase text-slate-500">Tanlangan mijoz balansi</div>
                   <div className={`mt-1 text-2xl font-black ${registeredBalanceInvalid ? "text-red-300" : "text-sky-200"}`}>
                     {selectedCustomer ? money(selectedCustomerBalance) : "Mijoz tanlanmagan"}
                   </div>
                   {registeredBalanceInvalid ? <div className="mt-1 text-xs font-semibold text-red-300">Balans yetarli emas.</div> : null}
                 </div>
                 <div className="space-y-2">
-                  <div className="text-xs font-semibold uppercase text-slate-500">Payment</div>
+                  <div className="text-xs font-semibold uppercase text-slate-500">To&apos;lov</div>
                   <Select value={paymentMethod} onValueChange={setPaymentMethod}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>{paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}</SelectContent>
@@ -280,9 +280,9 @@ export function OrderPanel() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="truncate font-bold text-white">{customer.name}</div>
-                          <div className="mt-1 text-xs text-slate-500">{customer.phone ?? "Telefon yo'q"} · {Number(customer.sessions_count ?? 0)} sessions</div>
+                          <div className="mt-1 text-xs text-slate-500">{customer.phone ?? "Telefon yo'q"} · {Number(customer.sessions_count ?? 0)} sessiya</div>
                         </div>
-                        <Badge variant={online ? "success" : "muted"}>{online ? "Online" : "Offline"}</Badge>
+                        <Badge variant={online ? "success" : "muted"}>{online ? "Onlayn" : "Oflayn"}</Badge>
                       </div>
                       <div className="mt-2 text-xs font-semibold text-sky-200">Balans: {money(Number(customer.balance ?? 0))}</div>
                     </button>
@@ -290,10 +290,10 @@ export function OrderPanel() {
                 })}
               </div>
               <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
-                <Button variant="secondary" onClick={() => setPayStep("type")}>Back</Button>
-                <Button variant="outline" onClick={() => submitPayment()} disabled={paymentInvalid || paymentValue === "balance"}>Pay as guest</Button>
+                <Button variant="secondary" onClick={() => setPayStep("type")}>Orqaga</Button>
+                <Button variant="outline" onClick={() => submitPayment()} disabled={paymentInvalid || paymentValue === "balance"}>Mehmon sifatida to&apos;lash</Button>
                 <Button onClick={() => selectedCustomerId && submitPayment(selectedCustomerId)} disabled={!selectedCustomerId || registeredBalanceInvalid || paymentInvalid}>
-                  <FiCheckCircle /> Pay{selectedCustomer ? ` - ${selectedCustomer.name}` : ""}
+                  <FiCheckCircle /> To'lash{selectedCustomer ? ` - ${selectedCustomer.name}` : ""}
                 </Button>
               </div>
             </div>

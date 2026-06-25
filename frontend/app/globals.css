@@ -134,3 +134,7 @@ body {
     @apply font-sans;
   }
 }
+  /* Ensure disabled buttons retain rounded corners */
+  button[disabled] {
+    border-radius: .75rem;
+  }

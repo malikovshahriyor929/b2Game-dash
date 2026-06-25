@@ -8,3 +8,4 @@ customersRoutes.patch("/:id", customersController.update);
 customersRoutes.delete("/:id", customersController.remove);
 customersRoutes.get("/:id/sessions", customersController.sessions);
 customersRoutes.get("/:id/sales", customersController.sales);
+customersRoutes.post("/:id/topup", customersController.topup);

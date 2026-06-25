@@ -17,6 +17,18 @@ import { money } from "@/lib/format";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { CreateBranchDialog } from "@/components/layout/create-branch-dialog";
 import { ChangePasswordDialog } from "@/components/shared/change-password-dialog";
+import { WithdrawalCenter } from "@/components/shift/withdrawal-center";
+
+// Smena turlari: Kunduzgi 10:00–19:00, Tungi 19:00–03:00. Tanlov yorliqlari (admin o'zgartira oladi).
+const SHIFT_DAY = "Kunduzgi (10:00 - 19:00)";
+const SHIFT_NIGHT = "Tungi (19:00 - 03:00)";
+type ShiftTypeOption = typeof SHIFT_DAY | typeof SHIFT_NIGHT;
+
+// Joriy vaqt bo'yicha smena turini taklif qiladi: 10:00–19:00 oralig'i kunduzgi, qolgani tungi.
+function currentShiftType(): ShiftTypeOption {
+  const hour = new Date().getHours();
+  return hour >= 10 && hour < 19 ? SHIFT_DAY : SHIFT_NIGHT;
+}
 
 export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start" | "addTime" | "payment" | "stop") => void; onOpenSidebar: () => void }) {
   const { data } = useSession();
@@ -41,7 +53,7 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [branchSelectOpen, setBranchSelectOpen] = useState(false);
   const [startingCash, setStartingCash] = useState("");
-  const [shiftType, setShiftType] = useState<"Kunduzgi (09:00 - 18:00)" | "Tungi (18:01 - 09:00)">("Kunduzgi (09:00 - 18:00)");
+  const [shiftType, setShiftType] = useState<ShiftTypeOption>(SHIFT_DAY);
   const [actualCash, setActualCash] = useState("");
   const [cashWithdrawn, setCashWithdrawn] = useState("");
   const [closeNotes, setCloseNotes] = useState("");
@@ -51,7 +63,7 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
   const active = simulators.filter((item) => ["busy", "unpaid"].includes(item.status)).length;
   const ready = simulators.filter((item) => item.status === "ready_to_play").length;
   const reserved = simulators.filter((item) => item.status === "reserved").length;
-  const selectedBranchName = selectedBranchId === "all" ? "All branches" : branches.find((branch) => branch.id === selectedBranchId)?.name ?? "Branch";
+  const selectedBranchName = selectedBranchId === "all" ? "Barcha filiallar" : branches.find((branch) => branch.id === selectedBranchId)?.name ?? "Filial";
 
   // Smena pul ko'rsatkichlari (backend payments'dan jonli hisoblangan)
   const cashSales = activeShift?.cashSales ?? 0;
@@ -72,22 +84,23 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
   useEffect(() => {
     if (shiftModalOpen && !activeShift) {
       setStartingCash(previousRemaining ? String(previousRemaining) : "");
+      setShiftType(currentShiftType()); // joriy vaqt bo'yicha avto-tanlov
     }
   }, [shiftModalOpen, activeShift, previousRemaining]);
 
   const quickActions = [
-    { key: "refresh", label: "Refresh", icon: FiRefreshCw, enabled: true, click: () => location.reload() },
-    { key: "start", label: "Start", icon: FiPlay, enabled: Boolean(selected && ["ready_to_play", "reserved"].includes(selected.status) && canUseAction(role, "start")), click: () => onAction("start") },
-    { key: "addTime", label: "Add time", icon: FiPlusCircle, enabled: Boolean(selected && ["busy", "unpaid"].includes(selected.status) && canUseAction(role, "addTime")), click: () => onAction("addTime") },
-    { key: "payment", label: "Payment", icon: FiClock, enabled: Boolean(selected && selected.status !== "ready_to_play" && canUseAction(role, "payment")), click: () => onAction("payment") },
-    { key: "stop", label: "Stop", icon: FiSquare, enabled: Boolean(selected && ["busy", "unpaid"].includes(selected.status) && canUseAction(role, "stop")), click: () => onAction("stop") },
-    { key: "lock", label: "Lock", icon: FiLock, enabled: Boolean(selected && canUseAction(role, "lock")), click: () => selected && toggleLock(selected.id) },
+    { key: "refresh", label: "Yangilash", icon: FiRefreshCw, enabled: true, click: () => location.reload() },
+    { key: "start", label: "Boshlash", icon: FiPlay, enabled: Boolean(selected && ["ready_to_play", "reserved"].includes(selected.status) && canUseAction(role, "start")), click: () => onAction("start") },
+    { key: "addTime", label: "Vaqt qo'shish", icon: FiPlusCircle, enabled: Boolean(selected && ["busy", "unpaid"].includes(selected.status) && canUseAction(role, "addTime")), click: () => onAction("addTime") },
+    { key: "payment", label: "To'lov", icon: FiClock, enabled: Boolean(selected && selected.status !== "ready_to_play" && canUseAction(role, "payment")), click: () => onAction("payment") },
+    { key: "stop", label: "To'xtatish", icon: FiSquare, enabled: Boolean(selected && ["busy", "unpaid"].includes(selected.status) && canUseAction(role, "stop")), click: () => onAction("stop") },
+    { key: "lock", label: "Qulflash", icon: FiLock, enabled: Boolean(selected && canUseAction(role, "lock")), click: () => selected && toggleLock(selected.id) },
   ];
 
   return (
     <header className="sticky top-0 z-30 shrink-0 border-b border-slate-800 bg-[#151c31]/95 px-3 py-2 sm:px-4">
       <div className="flex min-w-0 items-center gap-2">
-        <Button className="shrink-0 md:hidden" size="icon" variant="secondary" onClick={onOpenSidebar} aria-label="Open sidebar"><FiMenu /></Button>
+        <Button className="shrink-0 md:hidden" size="icon" variant="secondary" onClick={onOpenSidebar} aria-label="Menyuni ochish"><FiMenu /></Button>
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold text-white">B2 Game Club</div>
           <div className="truncate text-xs text-slate-400">{selectedBranchName}</div>
@@ -125,6 +138,7 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
               })}
             </div>
           </TooltipProvider>
+          <WithdrawalCenter />
           <Button className="h-9 w-9 shrink-0" size="icon" variant="ghost"><FiMoon /><span className="sr-only"><FiSun /></span></Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -136,7 +150,7 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
               <DropdownMenuLabel>{data?.user?.name} - {data?.user?.role}</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => setTimeout(() => setPasswordDialogOpen(true), 0)}><FiKey /> Parolni o&apos;zgartirish</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/login" })}><FiLogOut /> Logout</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/login" })}><FiLogOut /> Chiqish</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -147,7 +161,7 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
           <Select open={branchSelectOpen} onOpenChange={setBranchSelectOpen} value={selectedBranchId} onValueChange={setSelectedBranchId} disabled={role !== "super_admin"}>
             <SelectTrigger className="h-9 min-w-0"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {role === "super_admin" ? <SelectItem value="all">All branches</SelectItem> : null}
+              {role === "super_admin" ? <SelectItem value="all">Barcha filiallar</SelectItem> : null}
               {branchOptions.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}
               {role === "super_admin" ? (
                 <>
@@ -166,25 +180,25 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
           <Select value={period} onValueChange={(value) => setPeriod(value as typeof period)}>
             <SelectTrigger className="h-9 min-w-0"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="today">Today</SelectItem>
-              <SelectItem value="yesterday">Yesterday</SelectItem>
-              <SelectItem value="week">Week</SelectItem>
-              <SelectItem value="month">Month</SelectItem>
-              <SelectItem value="year">Year</SelectItem>
-              <SelectItem value="custom">Custom range</SelectItem>
+              <SelectItem value="today">Bugun</SelectItem>
+              <SelectItem value="yesterday">Kecha</SelectItem>
+              <SelectItem value="week">Hafta</SelectItem>
+              <SelectItem value="month">Oy</SelectItem>
+              <SelectItem value="year">Yil</SelectItem>
+              <SelectItem value="custom">Maxsus oraliq</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         <div className="relative min-w-0">
           <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-          <Input className="h-9 pl-9" placeholder="Search simulator, customer, order..." />
+          <Input className="h-9 pl-9" placeholder="Simulyator, mijoz, buyurtma qidirish..." />
         </div>
 
         <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-1 thin-scrollbar lg:justify-end lg:pb-0">
           <Badge className="shrink-0 whitespace-nowrap">{money(revenue)}</Badge>
-          <Badge variant="success" className="shrink-0 whitespace-nowrap">{active} active</Badge>
-          <Badge variant="muted" className="shrink-0 whitespace-nowrap">{ready} ready</Badge>
+          <Badge variant="success" className="shrink-0 whitespace-nowrap">{active} faol</Badge>
+          <Badge variant="muted" className="shrink-0 whitespace-nowrap">{ready} tayyor</Badge>
           <Badge variant="warning" className="shrink-0 whitespace-nowrap">{reserved} bron</Badge>
         </div>
       </div>
@@ -315,8 +329,8 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
                 <Select value={shiftType} onValueChange={(val) => setShiftType(val as any)}>
                   <SelectTrigger className="bg-slate-950 border-slate-800"><SelectValue /></SelectTrigger>
                   <SelectContent className="bg-slate-900 border-slate-800 text-slate-100">
-                    <SelectItem value="Kunduzgi (09:00 - 18:00)">Kunduzgi (09:00 - 18:00)</SelectItem>
-                    <SelectItem value="Tungi (18:01 - 09:00)">Tungi (18:01 - 09:00)</SelectItem>
+                    <SelectItem value={SHIFT_DAY}>{SHIFT_DAY}</SelectItem>
+                    <SelectItem value={SHIFT_NIGHT}>{SHIFT_NIGHT}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

@@ -1,1 +1,1 @@
-import { Router } from "express"; import * as c from "./payments.controller"; export const paymentsRoutes=Router(); paymentsRoutes.get("/",c.list); paymentsRoutes.post("/",c.create);
+import { Router } from "express"; import * as c from "./payments.controller"; export const paymentsRoutes=Router(); paymentsRoutes.get("/",c.list); paymentsRoutes.post("/",c.create); paymentsRoutes.post("/admin-penalties/:adminId/pay",c.payAdminPenalty);

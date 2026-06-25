@@ -1,28 +1,25 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { FiActivity, FiCreditCard, FiMonitor, FiShoppingBag } from "react-icons/fi";
+import { FiActivity, FiCreditCard, FiMonitor, FiShoppingBag, FiTrendingDown, FiTrendingUp } from "react-icons/fi";
 import { PageHeader } from "@/components/shared/page-header";
 import { SimulatorMap } from "@/components/simulator/simulator-map";
 import { ReportCard } from "@/components/reports/report-card";
 import { RevenueChart } from "@/components/reports/revenue-chart";
+import { WeeklyRevenueChart } from "@/components/reports/weekly-revenue-chart";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { StatCardsSkeleton, ChartSkeleton, MapSkeleton } from "@/components/ui/skeletons";
-import { localDate } from "@/lib/datetime";
 
 export default function DashboardPage() {
-  const { loading, revenue, simulators, activeShift, shifts, barSales } = useDashboardStore();
+  const { loading, revenue, profit, expenses, shopSales, simulators, activeShift } = useDashboardStore();
   const { data: session } = useSession();
+  const isSuper = session?.user?.role === "super_admin";
   const activeCount = simulators.filter((s) => ["busy", "unpaid"].includes(s.status)).length;
   const freeCount = simulators.filter((s) => s.status === "ready_to_play").length;
-  const today = localDate();
-  const todayShifts = shifts.filter((s) => s.date === today);
-  const totalShiftEarnings = todayShifts.reduce((sum, s) => sum + s.totalIncome, 0);
-  const shopSales = barSales.filter((sale) => sale.date === today).reduce((sum, sale) => sum + sale.totalAmount, 0);
 
   return (
     <div>
-      <PageHeader title="B2 dashboard" description="Branch-scoped simulator control, revenue, shop sales, and repair monitoring." badge="Admin control room" />
+      <PageHeader title="B2 dashboard" description={isSuper ? "Filial bo'yicha tushum, foyda, xarajat va simulyatorlar nazorati." : "Sizning shaxsiy tushum, foyda va xarajatlaringiz."} badge="Admin control room" />
       
       {/* Active Session Info */}
       {activeShift && (
@@ -33,15 +30,15 @@ export default function DashboardPage() {
               <p className="break-words text-lg font-semibold leading-snug">{activeShift.operator}</p>
             </div>
             <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">Shift Type</p>
+              <p className="text-xs text-muted-foreground">Smena turi</p>
               <p className="break-words text-lg font-semibold leading-snug">{activeShift.shiftType}</p>
             </div>
             <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">Start Cash</p>
+              <p className="text-xs text-muted-foreground">Boshlang'ich kassa</p>
               <p className="break-words text-lg font-semibold leading-snug">{activeShift.startingCash.toLocaleString()} UZS</p>
             </div>
             <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">Today Earnings</p>
+              <p className="text-xs text-muted-foreground">Bugungi tushum</p>
               <p className="break-words text-lg font-semibold leading-snug text-green-400">{(activeShift.totalIncome).toLocaleString()} UZS</p>
             </div>
           </div>
@@ -56,13 +53,18 @@ export default function DashboardPage() {
         </>
       ) : (
         <>
-          <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <ReportCard label="Today revenue" value={revenue} icon={FiCreditCard} />
-            <ReportCard label="Active sessions" value={activeCount} icon={FiActivity} format="number" />
-            <ReportCard label="Ready simulators" value={freeCount} icon={FiMonitor} format="number" />
-            <ReportCard label="Shop sales" value={shopSales} icon={FiShoppingBag} />
+          <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <ReportCard label={isSuper ? "Tushum (filial)" : "Mening tushumim"} value={revenue} icon={FiCreditCard} />
+            <ReportCard label={isSuper ? "Foyda (filial)" : "Mening foydam"} value={profit} icon={FiTrendingUp} />
+            <ReportCard label={isSuper ? "Xarajat (filial)" : "Mening xarajatim"} value={expenses} icon={FiTrendingDown} />
+            <ReportCard label="Do'kon savdosi" value={shopSales} icon={FiShoppingBag} />
+            <ReportCard label="Faol sessiyalar" value={activeCount} icon={FiActivity} format="number" />
+            <ReportCard label="Tayyor simulyatorlar" value={freeCount} icon={FiMonitor} format="number" />
           </div>
-          <div className="mb-4"><RevenueChart /></div>
+          <div className="mb-4 grid gap-4 xl:grid-cols-2">
+            <RevenueChart />
+            <WeeklyRevenueChart />
+          </div>
           <SimulatorMap />
         </>
       )}

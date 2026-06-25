@@ -103,14 +103,18 @@ export default function ReportsPage() {
 
   const filteredBarSales = barSales.filter((sale) => isDateInRange(sale.date) && matchesOperator(sale.operator));
   const filteredLocks = lockUnlockLogs.filter((log) => isDateInRange(log.date) && matchesOperator(log.operator));
-  const filteredCashTx = cashTransactions.filter((tx) => isDateInRange(tx.date) && matchesOperator(tx.operator));
+  const filteredCashTx = cashTransactions.filter((tx) =>
+    isDateInRange(tx.date)
+    && matchesOperator(tx.operator)
+    && (tx.type === "expense" || ["manual_income", "penalty"].includes(tx.sourceType ?? "")),
+  );
   const filteredShifts = shifts.filter((s) => isDateInRange(s.date) && matchesOperator(s.operator));
 
   // Calculations
   const totalRevenue = filteredRevenueEvents.reduce((sum, item) => sum + item.amount, 0);
 
   // Incomes (Prixod) vs Expenses (Rasxod)
-  const totalIncomes = filteredCashTx.filter(t => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
+  const totalIncomes = filteredCashTx.filter(t => t.type === "income" && ["manual_income", "penalty"].includes(t.sourceType ?? "")).reduce((sum, t) => sum + t.amount, 0);
   const totalExpenses = filteredCashTx.filter(t => t.type === "expense").reduce((sum, t) => sum + t.amount, 0);
 
   // Bar sales sum
@@ -137,7 +141,7 @@ export default function ReportsPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <PageHeader
           title="Hisobotlar & Otchotlar"
-          description="Superadmin hisobot paneli: Kirim/Chiqim, Bar savdosi, Kassa smenalari va Lock/Unlock jurnallari."
+          description="Superadmin hisobot paneli: Kirim/Chiqim, Bar savdosi, Kassa smenalari va Qulflash/Ochish jurnallari."
         />
         
         {/* Date Filter Widget */}
@@ -161,13 +165,13 @@ export default function ReportsPage() {
               <DatePicker
                 value={startDate}
                 onChange={setStartDate}
-                placeholder="Start date"
+                placeholder="Boshlanish sanasi"
               />
-              <span className="text-xs text-slate-500">to</span>
+              <span className="text-xs text-slate-500">dan</span>
               <DatePicker
                 value={endDate}
                 onChange={setEndDate}
-                placeholder="End date"
+                placeholder="Tugash sanasi"
               />
             </div>
           )}
@@ -205,7 +209,7 @@ export default function ReportsPage() {
         <ReportCard label="Kirim (Prixod)" value={totalIncomes} icon={FiArrowUpRight} tone="emerald" />
         <ReportCard label="Chiqim (Rasxod)" value={totalExpenses} icon={FiArrowDownRight} tone="red" />
         <ReportCard label="Kassa Farqi" value={totalDiscrepancy} icon={FiActivity} tone={totalDiscrepancy < 0 ? "red" : "amber"} />
-        <ReportCard label="Sof Foyda" value={totalRevenue} icon={FiTrendingUp} tone="fuchsia" />
+        <ReportCard label="Sof Foyda" value={totalRevenue - totalExpenses} icon={FiTrendingUp} tone="fuchsia" />
       </div>
 
       {/* Tabs Layout */}
@@ -315,7 +319,7 @@ export default function ReportsPage() {
                   <div className="flex justify-between"><span>Chiqimlar (Rasxod):</span><b className="text-rose-400">-{money(totalExpenses)}</b></div>
                   <div className="border-t border-slate-800 my-1 pt-2 flex justify-between font-bold text-sm">
                     <span className="text-slate-300">Sof foyda:</span>
-                    <span className="text-white">{money(totalRevenue + totalIncomes - totalExpenses)}</span>
+                    <span className="text-white">{money(totalRevenue - totalExpenses)}</span>
                   </div>
                 </div>
               </CardContent>
@@ -398,7 +402,7 @@ export default function ReportsPage() {
                   <TableHeader className="bg-slate-950/40 sticky top-0">
                     <TableRow className="whitespace-nowrap">
                       <TableHead>Sana & Vaqt</TableHead>
-                      <TableHead>Konsol / Simulator</TableHead>
+                      <TableHead>Konsol / Simulyator</TableHead>
                       <TableHead>Operator (Admin)</TableHead>
                       <TableHead>Harakat turi</TableHead>
                     </TableRow>

@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import toast from "react-hot-toast";
 import { useSession } from "next-auth/react";
 import { Booking } from "@/types/booking";
 import { LogEntry, LockUnlockEntry } from "@/types/log";
@@ -10,6 +11,7 @@ import { CashTransaction, Shift } from "@/types/report";
 import { Branch } from "@/types/user";
 import { backendDate, backendDateTime, backendTime, localDate, localDateTimeWithOffset } from "@/lib/datetime";
 import { backendDelete, backendGet, backendPatch, backendPost, getBackendWsToken } from "@/server/api";
+import { confirmWithdrawalRequest, createWithdrawalRequest, fetchWithdrawalRequests, rejectWithdrawalRequest, WithdrawalRequest } from "@/lib/withdrawals-api";
 import {
   listRigs as fetchRigList,
   lockRig as lockAdminRig,
@@ -21,7 +23,7 @@ import {
   unlockRig as unlockAdminRig,
 } from "@/lib/rig-admin-api";
 
-type StartPayload = { customerName: string; phone: string; tariff: string; tariffId?: string; customerId?: string; duration: number; amount: number; paymentStatus: "paid" | "unpaid"; paymentMethod?: string };
+type StartPayload = { customerName: string; phone: string; tariff: string; tariffId?: string; customerId?: string; duration: number; amount: number; paymentStatus: "paid" | "unpaid"; paymentMethod?: string; bookingId?: string };
 type PeriodFilter = "today" | "yesterday" | "week" | "month" | "year" | "custom";
 type RepairPayload = { title: string; description: string; errorType: RepairErrorType; priority: RepairPriority; note?: string };
 type RevenueEvent = { id: string; time: string; date?: string; amount: number; source: string; branchId?: string; operator?: string };
@@ -46,6 +48,13 @@ type DashboardStore = {
   selected?: Simulator;
   setSelectedId: (id: string | null) => void;
   revenue: number;
+  profit: number;
+  expenses: number;
+  shopSales: number;
+  withdrawalRequests: WithdrawalRequest[];
+  requestWithdrawal: (amount: number, note?: string) => Promise<void>;
+  confirmWithdrawal: (id: string) => Promise<void>;
+  rejectWithdrawal: (id: string) => Promise<void>;
   revenueEvents: RevenueEvent[];
   logs: LogEntry[];
   lockUnlockLogs: LockUnlockEntry[];
@@ -72,14 +81,10 @@ type DashboardStore = {
   pay: (id: string, amount: number, method: string) => void;
   stopSession: (id: string, override?: boolean) => void;
   toggleLock: (id: string) => void;
-  requestFix: (id: string, payload: RepairPayload) => void;
-  approveRepair: (requestId: string) => void;
-  rejectRepair: (requestId: string) => void;
-  askRepairDetails: (requestId: string) => void;
-  startFixing: (id: string) => void;
-  markFixed: (id: string) => void;
-  confirmFixed: (requestId: string) => void;
-  rejectFix: (requestId: string) => void;
+  openMaintenance: (id: string, payload: RepairPayload) => void;
+  openMaintenanceDuringSession: (id: string, payload: RepairPayload) => void;
+  closeMaintenance: (id: string) => void;
+  reviewMaintenance: (requestId: string, decision: "cleared" | "charged", note?: string) => void;
   addBooking: (booking: Booking) => void;
   updateBooking: (booking: Booking) => void;
   deleteBooking: (id: string) => void;
@@ -94,7 +99,7 @@ type DashboardStore = {
   updateQty: (id: string, qty: number) => void;
   clearOrder: () => void;
   payOrder: (attachTo?: string, paymentMethod?: string, customerId?: string, payment?: Partial<PaymentPayload>) => void;
-  openShift: (operator: string, shiftType: "Kunduzgi (09:00 - 18:00)" | "Tungi (18:01 - 09:00)", startingCash: number) => void;
+  openShift: (operator: string, shiftType: string, startingCash: number) => void;
   closeShift: (actualCash: number, cashWithdrawn: number, notes?: string) => void;
   addCashTransaction: (type: "income" | "expense", amount: number, source: string, method: string) => void;
   refreshRigs: () => void;
@@ -135,7 +140,7 @@ function toApiPaymentMethod(method?: string): PaymentMethod {
   const value = (method ?? "").toLowerCase();
   if (value.includes("naqd") || value.includes("cash")) return "cash";
   if (value.includes("qr")) return "qr";
-  if (value.includes("balance")) return "balance";
+  if (value.includes("balance") || value.includes("balans")) return "balance";
   if (value.includes("aralash") || value.includes("mixed")) return "mixed";
   return "card";
 }
@@ -223,7 +228,7 @@ function rigsToSimulators(rigs: RigRecord[], branchList: Branch[]) {
       status,
       deviceId: rig.rig_id,
       ipAddress: rig.hostname,
-      currentUser: hasSessionTimer ? rig.active_customer_name || "Active rig" : undefined,
+      currentUser: hasSessionTimer ? rig.active_customer_name || "Faol rig" : undefined,
       phone: rig.active_phone ?? undefined,
       tariff: rig.active_tariff_name || "Rig Admin",
       startedAt: timestampTime(rig.active_started_at),
@@ -248,6 +253,31 @@ function rigsToSimulators(rigs: RigRecord[], branchList: Branch[]) {
       currentSessionId: rig.current_session_id ?? rig.active_session_id,
       mapPosition: rig.map_position ?? undefined,
     } satisfies Simulator;
+  });
+}
+
+function applyActiveMaintenance(simulators: Simulator[], repairs: RepairRequest[]) {
+  return simulators.map((simulator) => {
+    const activeRepair = repairs.find((repair) => repair.simulatorId === simulator.id && repair.reviewStatus === "open");
+    if (!activeRepair) return simulator;
+    return {
+      ...simulator,
+      status: "repair_requested" as const,
+      repairRequestId: activeRepair.id,
+      currentUser: undefined,
+      phone: undefined,
+      tariff: undefined,
+      startedAt: undefined,
+      remainingMinutes: 0,
+      remainingSeconds: 0,
+      billingMode: undefined,
+      hourlyRate: undefined,
+      elapsedSeconds: undefined,
+      accruedAmount: undefined,
+      paidAmount: 0,
+      paymentStatus: "paid" as const,
+      currentSessionId: null,
+    };
   });
 }
 
@@ -311,6 +341,8 @@ function mapRepair(row: Record<string, unknown>): RepairRequest {
   return {
     id: String(row.id),
     simulatorId: String(row.simulator_id ?? ""),
+    sessionId: row.session_id ? String(row.session_id) : undefined,
+    openedDuringSession: Boolean(row.opened_during_session),
     simulatorName: String(row.simulator_name ?? row.simulator_id ?? ""),
     branchId: String(row.branch_id ?? ""),
     branchName: String(row.branch_name ?? ""),
@@ -327,13 +359,20 @@ function mapRepair(row: Record<string, unknown>): RepairRequest {
     fixingStartedAt: row.fixing_started_at ? String(row.fixing_started_at) : undefined,
     fixedAt: row.marked_fixed_at ? String(row.marked_fixed_at) : undefined,
     confirmedAt: row.confirmed_at ? String(row.confirmed_at) : undefined,
+    reviewStatus: (["open", "pending_review", "cleared", "charged"].includes(String(row.review_status)) ? String(row.review_status) : "open") as RepairRequest["reviewStatus"],
+    requestedByName: row.requested_by_name ? String(row.requested_by_name) : undefined,
+    reviewedByName: row.reviewed_by_name ? String(row.reviewed_by_name) : undefined,
+    openedAt: backendDateTime(String(row.created_at ?? row.requested_at ?? "")),
+    closedAt: row.closed_at ? backendDateTime(String(row.closed_at)) : undefined,
+    durationMinutes: row.duration_minutes != null ? Number(row.duration_minutes) : undefined,
+    chargeAmount: numberValue(row.charge_amount),
   };
 }
 
 function mapShift(row: Record<string, unknown>, operator: string): Shift {
   const openedAt = String(row.opened_at ?? "");
   const closedAt = row.closed_at ? String(row.closed_at) : undefined;
-  const shiftType = String(row.shift_type ?? "") === "Tungi (18:01 - 09:00)" ? "Tungi (18:01 - 09:00)" : "Kunduzgi (09:00 - 18:00)";
+  const shiftType = String(row.shift_type ?? ""); // yorliq backenddagi qiymat (eski/yangi)
   return {
     id: String(row.id),
     operator: String(row.opened_by_name ?? operator),
@@ -381,13 +420,31 @@ function mapPayment(row: Record<string, unknown>, operator: string): CashTransac
     id: String(row.id),
     type: "income",
     amount: numberValue(row.amount),
-    source: row.sale_id ? "Shop sale" : row.session_id ? "Session payment" : "Payment",
+    source: row.source_note ? String(row.source_note) : row.sale_id ? "Do'kon savdosi" : row.session_id ? "Sessiya to'lovi" : "To'lov",
     operator: String(row.paid_by_admin_name ?? operator),
     date: shortDate(created),
     time: shortTime(created),
     paymentMethod: String(row.method ?? ""),
     branchId: String(row.branch_id ?? ""),
     shiftId: undefined,
+    sourceType: String(row.source_type ?? "payment"),
+  };
+}
+
+function mapExpense(row: Record<string, unknown>, operator: string): CashTransaction {
+  const created = String(row.created_at ?? "");
+  return {
+    id: String(row.id),
+    type: "expense",
+    amount: numberValue(row.amount),
+    source: String(row.source ?? row.note ?? "Rasxod"),
+    operator: String(row.spent_by_name ?? operator),
+    date: shortDate(created),
+    time: shortTime(created),
+    paymentMethod: String(row.method ?? ""),
+    branchId: String(row.branch_id ?? ""),
+    shiftId: row.shift_id ? String(row.shift_id) : undefined,
+    sourceType: "expense",
   };
 }
 
@@ -416,7 +473,12 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
   const [customEndDate, setCustomEndDate] = useState(() => localDate());
   const [revenueEvents, setRevenueEvents] = useState<RevenueEvent[]>([]);
   const [repairRequests, setRepairRequests] = useState<RepairRequest[]>([]);
+  const repairRequestsRef = useRef<RepairRequest[]>([]);
   const [revenue, setRevenue] = useState(0);
+  const [profit, setProfit] = useState(0);
+  const [expenses, setExpenses] = useState(0);
+  const [shopSales, setShopSales] = useState(0);
+  const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>([]);
   const [order, setOrder] = useState<OrderItem[]>([]);
   const [inventory, setInventory] = useState<Product[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -430,6 +492,9 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
 
   const operator = data?.user?.name ?? "Admin";
   const role = data?.user?.role;
+  const myUserId = data?.user?.id ?? "";
+  // Oddiy admin (va dev_admin) faqat o'zi qilganni ko'radi; super admin butun filialni ko'radi.
+  const scopeToOwn = role === "admin";
   const allowedBranchIds = data?.user?.branchIds ?? [];
   const canUseAllBranches = role === "super_admin";
   const realBranches = branchList.filter((branch) => branch.id !== fallbackBranch.id);
@@ -440,6 +505,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
   const visibleBranchIds = effectiveBranchId === "all" ? realBranches.map((branch) => branch.id) : [effectiveBranchId];
   const simulators = allSimulators.filter((item) => visibleBranchIds.includes(item.branchId));
   const scopedRepairRequests = repairRequests.filter((item) => visibleBranchIds.includes(item.branchId));
+  repairRequestsRef.current = repairRequests;
 
   useEffect(() => {
     if (!data?.user) return;
@@ -511,7 +577,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       const productBranchId = dataBranchId === "all" ? branchSource[0]?.id ?? "all" : dataBranchId;
       const query = `branch_id=${encodeURIComponent(dataBranchId)}`;
       const productQuery = `branch_id=${encodeURIComponent(productBranchId)}`;
-      const [rigs, productRows, bookingRows, repairRows, logRows, shiftRows, saleRows, paymentRows] = await Promise.all([
+      const [rigs, productRows, bookingRows, repairRows, logRows, shiftRows, saleRows, paymentRows, expenseRows, withdrawalRows] = await Promise.all([
         fetchRigList(dataBranchId),
         backendGet<Array<Record<string, unknown>>>(`/cashier/products?${productQuery}`),
         backendGet<Array<Record<string, unknown>>>(`/bookings?${query}`),
@@ -520,12 +586,11 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         backendGet<Array<Record<string, unknown>>>(`/shifts?${query}`),
         backendGet<Array<Record<string, unknown>>>(`/cashier/sales?${query}`),
         backendGet<Array<Record<string, unknown>>>(`/payments?${query}`),
+        backendGet<Array<Record<string, unknown>>>(`/expenses?${query}`),
+        fetchWithdrawalRequests(dataBranchId),
       ]);
       const nextRepairs = repairRows.map(mapRepair);
-      const nextSimulators = rigsToSimulators(rigs, branchSource).map((simulator) => {
-        const activeRepair = nextRepairs.find((repair) => repair.simulatorId === simulator.id && !["rejected", "confirmed_fixed"].includes(repair.status));
-        return activeRepair ? { ...simulator, repairRequestId: activeRepair.id } : simulator;
-      });
+      const nextSimulators = applyActiveMaintenance(rigsToSimulators(rigs, branchSource), nextRepairs);
 
       setBranchList(branchSource);
       setAllSimulators(nextSimulators);
@@ -534,16 +599,34 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       setRepairRequests(nextRepairs);
       setLogs(logRows.map(mapLog));
       setShifts(shiftRows.map((row) => mapShift(row, operator)));
-      setBarSales(saleRows.map((row) => mapSale(row, operator)));
-      setCashTransactions(paymentRows.map((row) => mapPayment(row, operator)));
-      setRevenue(paymentRows.reduce((sum, row) => sum + numberValue(row.amount), 0));
-      setRevenueEvents(paymentRows.map((row) => {
+      // Per-admin: oddiy admin (va dev_admin) faqat o'zi qilgan to'lov/savdo/выemka'ni ko'radi;
+      // super admin (va dev_super_admin) — barcha filiallar bo'yicha hammasini.
+      const myPaymentRows = scopeToOwn ? paymentRows.filter((row) => String(row.paid_by_admin_id ?? "") === myUserId) : paymentRows;
+      const mySaleRows = scopeToOwn ? saleRows.filter((row) => String(row.sold_by ?? "") === myUserId) : saleRows;
+      const myExpenseRows = scopeToOwn ? expenseRows.filter((row) => String(row.spent_by ?? "") === myUserId) : expenseRows;
+      const today = localDate();
+      // Daromad = real olingan pul (naqd+karta+QR). Balansdan to'lov chiqariladi —
+      // u deposit (balans to'ldirish) paytida allaqachon sanalgan, ikki marta hisoblanmasligi uchun.
+      const realRevenue = (row: Record<string, unknown>) => numberValue(row.cash_amount) + numberValue(row.card_amount) + numberValue(row.qr_amount);
+
+      setBarSales(mySaleRows.map((row) => mapSale(row, operator)));
+      setCashTransactions([...myPaymentRows.map((row) => mapPayment(row, operator)), ...myExpenseRows.map((row) => mapExpense(row, operator))].sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)));
+      setRevenue(myPaymentRows.reduce((sum, row) => sum + realRevenue(row), 0));
+      setProfit(mySaleRows.filter((row) => String(row.payment_status) === "paid").reduce((sum, row) => sum + numberValue(row.profit), 0));
+      setShopSales(
+        mySaleRows
+          .filter((row) => String(row.payment_status) === "paid" && shortDate(String(row.created_at ?? "")) === today)
+          .reduce((sum, row) => sum + numberValue(row.total), 0),
+      );
+      setWithdrawalRequests(withdrawalRows);
+      setExpenses(myExpenseRows.reduce((sum, row) => sum + numberValue(row.amount), 0));
+      setRevenueEvents(myPaymentRows.map((row) => {
         const created = String(row.paid_at ?? row.created_at ?? "");
         return {
           id: String(row.id),
           time: shortTime(created),
           date: shortDate(created),
-          amount: numberValue(row.amount),
+          amount: realRevenue(row),
           source: row.sale_id ? "shop sale" : row.session_id ? "session payment" : "payment",
           branchId: String(row.branch_id ?? ""),
           operator: String(row.paid_by_admin_name ?? operator),
@@ -571,7 +654,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         ? []
         : await backendGet<Array<Record<string, unknown>>>("/branches");
       const branchSource = branchRows.length ? branchRows.map((row) => ({ id: String(row.id), name: String(row.name) })) : branches;
-      const nextSimulators = rigsToSimulators(await fetchRigList(apiBranchId), branchSource);
+      const nextSimulators = applyActiveMaintenance(rigsToSimulators(await fetchRigList(apiBranchId), branchSource), repairRequestsRef.current);
       if (branchRows.length) setBranchList(branchSource);
       setAllSimulators(nextSimulators);
       setSelectedId((current) => (current && nextSimulators.some((item) => item.id === current) ? current : nextSimulators[0]?.id ?? null));
@@ -608,14 +691,21 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       "session_started",
       "session_stopped",
       "payment_created",
+      "expense_created",
+      "admin_penalty_paid",
       "sale_created",
       "inventory_updated",
       "repair_requested",
       "repair_approved",
       "repair_status_changed",
+      "maintenance_opened",
+      "maintenance_closed",
+      "maintenance_reviewed",
       "booking_created",
       "shift_opened",
       "shift_closed",
+      "withdrawal_requested",
+      "withdrawal_resolved",
       "log_created",
     ]);
 
@@ -649,7 +739,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
                 return items;
               }, branchList.filter((branch) => branch.id !== fallbackBranch.id));
               const branchSource = snapshotBranches.length ? snapshotBranches : branchList;
-              const nextSimulators = rigsToSimulators(mapBackendSimulatorRows(message.data.simulators), branchSource);
+              const nextSimulators = applyActiveMaintenance(rigsToSimulators(mapBackendSimulatorRows(message.data.simulators), branchSource), repairRequestsRef.current);
               if (snapshotBranches.length) setBranchList(snapshotBranches);
               setAllSimulators(nextSimulators);
               setSelectedId((current) => (current && nextSimulators.some((item) => item.id === current) ? current : nextSimulators[0]?.id ?? null));
@@ -702,6 +792,13 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     window.setTimeout(() => void refreshSimulatorsOnly(), 300);
   }
 
+  // Backend amal rad etganda: xatoni toast'da ko'rsatamiz va optimistik holatni
+  // backenddan qayta sinxronlab ortga qaytaramiz (masalan PC "busy" bo'lib qolmasin).
+  function revertWithError(error: unknown, fallback: string) {
+    toast.error(error instanceof Error && error.message ? error.message : fallback);
+    refreshAfterAction();
+  }
+
   function setSelectedBranchId(id: string) {
     if (!canUseAllBranches) return;
     setSelectedBranchIdState(id);
@@ -719,6 +816,10 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     selected: allSimulators.find((item) => item.id === selectedId && visibleBranchIds.includes(item.branchId)),
     setSelectedId,
     revenue,
+    profit,
+    expenses,
+    shopSales,
+    withdrawalRequests: withdrawalRequests.filter((w) => !w.branchId || visibleBranchIds.includes(w.branchId)),
     revenueEvents: revenueEvents.filter((event) => !event.branchId || visibleBranchIds.includes(event.branchId)),
     logs,
     lockUnlockLogs,
@@ -774,10 +875,11 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         duration_minutes: payload.duration,
         paid_amount: isPaid ? payload.amount : 0,
         method,
-      }).then(refreshAfterAction).catch(() => undefined);
+        booking_id: payload.bookingId ?? null,
+      }).then(refreshAfterAction).catch((error) => revertWithError(error, "Sessiyani boshlab bo'lmadi"));
       patchSimulator(id, {
         status: "busy",
-        currentUser: payload.customerName || "Guest",
+        currentUser: payload.customerName || "Mehmon",
         phone: payload.phone,
         tariff: payload.tariff,
         startedAt: now(),
@@ -818,7 +920,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
             applyLocal();
             return refreshAfterAction();
           })
-          .catch(() => undefined);
+          .catch((error) => revertWithError(error, "Vaqt qo'shib bo'lmadi"));
         return;
       }
 
@@ -844,7 +946,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         session_id: simulator.currentSessionId ?? undefined,
         method: apiMethod,
         ...splitPayment(amount, apiMethod),
-      }).then(refreshAfterAction).catch(() => undefined);
+      }).then(refreshAfterAction).catch((error) => revertWithError(error, "To'lovni amalga oshirib bo'lmadi"));
       patchSimulator(id, { paidAmount: simulator.paidAmount + amount, paymentStatus: "paid", status: simulator.status === "unpaid" ? "busy" : simulator.status });
       recordRevenue(amount, `session payment ${simulator.name}`, simulator.branchId);
       appendLog(`received ${amount.toLocaleString("uz-UZ")} by ${method}`, simulator.name, method);
@@ -885,9 +987,19 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         ...items,
       ]);
     },
-    requestFix(id, payload) {
+    openMaintenance(id, payload) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator || !visibleBranchIds.includes(simulator.branchId)) return;
+      if (simulator.currentSessionId || ["busy", "unpaid", "reserved"].includes(simulator.status)) {
+        toast.error("Maintenance ochishdan oldin aktiv sessiyani to'xtating.");
+        return;
+      }
+      const activeRepair = repairRequests.find((item) => item.simulatorId === simulator.id && item.reviewStatus === "open");
+      if (activeRepair) {
+        patchSimulator(id, { status: "repair_requested", repairRequestId: activeRepair.id });
+        toast.error("Bu simulator uchun maintenance allaqachon ochilgan.");
+        return;
+      }
       const request: RepairRequest = {
         id: crypto.randomUUID(),
         simulatorId: simulator.id,
@@ -895,14 +1007,18 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         branchId: simulator.branchId,
         branchName: simulator.branchName,
         requestedBy: operator,
+        requestedByName: operator,
         requestedAt: new Date().toLocaleString("uz-UZ"),
+        openedAt: new Date().toLocaleString("uz-UZ"),
         title: payload.title,
         description: payload.description,
         errorType: payload.errorType,
         priority: payload.priority,
         note: payload.note,
         status: "pending",
-        affectedRevenue: simulator.status === "busy" ? simulator.paidAmount : 0,
+        reviewStatus: "open",
+        affectedRevenue: 0,
+        chargeAmount: 0,
       };
       void backendPost<Record<string, unknown>>("/repair-requests", {
         simulator_id: simulator.id,
@@ -911,65 +1027,105 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         error_type: payload.errorType,
         priority: payload.priority,
         admin_note: payload.note,
-      }).then(refreshBackendData).catch(() => undefined);
+      })
+        .then((row) => {
+          const saved = mapRepair(row);
+          setRepairRequests((items) => [saved, ...items.filter((item) => item.id !== request.id)]);
+          patchSimulator(id, { status: "repair_requested", repairRequestId: saved.id });
+          refreshAfterAction();
+        })
+        .catch((error) => {
+          setRepairRequests((items) => items.filter((item) => item.id !== request.id));
+          revertWithError(error, "Maintenance ochib bo'lmadi");
+        });
       setRepairRequests((items) => [request, ...items]);
       patchSimulator(id, { status: "repair_requested", repairRequestId: request.id });
-      appendLog(`requested fix for ${simulator.name}`, simulator.name);
+      appendLog(`opened maintenance for ${simulator.name}`, simulator.name);
     },
-    approveRepair(requestId) {
-      const request = repairRequests.find((item) => item.id === requestId);
-      if (!request || role !== "super_admin") return;
-      void backendPost<Record<string, unknown>>(`/repair-requests/${requestId}/approve`).then(refreshBackendData).catch(() => undefined);
-      patchRepair(requestId, { status: "approved", approvedAt: new Date().toLocaleString("uz-UZ") });
-      patchSimulator(request.simulatorId, { status: "repair_approved" });
-      appendLog(`approved repair for ${request.simulatorName}`, request.simulatorName);
-    },
-    rejectRepair(requestId) {
-      const request = repairRequests.find((item) => item.id === requestId);
-      if (!request || role !== "super_admin") return;
-      void backendPost<Record<string, unknown>>(`/repair-requests/${requestId}/reject`).then(refreshBackendData).catch(() => undefined);
-      patchRepair(requestId, { status: "rejected", rejectedAt: new Date().toLocaleString("uz-UZ") });
-      patchSimulator(request.simulatorId, { status: "broken" });
-      appendLog(`rejected repair for ${request.simulatorName}`, request.simulatorName);
-    },
-    askRepairDetails(requestId) {
-      const request = repairRequests.find((item) => item.id === requestId);
-      if (!request || role !== "super_admin") return;
-      void backendPost<Record<string, unknown>>(`/repair-requests/${requestId}/need-more-details`).then(refreshBackendData).catch(() => undefined);
-      patchRepair(requestId, { status: "more_details_requested" });
-      appendLog(`asked for more details on ${request.simulatorName}`, request.simulatorName);
-    },
-    startFixing(id) {
+    openMaintenanceDuringSession(id, payload) {
       const simulator = allSimulators.find((item) => item.id === id);
-      if (!simulator || simulator.status !== "repair_approved") return;
-      if (simulator.repairRequestId) void backendPost<Record<string, unknown>>(`/repair-requests/${simulator.repairRequestId}/start-fixing`).then(refreshBackendData).catch(() => undefined);
-      patchSimulator(id, { status: "fixing" });
-      if (simulator.repairRequestId) patchRepair(simulator.repairRequestId, { status: "fixing", fixingStartedAt: new Date().toLocaleString("uz-UZ") });
-      appendLog(`started fixing ${simulator.name}`, simulator.name);
+      if (!simulator || !visibleBranchIds.includes(simulator.branchId)) return;
+      if (!simulator.currentSessionId && !["busy", "unpaid"].includes(simulator.status)) {
+        toast.error("Aktiv sessiya topilmadi.");
+        return;
+      }
+      const activeRepair = repairRequests.find((item) => item.simulatorId === simulator.id && item.reviewStatus === "open");
+      if (activeRepair) {
+        patchSimulator(id, { status: "repair_requested", repairRequestId: activeRepair.id });
+        toast.error("Bu simulator uchun maintenance allaqachon ochilgan.");
+        return;
+      }
+      const request: RepairRequest = {
+        id: crypto.randomUUID(),
+        simulatorId: simulator.id,
+        sessionId: simulator.currentSessionId ?? undefined,
+        openedDuringSession: true,
+        simulatorName: simulator.name,
+        branchId: simulator.branchId,
+        branchName: simulator.branchName,
+        requestedBy: operator,
+        requestedByName: operator,
+        requestedAt: new Date().toLocaleString("uz-UZ"),
+        openedAt: new Date().toLocaleString("uz-UZ"),
+        title: payload.title,
+        description: payload.description,
+        errorType: payload.errorType,
+        priority: payload.priority,
+        note: payload.note,
+        status: "pending",
+        reviewStatus: "open",
+        affectedRevenue: 0,
+        chargeAmount: 0,
+      };
+      void backendPost<Record<string, unknown>>("/repair-requests/from-active-session", {
+        simulator_id: simulator.id,
+        title: payload.title,
+        description: payload.description,
+        error_type: payload.errorType,
+        priority: payload.priority,
+        admin_note: payload.note,
+      })
+        .then((row) => {
+          const saved = mapRepair(row);
+          setRepairRequests((items) => [saved, ...items.filter((item) => item.id !== request.id)]);
+          patchSimulator(id, { status: "repair_requested", repairRequestId: saved.id, currentSessionId: null, currentUser: undefined, phone: undefined, tariff: undefined, remainingMinutes: 0, remainingSeconds: 0, paidAmount: 0, paymentStatus: "paid" });
+          refreshAfterAction();
+        })
+        .catch((error) => {
+          setRepairRequests((items) => items.filter((item) => item.id !== request.id));
+          revertWithError(error, "Sessiya vaqtida maintenance ochib bo'lmadi");
+        });
+      setRepairRequests((items) => [request, ...items]);
+      patchSimulator(id, { status: "repair_requested", repairRequestId: request.id, currentSessionId: null, currentUser: undefined, phone: undefined, tariff: undefined, remainingMinutes: 0, remainingSeconds: 0, paidAmount: 0, paymentStatus: "paid" });
+      appendLog(`opened maintenance during session for ${simulator.name}`, simulator.name);
     },
-    markFixed(id) {
+    closeMaintenance(id) {
       const simulator = allSimulators.find((item) => item.id === id);
-      if (!simulator || simulator.status !== "fixing") return;
-      if (simulator.repairRequestId) void backendPost<Record<string, unknown>>(`/repair-requests/${simulator.repairRequestId}/mark-fixed`).then(refreshBackendData).catch(() => undefined);
-      patchSimulator(id, { status: "fixed_waiting_confirmation" });
-      if (simulator.repairRequestId) patchRepair(simulator.repairRequestId, { status: "fixed_waiting_confirmation", fixedAt: new Date().toLocaleString("uz-UZ") });
-      appendLog(`marked ${simulator.name} fixed and waiting confirmation`, simulator.name);
+      if (!simulator) return;
+      const activeRepair = repairRequests.find((item) => item.simulatorId === simulator.id && item.reviewStatus === "open");
+      const repairRequestId = simulator.repairRequestId ?? activeRepair?.id;
+      if (!repairRequestId) {
+        toast.error("Ochiq maintenance topilmadi. Sahifa ma'lumotlari yangilanmoqda.");
+        refreshAfterAction();
+        return;
+      }
+      void backendPost<Record<string, unknown>>(`/repair-requests/${repairRequestId}/close`)
+        .then((row) => {
+          const saved = mapRepair(row);
+          setRepairRequests((items) => items.map((item) => (item.id === saved.id ? saved : item)));
+          refreshAfterAction();
+        })
+        .catch((error) => revertWithError(error, "Maintenance yopib bo'lmadi"));
+      patchRepair(repairRequestId, { reviewStatus: "pending_review", closedAt: new Date().toLocaleString("uz-UZ") });
+      patchSimulator(id, { status: "ready_to_play", repairRequestId: undefined });
+      appendLog(`closed maintenance for ${simulator.name}`, simulator.name);
     },
-    confirmFixed(requestId) {
+    reviewMaintenance(requestId, decision, note) {
       const request = repairRequests.find((item) => item.id === requestId);
       if (!request || role !== "super_admin") return;
-      void backendPost<Record<string, unknown>>(`/repair-requests/${requestId}/confirm-fixed`).then(refreshBackendData).catch(() => undefined);
-      patchRepair(requestId, { status: "confirmed_fixed", confirmedAt: new Date().toLocaleString("uz-UZ") });
-      patchSimulator(request.simulatorId, { status: "ready_to_play", repairRequestId: undefined });
-      appendLog(`confirmed fixed ${request.simulatorName}`, request.simulatorName);
-    },
-    rejectFix(requestId) {
-      const request = repairRequests.find((item) => item.id === requestId);
-      if (!request || role !== "super_admin") return;
-      void backendPost<Record<string, unknown>>(`/repair-requests/${requestId}/reject-fix`).then(refreshBackendData).catch(() => undefined);
-      patchRepair(requestId, { status: "fixing" });
-      patchSimulator(request.simulatorId, { status: "fixing" });
-      appendLog(`rejected fix confirmation for ${request.simulatorName}`, request.simulatorName);
+      void backendPost<Record<string, unknown>>(`/repair-requests/${requestId}/review`, { decision, note }).then(refreshBackendData).catch(() => undefined);
+      patchRepair(requestId, { reviewStatus: decision });
+      appendLog(`reviewed maintenance for ${request.simulatorName} (${decision})`, request.simulatorName);
     },
     addBooking(booking) {
       const simulator = allSimulators.find((item) => item.id === booking.simulatorId);
@@ -1112,6 +1268,8 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       void backendPost<Record<string, unknown>>("/payments", {
         branch_id: effectiveBranchId === "all" ? firstBackendBranchId : effectiveBranchId,
         method: apiMethod,
+        source_type: "manual_income",
+        source_note: action,
         ...splitPayment(amount, apiMethod),
       }).then(refreshBackendData).catch(() => undefined);
       recordRevenue(amount, action);
@@ -1268,8 +1426,17 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         void backendPost<Record<string, unknown>>("/payments", {
           branch_id: newTx.branchId,
           method: apiMethod,
+          source_type: "manual_income",
+          source_note: source,
           ...splitPayment(amount, apiMethod),
         }).then(refreshBackendData).catch(() => undefined);
+      } else {
+        void backendPost<Record<string, unknown>>("/expenses", {
+          branch_id: newTx.branchId,
+          method: toApiPaymentMethod(method),
+          amount,
+          source,
+        }).then(refreshBackendData).catch((error) => revertWithError(error, "Rasxodni saqlab bo'lmadi"));
       }
       setCashTransactions((prev) => [newTx, ...prev]);
 
@@ -1300,6 +1467,19 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         ]);
         appendLog(`expense recorded: ${source} - ${amount.toLocaleString()}`, undefined, method);
       }
+    },
+    async requestWithdrawal(amount, note) {
+      const branchId = effectiveBranchId !== "all" && effectiveBranchId !== fallbackBranch.id ? effectiveBranchId : undefined;
+      await createWithdrawalRequest({ ...(branchId ? { branch_id: branchId } : {}), amount, ...(note ? { note } : {}) });
+      await refreshBackendData();
+    },
+    async confirmWithdrawal(id) {
+      await confirmWithdrawalRequest(id);
+      await refreshBackendData();
+    },
+    async rejectWithdrawal(id) {
+      await rejectWithdrawalRequest(id);
+      await refreshBackendData();
     },
     refreshRigs() {
       void refreshBackendData();
@@ -1343,6 +1523,10 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     period,
     repairRequests,
     revenue,
+    profit,
+    expenses,
+    shopSales,
+    withdrawalRequests,
     revenueEvents,
     role,
     scopedRepairRequests,

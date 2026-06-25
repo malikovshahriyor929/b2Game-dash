@@ -22,15 +22,22 @@ function simulatorKind(simulator: Simulator) {
   return simulator.zone === "Standard" ? "Logitech (Main)" : "Moza (Premium)";
 }
 
+const MAINTENANCE_STATUS_LABELS: Record<string, string> = {
+  open: "Ta'mirda (ochiq)",
+  pending_review: "Tekshiruv kutilmoqda",
+  cleared: "Tasdiqlangan (haqiqiy)",
+  charged: "Jarima qo'yilgan",
+};
+
 export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator; onAction: (action: "start" | "addTime" | "payment" | "stop") => void }) {
-  const { approveRepair, askRepairDetails, confirmFixed, rejectFix, rejectRepair, repairRequests, startFixing, markFixed, toggleLock, notifyRig, pushRigUpdate, removeOfflineRig } = useDashboardStore();
+  const { closeMaintenance, repairRequests, toggleLock, notifyRig, pushRigUpdate, removeOfflineRig } = useDashboardStore();
   const confirm = useConfirm();
   const { data } = useSession();
 
   async function confirmRemoveOfflineRig() {
     if (!simulator) return;
     const ok = await confirm({
-      title: "Offline rig o'chirilsinmi?",
+      title: "Oflayn rig o'chirilsinmi?",
       description: `${simulator.name} ro'yxatdan olib tashlanadi.`,
       confirmLabel: "Olib tashlash",
       tone: "destructive",
@@ -38,31 +45,31 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
     if (ok) removeOfflineRig(simulator.id);
   }
   const [fixOpen, setFixOpen] = useState(false);
+  const [sessionFixOpen, setSessionFixOpen] = useState(false);
   if (!simulator) return null;
   const role = data?.user?.role;
   const canOperate = role === "admin" || role === "super_admin";
   const isSuperAdmin = role === "super_admin";
   const ready = simulator.status === "ready_to_play";
   const busy = ["busy", "unpaid"].includes(simulator.status);
-  const repairRequest = repairRequests.find((item) => item.id === simulator.repairRequestId);
-  const inRepairFlow = ["repair_requested", "repair_approved", "fixing", "fixed_waiting_confirmation"].includes(simulator.status);
-  const canStartSession = canOperate && (ready || simulator.status === "reserved");
-  const canAddTime = canOperate && busy;
-  const canTakePayment = canOperate && ["busy", "unpaid", "reserved"].includes(simulator.status);
-  const canStop = canOperate && busy;
+  const repairRequest = repairRequests.find((item) => item.id === simulator.repairRequestId)
+    ?? repairRequests.find((item) => item.simulatorId === simulator.id && item.reviewStatus === "open");
+  const inMaintenance = simulator.status === "repair_requested" || repairRequest?.reviewStatus === "open";
+  const canStartSession = canOperate && !inMaintenance && (ready || simulator.status === "reserved");
+  const canAddTime = canOperate && !inMaintenance && busy;
+  const canTakePayment = canOperate && !inMaintenance && ["busy", "unpaid", "reserved"].includes(simulator.status);
+  const canStop = canOperate && !inMaintenance && busy;
   const canToggleLock = isSuperAdmin
-    ? canOperate && (simulator.rigId ? simulator.rigOnline : !busy)
-    : canOperate && simulator.status === "locked" && (simulator.rigId ? simulator.rigOnline : true);
-  const canRequestFix = canOperate && !inRepairFlow && !["locked", "offline"].includes(simulator.status);
-  const canStartFix = canOperate && simulator.status === "repair_approved";
-  const canMarkFixed = canOperate && simulator.status === "fixing";
-  const canReviewRepair = isSuperAdmin && repairRequest?.status === "pending";
-  const canConfirmFix = isSuperAdmin && repairRequest?.status === "fixed_waiting_confirmation";
+    ? canOperate && !inMaintenance && (simulator.rigId ? simulator.rigOnline : !busy)
+    : canOperate && !inMaintenance && simulator.status === "locked" && (simulator.rigId ? simulator.rigOnline : true);
+  const canOpenMaintenance = canOperate && !inMaintenance && ["ready_to_play", "broken"].includes(simulator.status);
+  const canOpenMaintenanceDuringSession = canOperate && !inMaintenance && busy;
+  const canCloseMaintenance = canOperate && inMaintenance;
   const hasSessionDetails = Boolean(simulator.currentSessionId || simulator.currentUser || ["busy", "unpaid", "reserved"].includes(simulator.status));
-  const showSessionActions = canStartSession || canAddTime || canTakePayment || canStop || canToggleLock || canRequestFix;
+  const showSessionActions = canStartSession || canAddTime || canTakePayment || canStop || canToggleLock || canOpenMaintenance || canOpenMaintenanceDuringSession;
   const showRigDetails = isSuperAdmin && Boolean(simulator.rigId);
   const showRigActions = isSuperAdmin && Boolean(simulator.rigId);
-  const showRepairActions = canStartFix || canMarkFixed || canReviewRepair || canConfirmFix;
+  const showRepairActions = canCloseMaintenance;
 
   return (
     <>
@@ -74,28 +81,28 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
         </SheetHeader>
         {hasSessionDetails || repairRequest ? (
           <div className="grid gap-3 sm:grid-cols-2">
-            {hasSessionDetails ? <Field label="Current user" value={simulator.currentUser ?? "No session"} /> : null}
-            {hasSessionDetails ? <Field label="Tariff" value={simulator.tariff ?? "Not selected"} /> : null}
-            {hasSessionDetails ? <Field label="Started" value={simulator.startedAt ?? "-"} /> : null}
-            {hasSessionDetails ? <Field label="Remaining" value={seconds(simulator.remainingSeconds ?? simulator.remainingMinutes * 60)} /> : null}
-            {hasSessionDetails ? <Field label="Paid" value={money(simulator.paidAmount)} /> : null}
-            {hasSessionDetails ? <Field label="Payment" value={simulator.paymentStatus} /> : null}
-            {repairRequest ? <Field label="Repair status" value={repairRequest.status} /> : null}
+            {hasSessionDetails ? <Field label="Joriy foydalanuvchi" value={simulator.currentUser ?? "Sessiya yo'q"} /> : null}
+            {hasSessionDetails ? <Field label="Tarif" value={simulator.tariff ?? "Tanlanmagan"} /> : null}
+            {hasSessionDetails ? <Field label="Boshlangan" value={simulator.startedAt ?? "-"} /> : null}
+            {hasSessionDetails ? <Field label="Qolgan" value={seconds(simulator.remainingSeconds ?? simulator.remainingMinutes * 60)} /> : null}
+            {hasSessionDetails ? <Field label="To'langan" value={money(simulator.paidAmount)} /> : null}
+            {hasSessionDetails ? <Field label="To'lov" value={simulator.paymentStatus} /> : null}
+            {repairRequest ? <Field label="Ta'mir holati" value={MAINTENANCE_STATUS_LABELS[repairRequest.reviewStatus] ?? repairRequest.reviewStatus} /> : null}
           </div>
         ) : null}
         {showRigDetails ? (
           <>
             <Separator className="my-4" />
             <div className="space-y-2">
-              <div className="text-xs font-semibold uppercase text-slate-500">Rig technical details</div>
+              <div className="text-xs font-semibold uppercase text-slate-500">Rig texnik ma'lumotlari</div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Device ID" value={simulator.deviceId} />
-                <Field label="IP address" value={simulator.ipAddress} />
+                <Field label="IP manzil" value={simulator.ipAddress} />
                 <Field label="Rig ID" value={simulator.rigId} />
-                <Field label="Rig version" value={`${simulator.rigVersion ?? "-"} / latest ${simulator.rigLatestVersion ?? "-"}`} />
+                <Field label="Rig versiyasi" value={`${simulator.rigVersion ?? "-"} / oxirgi ${simulator.rigLatestVersion ?? "-"}`} />
                 <Field label="Rig host" value={simulator.rigHostname ?? "-"} />
-                <Field label="Last seen" value={simulator.rigLastSeen ? backendDateTime(simulator.rigLastSeen) : "-"} />
-                {simulator.rigUpdateStatus ? <Field label="Update status" value={simulator.rigUpdateStatus} /> : null}
+                <Field label="Oxirgi ko'rilgan" value={simulator.rigLastSeen ? backendDateTime(simulator.rigLastSeen) : "-"} />
+                {simulator.rigUpdateStatus ? <Field label="Yangilanish holati" value={simulator.rigUpdateStatus} /> : null}
               </div>
             </div>
           </>
@@ -106,7 +113,7 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
             <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-sm text-slate-300">
               <div className="font-semibold text-slate-100">{repairRequest.title}</div>
               <div className="mt-1">{repairRequest.description}</div>
-              <div className="mt-2 text-xs text-slate-500">{repairRequest.errorType} - {repairRequest.priority} - requested by {repairRequest.requestedBy}</div>
+              <div className="mt-2 text-xs text-slate-500">{repairRequest.errorType} - {repairRequest.priority} - so'rovchi {repairRequest.requestedByName ?? repairRequest.requestedBy}</div>
             </div>
           </>
         ) : null}
@@ -114,51 +121,48 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
           <>
             <Separator className="my-4" />
             <div className="space-y-2">
-              <div className="text-xs font-semibold uppercase text-slate-500">Order items</div>
+              <div className="text-xs font-semibold uppercase text-slate-500">Buyurtma mahsulotlari</div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-sm text-slate-300">{simulator.orderItems.join(", ")}</div>
             </div>
           </>
         ) : null}
         {showSessionActions ? (
           <div className="mt-5 space-y-2">
-            <div className="text-xs font-semibold uppercase text-slate-500">Session actions</div>
+            <div className="text-xs font-semibold uppercase text-slate-500">Sessiya amallari</div>
             <div className="grid gap-2 sm:grid-cols-2">
-              {canStartSession ? <Button onClick={() => onAction("start")}><FiPlay /> Start</Button> : null}
-              {canAddTime ? <Button variant="secondary" onClick={() => onAction("addTime")}><FiClock /> Add time</Button> : null}
-              {canTakePayment ? <Button variant="success" onClick={() => onAction("payment")}><FiCreditCard /> Payment</Button> : null}
-              {canStop ? <Button variant="destructive" onClick={() => onAction("stop")}><FiPower /> Stop</Button> : null}
-              {canToggleLock ? <Button variant="secondary" onClick={() => toggleLock(simulator.id)}><FiLock /> {simulator.status === "locked" ? "Unlock" : "Lock / Unlock"}</Button> : null}
-              {canRequestFix ? <Button variant="warning" onClick={() => setFixOpen(true)}><FiTool /> Request Fix</Button> : null}
+              {canStartSession ? <Button onClick={() => onAction("start")}><FiPlay /> Boshlash</Button> : null}
+              {canAddTime ? <Button variant="secondary" onClick={() => onAction("addTime")}><FiClock /> Vaqt qo'shish</Button> : null}
+              {canTakePayment ? <Button variant="success" onClick={() => onAction("payment")}><FiCreditCard /> To'lov</Button> : null}
+              {canStop ? <Button variant="destructive" onClick={() => onAction("stop")}><FiPower /> To'xtatish</Button> : null}
+              {canOpenMaintenanceDuringSession ? <Button variant="warning" onClick={() => setSessionFixOpen(true)}><FiTool /> Sessiya vaqtida buzildi</Button> : null}
+              {canToggleLock ? <Button variant="secondary" onClick={() => toggleLock(simulator.id)}><FiLock /> {simulator.status === "locked" ? "Qulfdan chiqarish" : "Qulflash / Ochish"}</Button> : null}
+              {canOpenMaintenance ? <Button variant="warning" onClick={() => setFixOpen(true)}><FiTool /> Maintenance ochish</Button> : null}
             </div>
           </div>
         ) : null}
         {showRigActions ? (
           <div className="mt-5 space-y-2">
-            <div className="text-xs font-semibold uppercase text-slate-500">Rig admin actions</div>
+            <div className="text-xs font-semibold uppercase text-slate-500">Rig admin amallari</div>
             <div className="grid gap-2 sm:grid-cols-2">
-              {simulator.rigId && simulator.rigOnline ? <Button variant="secondary" onClick={() => notifyRig(simulator.id, "Hello")}><FiClock /> Notify</Button> : null}
-              {simulator.rigId && simulator.rigOnline ? <Button variant="secondary" onClick={() => pushRigUpdate(simulator.id)}><FiTool /> Push update</Button> : null}
-              {simulator.rigId && !simulator.rigOnline ? <Button variant="destructive" onClick={confirmRemoveOfflineRig}><FiXCircle /> Remove offline rig</Button> : null}
+              {simulator.rigId && simulator.rigOnline ? <Button variant="secondary" onClick={() => notifyRig(simulator.id, "Hello")}><FiClock /> Xabar berish</Button> : null}
+              {simulator.rigId && simulator.rigOnline ? <Button variant="secondary" onClick={() => pushRigUpdate(simulator.id)}><FiTool /> Yangilanishni yuborish</Button> : null}
+              {simulator.rigId && !simulator.rigOnline ? <Button variant="destructive" onClick={confirmRemoveOfflineRig}><FiXCircle /> Oflayn rigni o'chirish</Button> : null}
             </div>
           </div>
         ) : null}
         {showRepairActions ? (
           <div className="mt-5 space-y-2">
-            <div className="text-xs font-semibold uppercase text-slate-500">Repair flow</div>
+            <div className="text-xs font-semibold uppercase text-slate-500">Ta'mir jarayoni</div>
             <div className="grid gap-2 sm:grid-cols-2">
-              {canStartFix ? <Button variant="secondary" onClick={() => startFixing(simulator.id)}><FiTool /> Start fixing</Button> : null}
-              {canMarkFixed ? <Button variant="success" onClick={() => markFixed(simulator.id)}><FiCheckCircle /> Mark fixed</Button> : null}
-              {canReviewRepair && repairRequest ? <Button variant="success" onClick={() => approveRepair(repairRequest.id)}><FiCheckCircle /> Approve</Button> : null}
-              {canReviewRepair && repairRequest ? <Button variant="destructive" onClick={() => rejectRepair(repairRequest.id)}><FiXCircle /> Reject</Button> : null}
-              {canReviewRepair && repairRequest ? <Button variant="secondary" onClick={() => askRepairDetails(repairRequest.id)}>More details</Button> : null}
-              {canConfirmFix && repairRequest ? <Button variant="success" onClick={() => confirmFixed(repairRequest.id)}>Confirm fixed</Button> : null}
-              {canConfirmFix && repairRequest ? <Button variant="destructive" onClick={() => rejectFix(repairRequest.id)}>Reject fix</Button> : null}
+              {canCloseMaintenance ? <Button variant="success" onClick={() => closeMaintenance(simulator.id)}><FiCheckCircle /> Maintenance yopish</Button> : null}
             </div>
+            <p className="text-xs text-slate-500">Yopgach simulyator darhol ishga qaytadi. Ketgan vaqt tarif bo'yicha hisoblanib, super admin tekshiruviga yuboriladi.</p>
           </div>
         ) : null}
         </SheetContent>
       </Sheet>
       <RequestFixDialog open={fixOpen} onOpenChange={setFixOpen} simulator={simulator} />
+      <RequestFixDialog open={sessionFixOpen} onOpenChange={setSessionFixOpen} simulator={simulator} duringSession />
     </>
   );
 }

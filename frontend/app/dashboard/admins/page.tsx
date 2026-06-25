@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
-import { FiEdit2, FiKey, FiMonitor, FiPlus, FiTrash2 } from "react-icons/fi";
+import { FiCreditCard, FiDollarSign, FiEdit2, FiKey, FiMonitor, FiPlus, FiTrash2 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/shared/page-header";
+import { money } from "@/lib/format";
 import { StatCardsSkeleton, TableSkeleton } from "@/components/ui/skeletons";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
@@ -26,6 +27,7 @@ import {
   fetchAdmins,
   fetchAssignableSimulators,
   fetchBranches,
+  payAdminPenalty,
   setAdminSimulators,
   updateAdmin,
 } from "@/lib/admins-api";
@@ -50,9 +52,9 @@ const roleLabel = (role: AdminRole) =>
 export default function AdminsPage() {
   const { data: session } = useSession();
   const confirm = useConfirm();
+  // Super admins (incl. dev_super_admin) reach this page and manage every account,
+  // including the hidden developer roles.
   const isSuper = session?.user?.role === "super_admin";
-  // Only a dev sees and can manage the hidden developer accounts.
-  const isDev = Boolean(session?.user?.isDev);
 
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [branches, setBranches] = useState<AdminBranch[]>([]);
@@ -66,6 +68,8 @@ export default function AdminsPage() {
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignAdmin, setAssignAdmin] = useState<AdminUser | null>(null);
   const [assignSelected, setAssignSelected] = useState<Set<string>>(new Set());
+  const [penaltyAdmin, setPenaltyAdmin] = useState<AdminUser | null>(null);
+  const [penaltyForm, setPenaltyForm] = useState({ amount: "", method: "cash" as "cash" | "card" | "qr", received: "", note: "" });
 
   const refresh = useCallback(async () => {
     try {
@@ -185,6 +189,36 @@ export default function AdminsPage() {
     }
   }
 
+  function openPenaltyPay(admin: AdminUser) {
+    setPenaltyAdmin(admin);
+    setPenaltyForm({ amount: String(Math.round(admin.penaltyTotal)), method: "cash", received: String(Math.round(admin.penaltyTotal)), note: "" });
+  }
+
+  async function submitPenaltyPay() {
+    if (!penaltyAdmin) return;
+    const amount = Number(penaltyForm.amount || 0);
+    if (!Number.isFinite(amount) || amount <= 0) return toast.error("Summa kiriting");
+    if (amount > penaltyAdmin.penaltyTotal) return toast.error("Summa jarima qoldig'idan katta");
+    const received = Number(penaltyForm.received || 0);
+    if (penaltyForm.method === "cash" && received < amount) return toast.error("Berilgan naqd summa kam");
+    try {
+      await payAdminPenalty(penaltyAdmin.id, {
+        method: penaltyForm.method,
+        cash_amount: penaltyForm.method === "cash" ? amount : 0,
+        card_amount: penaltyForm.method === "card" ? amount : 0,
+        qr_amount: penaltyForm.method === "qr" ? amount : 0,
+        received_amount: penaltyForm.method === "cash" ? received : undefined,
+        change_amount: penaltyForm.method === "cash" ? Math.max(received - amount, 0) : 0,
+        note: penaltyForm.note.trim() || undefined,
+      });
+      toast.success("Jarima to'lovi qabul qilindi");
+      setPenaltyAdmin(null);
+      await refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Jarima to'lovini saqlab bo'lmadi");
+    }
+  }
+
   if (!isSuper) {
     return (
       <div>
@@ -215,6 +249,7 @@ export default function AdminsPage() {
               <TableHead>Rol</TableHead>
               <TableHead>Filial</TableHead>
               <TableHead>Simulyatorlar</TableHead>
+              <TableHead>Jarima</TableHead>
               <TableHead>Holat</TableHead>
               <TableHead className="text-right">Amallar</TableHead>
             </TableRow>
@@ -227,9 +262,11 @@ export default function AdminsPage() {
                 <TableCell><Badge variant={branchScopedRole(admin.role) ? "muted" : "vip"}>{roleLabel(admin.role)}</Badge></TableCell>
                 <TableCell className="text-slate-300">{branchScopedRole(admin.role) ? branchName(admin.branchId) : "Barchasi"}</TableCell>
                 <TableCell>{branchScopedRole(admin.role) ? `${assignedCount.get(admin.id) ?? 0} ta` : "—"}</TableCell>
+                <TableCell className={admin.penaltyTotal > 0 ? "font-semibold text-red-300" : "text-slate-500"}>{admin.penaltyTotal > 0 ? money(admin.penaltyTotal) : "—"}</TableCell>
                 <TableCell><Badge variant={admin.isActive ? "success" : "destructive"}>{admin.isActive ? "Faol" : "Bloklangan"}</Badge></TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-2 whitespace-nowrap">
+                    {admin.penaltyTotal > 0 && branchScopedRole(admin.role) ? <IconButton tooltip="Jarima to'landi" variant="success" onClick={() => openPenaltyPay(admin)}><FiDollarSign /></IconButton> : null}
                     {branchScopedRole(admin.role) ? <IconButton tooltip="Simulyator biriktirish" variant="secondary" onClick={() => openAssign(admin)}><FiMonitor /></IconButton> : null}
                     <IconButton tooltip="Tahrirlash / parol" variant="secondary" onClick={() => openEdit(admin)}><FiEdit2 /></IconButton>
                     <IconButton tooltip="O'chirish" variant="destructive" disabled={admin.id === session?.user?.id} onClick={() => remove(admin)}><FiTrash2 /></IconButton>
@@ -237,7 +274,7 @@ export default function AdminsPage() {
                 </TableCell>
               </TableRow>
             ))}
-            {admins.length === 0 ? <TableRow><TableCell colSpan={7} className="py-8 text-center text-slate-500">Admin yo'q</TableCell></TableRow> : null}
+            {admins.length === 0 ? <TableRow><TableCell colSpan={8} className="py-8 text-center text-slate-500">Admin yo'q</TableCell></TableRow> : null}
           </TableBody>
         </Table>
       )}
@@ -266,8 +303,8 @@ export default function AdminsPage() {
                 <SelectContent>
                   <SelectItem value="admin">Admin</SelectItem>
                   <SelectItem value="super_admin">Super admin</SelectItem>
-                  {isDev ? <SelectItem value="dev_admin">Dev admin (yashirin)</SelectItem> : null}
-                  {isDev ? <SelectItem value="dev_super_admin">Dev super admin (yashirin)</SelectItem> : null}
+                  <SelectItem value="dev_admin">Dev admin (yashirin)</SelectItem>
+                  <SelectItem value="dev_super_admin">Dev super admin (yashirin)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -319,7 +356,7 @@ export default function AdminsPage() {
                   className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left text-sm transition ${checked ? "border-sky-500 bg-sky-500/10" : "border-slate-800 hover:bg-slate-800/40"}`}
                 >
                   <div>
-                    <div className="font-semibold text-white">{sim.name} <span className="text-xs font-normal text-slate-500">({sim.zone === "vip" ? "Premium" : "Main"})</span></div>
+                    <div className="font-semibold text-white">{sim.name} <span className="text-xs font-normal text-slate-500">({sim.zone === "vip" ? "Premium" : "Asosiy"})</span></div>
                     <div className="text-xs text-slate-500">{sim.branchName} · {sim.code}{otherCount ? ` · yana ${otherCount} adminda` : ""}</div>
                   </div>
                   <span className={`flex h-5 w-5 items-center justify-center rounded-md border ${checked ? "border-sky-400 bg-sky-500 text-slate-950" : "border-slate-600"}`}>{checked ? "✓" : ""}</span>
@@ -331,6 +368,50 @@ export default function AdminsPage() {
             <div className="mr-auto text-sm font-semibold text-slate-400">{assignSelected.size} ta tanlandi</div>
             <Button variant="secondary" onClick={() => setAssignOpen(false)}>Bekor</Button>
             <Button onClick={saveAssignments}>Saqlash</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Penalty payment dialog */}
+      <Dialog open={Boolean(penaltyAdmin)} onOpenChange={(open) => !open && setPenaltyAdmin(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Jarima to'landi</DialogTitle>
+            <DialogDescription>
+              {penaltyAdmin?.name} jarima qoldig'i: {money(penaltyAdmin?.penaltyTotal ?? 0)}. To'lov kassaga kirim sifatida yoziladi.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>To'lov turi</Label>
+              <Select value={penaltyForm.method} onValueChange={(method) => setPenaltyForm((item) => ({ ...item, method: method as "cash" | "card" | "qr" }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Naqd</SelectItem>
+                  <SelectItem value="card">Karta</SelectItem>
+                  <SelectItem value="qr">QR</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Summa</Label>
+              <Input inputMode="numeric" value={penaltyForm.amount} onChange={(event) => setPenaltyForm((item) => ({ ...item, amount: event.target.value.replace(/\D/g, "") }))} placeholder="50 000" />
+            </div>
+            {penaltyForm.method === "cash" ? (
+              <div className="space-y-2">
+                <Label>Berilgan naqd</Label>
+                <Input inputMode="numeric" value={penaltyForm.received} onChange={(event) => setPenaltyForm((item) => ({ ...item, received: event.target.value.replace(/\D/g, "") }))} placeholder="50 000" />
+                <div className="text-xs font-semibold text-slate-400">Qaytim: {money(Math.max(Number(penaltyForm.received || 0) - Number(penaltyForm.amount || 0), 0))}</div>
+              </div>
+            ) : null}
+            <div className="space-y-2 sm:col-span-2">
+              <Label>Izoh</Label>
+              <Input value={penaltyForm.note} onChange={(event) => setPenaltyForm((item) => ({ ...item, note: event.target.value }))} placeholder="Masalan: naqd topshirdi" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setPenaltyAdmin(null)}>Bekor</Button>
+            <Button onClick={submitPenaltyPay}><FiCreditCard /> To'lovni saqlash</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -83,7 +83,9 @@ export const initialRepairRequests: RepairRequest[] = [
     priority: "high",
     note: "Customer session was moved to LOGITECH-06.",
     status: "pending",
+    reviewStatus: "open",
     affectedRevenue: 50000,
+    chargeAmount: 0,
   },
 ];
 
