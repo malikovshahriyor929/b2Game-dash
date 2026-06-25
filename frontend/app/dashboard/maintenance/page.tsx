@@ -135,6 +135,7 @@ export default function MaintenancePage() {
               <TableCell>
                 <div className="font-semibold text-slate-100">{item.simulatorName}</div>
                 <div className="text-xs text-slate-500">{item.title}</div>
+                {item.openedDuringSession ? <Badge variant="warning" className="mt-1">Sessiya vaqtida</Badge> : null}
               </TableCell>
               <TableCell>{item.branchName}</TableCell>
               <TableCell className="whitespace-nowrap text-sm text-slate-400">{item.openedAt ?? "-"}</TableCell>

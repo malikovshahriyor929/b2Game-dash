@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
-import { FiEdit2, FiKey, FiMonitor, FiPlus, FiTrash2 } from "react-icons/fi";
+import { FiCreditCard, FiDollarSign, FiEdit2, FiKey, FiMonitor, FiPlus, FiTrash2 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ import {
   fetchAdmins,
   fetchAssignableSimulators,
   fetchBranches,
+  payAdminPenalty,
   setAdminSimulators,
   updateAdmin,
 } from "@/lib/admins-api";
@@ -67,6 +68,8 @@ export default function AdminsPage() {
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignAdmin, setAssignAdmin] = useState<AdminUser | null>(null);
   const [assignSelected, setAssignSelected] = useState<Set<string>>(new Set());
+  const [penaltyAdmin, setPenaltyAdmin] = useState<AdminUser | null>(null);
+  const [penaltyForm, setPenaltyForm] = useState({ amount: "", method: "cash" as "cash" | "card" | "qr", received: "", note: "" });
 
   const refresh = useCallback(async () => {
     try {
@@ -186,6 +189,36 @@ export default function AdminsPage() {
     }
   }
 
+  function openPenaltyPay(admin: AdminUser) {
+    setPenaltyAdmin(admin);
+    setPenaltyForm({ amount: String(Math.round(admin.penaltyTotal)), method: "cash", received: String(Math.round(admin.penaltyTotal)), note: "" });
+  }
+
+  async function submitPenaltyPay() {
+    if (!penaltyAdmin) return;
+    const amount = Number(penaltyForm.amount || 0);
+    if (!Number.isFinite(amount) || amount <= 0) return toast.error("Summa kiriting");
+    if (amount > penaltyAdmin.penaltyTotal) return toast.error("Summa jarima qoldig'idan katta");
+    const received = Number(penaltyForm.received || 0);
+    if (penaltyForm.method === "cash" && received < amount) return toast.error("Berilgan naqd summa kam");
+    try {
+      await payAdminPenalty(penaltyAdmin.id, {
+        method: penaltyForm.method,
+        cash_amount: penaltyForm.method === "cash" ? amount : 0,
+        card_amount: penaltyForm.method === "card" ? amount : 0,
+        qr_amount: penaltyForm.method === "qr" ? amount : 0,
+        received_amount: penaltyForm.method === "cash" ? received : undefined,
+        change_amount: penaltyForm.method === "cash" ? Math.max(received - amount, 0) : 0,
+        note: penaltyForm.note.trim() || undefined,
+      });
+      toast.success("Jarima to'lovi qabul qilindi");
+      setPenaltyAdmin(null);
+      await refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Jarima to'lovini saqlab bo'lmadi");
+    }
+  }
+
   if (!isSuper) {
     return (
       <div>
@@ -233,6 +266,7 @@ export default function AdminsPage() {
                 <TableCell><Badge variant={admin.isActive ? "success" : "destructive"}>{admin.isActive ? "Faol" : "Bloklangan"}</Badge></TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-2 whitespace-nowrap">
+                    {admin.penaltyTotal > 0 && branchScopedRole(admin.role) ? <IconButton tooltip="Jarima to'landi" variant="success" onClick={() => openPenaltyPay(admin)}><FiDollarSign /></IconButton> : null}
                     {branchScopedRole(admin.role) ? <IconButton tooltip="Simulyator biriktirish" variant="secondary" onClick={() => openAssign(admin)}><FiMonitor /></IconButton> : null}
                     <IconButton tooltip="Tahrirlash / parol" variant="secondary" onClick={() => openEdit(admin)}><FiEdit2 /></IconButton>
                     <IconButton tooltip="O'chirish" variant="destructive" disabled={admin.id === session?.user?.id} onClick={() => remove(admin)}><FiTrash2 /></IconButton>
@@ -334,6 +368,50 @@ export default function AdminsPage() {
             <div className="mr-auto text-sm font-semibold text-slate-400">{assignSelected.size} ta tanlandi</div>
             <Button variant="secondary" onClick={() => setAssignOpen(false)}>Bekor</Button>
             <Button onClick={saveAssignments}>Saqlash</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Penalty payment dialog */}
+      <Dialog open={Boolean(penaltyAdmin)} onOpenChange={(open) => !open && setPenaltyAdmin(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Jarima to'landi</DialogTitle>
+            <DialogDescription>
+              {penaltyAdmin?.name} jarima qoldig'i: {money(penaltyAdmin?.penaltyTotal ?? 0)}. To'lov kassaga kirim sifatida yoziladi.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>To'lov turi</Label>
+              <Select value={penaltyForm.method} onValueChange={(method) => setPenaltyForm((item) => ({ ...item, method: method as "cash" | "card" | "qr" }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Naqd</SelectItem>
+                  <SelectItem value="card">Karta</SelectItem>
+                  <SelectItem value="qr">QR</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Summa</Label>
+              <Input inputMode="numeric" value={penaltyForm.amount} onChange={(event) => setPenaltyForm((item) => ({ ...item, amount: event.target.value.replace(/\D/g, "") }))} placeholder="50 000" />
+            </div>
+            {penaltyForm.method === "cash" ? (
+              <div className="space-y-2">
+                <Label>Berilgan naqd</Label>
+                <Input inputMode="numeric" value={penaltyForm.received} onChange={(event) => setPenaltyForm((item) => ({ ...item, received: event.target.value.replace(/\D/g, "") }))} placeholder="50 000" />
+                <div className="text-xs font-semibold text-slate-400">Qaytim: {money(Math.max(Number(penaltyForm.received || 0) - Number(penaltyForm.amount || 0), 0))}</div>
+              </div>
+            ) : null}
+            <div className="space-y-2 sm:col-span-2">
+              <Label>Izoh</Label>
+              <Input value={penaltyForm.note} onChange={(event) => setPenaltyForm((item) => ({ ...item, note: event.target.value }))} placeholder="Masalan: naqd topshirdi" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setPenaltyAdmin(null)}>Bekor</Button>
+            <Button onClick={submitPenaltyPay}><FiCreditCard /> To'lovni saqlash</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

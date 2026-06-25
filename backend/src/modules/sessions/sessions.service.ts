@@ -231,7 +231,7 @@ async function lockRigForSession(simulatorId: string, message = "Session ended")
   }
 }
 
-async function finalizeSessionStop(
+export async function finalizeSessionStop(
   session: { id: string; simulator_id: string; branch_id: string; debt_amount?: unknown; billing_mode?: unknown },
   options: { stoppedBy?: string | null; expired?: boolean } = {},
 ) {

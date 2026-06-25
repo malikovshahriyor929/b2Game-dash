@@ -45,25 +45,28 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
     if (ok) removeOfflineRig(simulator.id);
   }
   const [fixOpen, setFixOpen] = useState(false);
+  const [sessionFixOpen, setSessionFixOpen] = useState(false);
   if (!simulator) return null;
   const role = data?.user?.role;
   const canOperate = role === "admin" || role === "super_admin";
   const isSuperAdmin = role === "super_admin";
   const ready = simulator.status === "ready_to_play";
   const busy = ["busy", "unpaid"].includes(simulator.status);
-  const repairRequest = repairRequests.find((item) => item.id === simulator.repairRequestId);
+  const repairRequest = repairRequests.find((item) => item.id === simulator.repairRequestId)
+    ?? repairRequests.find((item) => item.simulatorId === simulator.id && item.reviewStatus === "open");
   const inMaintenance = simulator.status === "repair_requested" || repairRequest?.reviewStatus === "open";
-  const canStartSession = canOperate && (ready || simulator.status === "reserved");
-  const canAddTime = canOperate && busy;
-  const canTakePayment = canOperate && ["busy", "unpaid", "reserved"].includes(simulator.status);
-  const canStop = canOperate && busy;
+  const canStartSession = canOperate && !inMaintenance && (ready || simulator.status === "reserved");
+  const canAddTime = canOperate && !inMaintenance && busy;
+  const canTakePayment = canOperate && !inMaintenance && ["busy", "unpaid", "reserved"].includes(simulator.status);
+  const canStop = canOperate && !inMaintenance && busy;
   const canToggleLock = isSuperAdmin
-    ? canOperate && (simulator.rigId ? simulator.rigOnline : !busy)
-    : canOperate && simulator.status === "locked" && (simulator.rigId ? simulator.rigOnline : true);
-  const canOpenMaintenance = canOperate && !inMaintenance && !["locked", "offline"].includes(simulator.status);
+    ? canOperate && !inMaintenance && (simulator.rigId ? simulator.rigOnline : !busy)
+    : canOperate && !inMaintenance && simulator.status === "locked" && (simulator.rigId ? simulator.rigOnline : true);
+  const canOpenMaintenance = canOperate && !inMaintenance && ["ready_to_play", "broken"].includes(simulator.status);
+  const canOpenMaintenanceDuringSession = canOperate && !inMaintenance && busy;
   const canCloseMaintenance = canOperate && inMaintenance;
   const hasSessionDetails = Boolean(simulator.currentSessionId || simulator.currentUser || ["busy", "unpaid", "reserved"].includes(simulator.status));
-  const showSessionActions = canStartSession || canAddTime || canTakePayment || canStop || canToggleLock || canOpenMaintenance;
+  const showSessionActions = canStartSession || canAddTime || canTakePayment || canStop || canToggleLock || canOpenMaintenance || canOpenMaintenanceDuringSession;
   const showRigDetails = isSuperAdmin && Boolean(simulator.rigId);
   const showRigActions = isSuperAdmin && Boolean(simulator.rigId);
   const showRepairActions = canCloseMaintenance;
@@ -131,6 +134,7 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
               {canAddTime ? <Button variant="secondary" onClick={() => onAction("addTime")}><FiClock /> Vaqt qo'shish</Button> : null}
               {canTakePayment ? <Button variant="success" onClick={() => onAction("payment")}><FiCreditCard /> To'lov</Button> : null}
               {canStop ? <Button variant="destructive" onClick={() => onAction("stop")}><FiPower /> To'xtatish</Button> : null}
+              {canOpenMaintenanceDuringSession ? <Button variant="warning" onClick={() => setSessionFixOpen(true)}><FiTool /> Sessiya vaqtida buzildi</Button> : null}
               {canToggleLock ? <Button variant="secondary" onClick={() => toggleLock(simulator.id)}><FiLock /> {simulator.status === "locked" ? "Qulfdan chiqarish" : "Qulflash / Ochish"}</Button> : null}
               {canOpenMaintenance ? <Button variant="warning" onClick={() => setFixOpen(true)}><FiTool /> Maintenance ochish</Button> : null}
             </div>
@@ -158,6 +162,7 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
         </SheetContent>
       </Sheet>
       <RequestFixDialog open={fixOpen} onOpenChange={setFixOpen} simulator={simulator} />
+      <RequestFixDialog open={sessionFixOpen} onOpenChange={setSessionFixOpen} simulator={simulator} duringSession />
     </>
   );
 }

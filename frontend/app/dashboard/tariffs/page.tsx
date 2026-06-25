@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
 import { FiPlus, FiEdit2, FiTrash2, FiX } from "react-icons/fi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { PageHeader } from "@/components/shared/page-header";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { money } from "@/lib/format";
+import { isSuperAdmin } from "@/lib/permissions";
 import { BackendTariff, mapTariffRow } from "@/lib/use-backend-tariffs";
 import { backendDelete, backendGet, backendPatch, backendPost } from "@/server/api";
 import type { Product } from "@/types/product";
@@ -147,7 +149,7 @@ function BonusPicker({ label, products, items, onChange }: { label: string; prod
   );
 }
 
-function TariffCard({ item, onEdit, onDelete }: { item: BackendTariff; onEdit: () => void; onDelete: () => void }) {
+function TariffCard({ item, canManage, onEdit, onDelete }: { item: BackendTariff; canManage: boolean; onEdit: () => void; onDelete: () => void }) {
   const weekdayPrice = item.weekdayPrice ?? item.price;
   const weekendPrice = item.weekendPrice ?? item.price;
 
@@ -160,10 +162,12 @@ function TariffCard({ item, onEdit, onDelete }: { item: BackendTariff; onEdit: (
           </Badge>
           <Badge variant="muted">{typeLabels[item.type] ?? item.type}</Badge>
         </div>
-        <div className="flex shrink-0 gap-1">
-          <Button type="button" variant="ghost" size="icon" onClick={onEdit} aria-label="Tahrirlash"><FiEdit2 /></Button>
-          <Button type="button" variant="ghost" size="icon" onClick={onDelete} aria-label="O'chirish"><FiTrash2 /></Button>
-        </div>
+        {canManage ? (
+          <div className="flex shrink-0 gap-1">
+            <Button type="button" variant="ghost" size="icon" onClick={onEdit} aria-label="Tahrirlash"><FiEdit2 /></Button>
+            <Button type="button" variant="ghost" size="icon" onClick={onDelete} aria-label="O'chirish"><FiTrash2 /></Button>
+          </div>
+        ) : null}
       </div>
       <div className="mt-4 text-lg font-bold">{item.name}</div>
       <div className="mt-1 text-xs font-semibold text-slate-500">{formatDuration(item.durationMinutes)}</div>
@@ -190,6 +194,7 @@ function TariffCard({ item, onEdit, onDelete }: { item: BackendTariff; onEdit: (
 const emptyForm = { name: "", type: "time", simulatorZone: "main", duration: "60", weekdayPrice: "", weekendPrice: "" };
 
 export default function TariffsPage() {
+  const { data: session } = useSession();
   const { selectedBranchId, branches, products } = useDashboardStore();
   const confirm = useConfirm();
   const [tariffs, setTariffs] = useState<BackendTariff[]>([]);
@@ -199,6 +204,7 @@ export default function TariffsPage() {
   const [form, setForm] = useState(emptyForm);
   const [weekdayBonus, setWeekdayBonus] = useState<BonusItem[]>([]);
   const [weekendBonus, setWeekendBonus] = useState<BonusItem[]>([]);
+  const canManage = isSuperAdmin(session?.user?.role);
 
   const allBranches = selectedBranchId === "all";
   const createBranchId = allBranches ? branches[0]?.id ?? "" : selectedBranchId;
@@ -322,7 +328,7 @@ export default function TariffsPage() {
           title="Tariflar"
           description={`${branchLabel} uchun narxlar. Dushanba–Juma va Shanba–Yakshanba alohida.`}
         />
-        <Button onClick={openCreate} disabled={!createBranchId}><FiPlus /> Tarif qo'shish</Button>
+        {canManage ? <Button onClick={openCreate} disabled={!createBranchId}><FiPlus /> Tarif qo'shish</Button> : null}
       </div>
 
       {loading ? (
@@ -354,7 +360,7 @@ export default function TariffsPage() {
                   <section>
                     <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Logitech (Main)</h3>
                     <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                      {section.zones.main.map((item) => <TariffCard key={item.id} item={item} onEdit={() => openEdit(item)} onDelete={() => remove(item)} />)}
+                      {section.zones.main.map((item) => <TariffCard key={item.id} item={item} canManage={canManage} onEdit={() => openEdit(item)} onDelete={() => remove(item)} />)}
                     </div>
                   </section>
                 ) : null}
@@ -362,7 +368,7 @@ export default function TariffsPage() {
                   <section>
                     <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Moza (Premium)</h3>
                     <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                      {section.zones.vip.map((item) => <TariffCard key={item.id} item={item} onEdit={() => openEdit(item)} onDelete={() => remove(item)} />)}
+                      {section.zones.vip.map((item) => <TariffCard key={item.id} item={item} canManage={canManage} onEdit={() => openEdit(item)} onDelete={() => remove(item)} />)}
                     </div>
                   </section>
                 ) : null}

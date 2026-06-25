@@ -17,6 +17,8 @@ export type SimulatorMapPosition = {
 export type RepairRequest = {
   id: string;
   simulatorId: string;
+  sessionId?: string;
+  openedDuringSession?: boolean;
   simulatorName: string;
   branchId: string;
   branchName: string;

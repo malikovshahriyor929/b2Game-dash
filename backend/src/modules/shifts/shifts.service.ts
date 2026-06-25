@@ -45,9 +45,24 @@ async function confirmedWithdrawnCash(shiftId: string) {
   return Number(rows[0]?.total ?? 0);
 }
 
+async function computeShiftExpenses(shiftId: string) {
+  const rows = await prisma.$queryRawUnsafe<Array<{ cash: string; card: string; bank: string; total: string }>>(
+    `select
+       coalesce(sum(case when method='cash' then amount else 0 end),0) as cash,
+       coalesce(sum(case when method='card' then amount else 0 end),0) as card,
+       coalesce(sum(case when method='qr' then amount else 0 end),0) as bank,
+       coalesce(sum(amount),0) as total
+     from expenses
+     where shift_id=$1::uuid`,
+    shiftId,
+  );
+  const r = rows[0] ?? { cash: "0", card: "0", bank: "0", total: "0" };
+  return { cash: Number(r.cash), card: Number(r.card), bank: Number(r.bank), total: Number(r.total) };
+}
+
 // Smena qatoriga jonli hisoblangan pul ko'rsatkichlarini qo'shadi (ochiq smena uchun).
 // withdrawnCash — smena davomida tasdiqlangan выemka (kassadan olib chiqilgan naqd).
-function decorateOpenShift(shift: any, money: { cash: number; card: number; bank: number; balance: number; total: number }, withdrawnCash = 0) {
+function decorateOpenShift(shift: any, money: { cash: number; card: number; bank: number; balance: number; total: number }, withdrawnCash = 0, expenses = { cash: 0, total: 0 }) {
   const startingCash = Number(shift.starting_cash ?? 0);
   return {
     ...shift,
@@ -56,8 +71,9 @@ function decorateOpenShift(shift: any, money: { cash: number; card: number; bank
     qr_total: money.bank,
     balance_sales: money.balance,
     total_revenue: money.total,
+    refunds: expenses.total,
     cash_withdrawn: withdrawnCash, // smena ichida olib chiqilgan naqd (выemka)
-    expected_cash: startingCash + money.cash - withdrawnCash, // kassada bo'lishi kerak bo'lgan naqd
+    expected_cash: startingCash + money.cash - expenses.cash - withdrawnCash, // kassada bo'lishi kerak bo'lgan naqd
   };
 }
 
@@ -77,7 +93,7 @@ export async function list(req: Request) {
   for (const row of rows) {
     if (row.status === "open") {
       const money = await computeShiftMoney(row.id);
-      result.push(decorateOpenShift(row, money, await confirmedWithdrawnCash(row.id)));
+      result.push(decorateOpenShift(row, money, await confirmedWithdrawnCash(row.id), await computeShiftExpenses(row.id)));
     } else {
       result.push(row);
     }
@@ -91,7 +107,7 @@ export async function current(req: Request) {
   const shift = rows[0];
   if (!shift) return null;
   const money = await computeShiftMoney(shift.id);
-  return decorateOpenShift(shift, money, await confirmedWithdrawnCash(shift.id));
+  return decorateOpenShift(shift, money, await confirmedWithdrawnCash(shift.id), await computeShiftExpenses(shift.id));
 }
 
 // Yangi smena ochishdan oldingi ma'lumot: oldingi smena qoldirgan naqd (carry-over).
@@ -136,10 +152,11 @@ export async function close(req: Request) {
 
   const branch = shift.branch_id;
   const money = await computeShiftMoney(shift.id);
+  const expenses = await computeShiftExpenses(shift.id);
 
   const startingCash = Number(shift.starting_cash ?? 0);
   const midShiftWithdrawn = await confirmedWithdrawnCash(shift.id); // smena ichida olib chiqilgan naqd (выemka)
-  const expectedCash = startingCash + money.cash - midShiftWithdrawn; // kassada bo'lishi kerak bo'lgan naqd
+  const expectedCash = startingCash + money.cash - expenses.cash - midShiftWithdrawn; // kassada bo'lishi kerak bo'lgan naqd
   const actualCash = req.body.actual_cash == null ? expectedCash : Number(req.body.actual_cash);
   const cashWithdrawn = Math.max(0, Number(req.body.cash_withdrawn ?? 0));
   if (cashWithdrawn > expectedCash) throw new ApiError(400, "Cash withdrawn exceeds expected cash");
@@ -160,24 +177,26 @@ export async function close(req: Request) {
          qr_total=$4,
          balance_sales=$5,
          total_revenue=$6,
-         expected_cash=$7,
-         actual_cash=$8,
-         cash_withdrawn=$9,
-         card_withdrawn=$10,
-         bank_withdrawn=$11,
-         remaining_cash=$12,
-         withdraw_recipient=$13,
-         difference=$14,
-         notes=$15,
+         refunds=$7,
+         expected_cash=$8,
+         actual_cash=$9,
+         cash_withdrawn=$10,
+         card_withdrawn=$11,
+         bank_withdrawn=$12,
+         remaining_cash=$13,
+         withdraw_recipient=$14,
+         difference=$15,
+         notes=$16,
          closed_at=now(),
          updated_at=now()
-       where id=$16::uuid returning *`,
+       where id=$17::uuid returning *`,
       req.user!.user_id,
       money.cash,
       money.card,
       money.bank,
       money.balance,
       money.total,
+      expenses.total,
       expectedCash,
       actualCash,
       cashWithdrawn,
@@ -217,7 +236,7 @@ export async function close(req: Request) {
     entity_type: "shift",
     entity_id: shift.id,
     amount: money.total,
-    details: { cash: money.cash, card: money.card, bank: money.bank, balance: money.balance, cash_withdrawn: cashWithdrawn, remaining_cash: remainingCash, difference, recipient },
+    details: { cash: money.cash, card: money.card, bank: money.bank, balance: money.balance, expenses: expenses.total, cash_expenses: expenses.cash, cash_withdrawn: cashWithdrawn, remaining_cash: remainingCash, difference, recipient },
   });
   broadcastDashboard("shift_closed", row, branch);
   return row;
@@ -241,7 +260,7 @@ export async function get(req: Request) {
   assertBranchAccess(req, row.branch_id);
   if (row.status === "open") {
     const money = await computeShiftMoney(row.id);
-    return decorateOpenShift(row, money, await confirmedWithdrawnCash(row.id));
+    return decorateOpenShift(row, money, await confirmedWithdrawnCash(row.id), await computeShiftExpenses(row.id));
   }
   return row;
 }
@@ -281,8 +300,9 @@ export async function createWithdrawalRequest(req: Request) {
 
   // Kassada hozir bor naqd: boshlang'ich + naqd savdo − allaqachon olib chiqilgan.
   const money = await computeShiftMoney(shift.id);
+  const expenses = await computeShiftExpenses(shift.id);
   const already = await confirmedWithdrawnCash(shift.id);
-  const available = Number(shift.starting_cash ?? 0) + money.cash - already;
+  const available = Number(shift.starting_cash ?? 0) + money.cash - expenses.cash - already;
   if (amount > available) throw new ApiError(400, "Amount exceeds cash in register");
 
   const initiatorRole = baseRole(req.user?.role); // 'admin' | 'super_admin'
@@ -317,8 +337,9 @@ export async function confirmWithdrawalRequest(req: Request) {
   const shift = row.shift_id ? (await prisma.$queryRawUnsafe<any[]>("select * from shifts where id=$1::uuid", row.shift_id))[0] : null;
   if (shift && shift.status === "open") {
     const money = await computeShiftMoney(shift.id);
+    const expenses = await computeShiftExpenses(shift.id);
     const already = await confirmedWithdrawnCash(shift.id);
-    const available = Number(shift.starting_cash ?? 0) + money.cash - already;
+    const available = Number(shift.starting_cash ?? 0) + money.cash - expenses.cash - already;
     if (Number(row.amount) > available) throw new ApiError(400, "Amount exceeds cash in register");
   }
 

@@ -25,8 +25,8 @@ const PRIORITY_LABELS: Record<RepairPriority, string> = {
   critical: "Juda muhim",
 };
 
-export function RequestFixDialog({ open, onOpenChange, simulator }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator }) {
-  const { openMaintenance } = useDashboardStore();
+export function RequestFixDialog({ open, onOpenChange, simulator, duringSession = false }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator; duringSession?: boolean }) {
+  const { openMaintenance, openMaintenanceDuringSession } = useDashboardStore();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [errorType, setErrorType] = useState<RepairErrorType>("device_error");
@@ -44,7 +44,9 @@ export function RequestFixDialog({ open, onOpenChange, simulator }: { open: bool
 
   function submit() {
     if (!simulator || !title.trim() || !description.trim()) return;
-    openMaintenance(simulator.id, { title, description, errorType, priority, note });
+    const payload = { title, description, errorType, priority, note };
+    if (duringSession) openMaintenanceDuringSession(simulator.id, payload);
+    else openMaintenance(simulator.id, payload);
     onOpenChange(false);
   }
 
@@ -52,8 +54,12 @@ export function RequestFixDialog({ open, onOpenChange, simulator }: { open: bool
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Maintenance ochish</DialogTitle>
-          <DialogDescription>{simulator?.name} ta&apos;mirga olinadi. Yopilgach super admin tekshiradi — bekorga ochilsa, ketgan vaqt jarima sifatida hisobingizdan ayiriladi.</DialogDescription>
+          <DialogTitle>{duringSession ? "Sessiya vaqtida buzildi" : "Maintenance ochish"}</DialogTitle>
+          <DialogDescription>
+            {duringSession
+              ? `${simulator?.name} aktiv sessiyasi to'xtatiladi va simulator ta'mirga olinadi. Super admin keyin sessiya bilan bog'langan maintenance'ni ko'radi.`
+              : `${simulator?.name} ta'mirga olinadi. Yopilgach super admin tekshiradi — bekorga ochilsa, ketgan vaqt jarima sifatida hisobingizdan ayiriladi.`}
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
           <div className="space-y-2">
@@ -91,7 +97,7 @@ export function RequestFixDialog({ open, onOpenChange, simulator }: { open: bool
         </div>
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Bekor qilish</Button>
-          <Button disabled={!title.trim() || !description.trim()} onClick={submit}>Maintenance ochish</Button>
+          <Button disabled={!title.trim() || !description.trim()} onClick={submit}>{duringSession ? "Sessiyani to'xtatib maintenance ochish" : "Maintenance ochish"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

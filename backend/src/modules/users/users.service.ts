@@ -43,8 +43,24 @@ export const usersService = {
     const branchId = scopedBranch(req);
     const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
       `select u.id,u.name,u.email,u.role,u.branch_id,u.is_active,u.created_at,u.updated_at,
-              coalesce((select sum(rr.charge_amount) from repair_requests rr
-                        where rr.requested_by=u.id and rr.review_status='charged'),0) as penalty_total
+              greatest(
+                coalesce((
+                  select sum(
+                    case
+                      when rr.duration_minutes > 1440
+                        then round(rr.charge_amount * 1440 / nullif(rr.duration_minutes, 0))
+                      else rr.charge_amount
+                    end
+                  )
+                  from repair_requests rr
+                  where rr.requested_by=u.id and rr.review_status='charged'
+                ),0) - coalesce((
+                  select sum(app.amount)
+                  from admin_penalty_payments app
+                  where app.admin_id=u.id
+                ),0),
+                0
+              ) as penalty_total
        from users u
        where ($1::uuid is null or u.branch_id=$1::uuid)
          and ($2::boolean or u.role not in ('dev_admin','dev_super_admin'))

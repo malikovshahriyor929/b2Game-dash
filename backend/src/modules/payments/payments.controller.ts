@@ -1,2 +1,2 @@
 import { asyncHandler } from "../../utils/asyncHandler"; import { created, ok } from "../../utils/apiResponse"; import * as s from "./payments.service";
-export const list=asyncHandler(async(req,res)=>ok(res,await s.list(req))); export const create=asyncHandler(async(req,res)=>created(res,await s.create(req)));
+export const list=asyncHandler(async(req,res)=>ok(res,await s.list(req))); export const create=asyncHandler(async(req,res)=>created(res,await s.create(req))); export const payAdminPenalty=asyncHandler(async(req,res)=>created(res,await s.payAdminPenalty(req)));

@@ -15,6 +15,7 @@ export type CashTransaction = {
   paymentMethod: string;
   branchId: string;
   shiftId?: string;
+  sourceType?: string;
 };
 
 export type Shift = {
@@ -43,4 +44,3 @@ export type Shift = {
   withdrawRecipient?: string;
   notes?: string;
 };
-

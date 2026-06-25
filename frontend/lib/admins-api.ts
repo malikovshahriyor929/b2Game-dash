@@ -85,3 +85,15 @@ export function deleteAdmin(id: string) {
 export function setAdminSimulators(adminId: string, simulatorIds: string[]) {
   return backendPost<Record<string, unknown>>("/simulators/assignments", { admin_id: adminId, simulator_ids: simulatorIds });
 }
+
+export function payAdminPenalty(adminId: string, payload: {
+  method: "cash" | "card" | "qr";
+  cash_amount: number;
+  card_amount: number;
+  qr_amount: number;
+  received_amount?: number;
+  change_amount?: number;
+  note?: string;
+}) {
+  return backendPost<Record<string, unknown>>(`/payments/admin-penalties/${adminId}/pay`, payload);
+}

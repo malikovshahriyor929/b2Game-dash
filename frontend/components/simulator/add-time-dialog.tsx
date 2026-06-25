@@ -21,17 +21,31 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
   const tariffs = useBackendTariffs(simulator?.branchId, open);
   const presets = useMemo(() => {
     const zone = simulator?.zone === "VIP" ? "vip" : "main";
-    const seen = new Set<string>();
-    return tariffs
+    const byDuration = new Map<number, { id: string; min: number; price: number; bonus: string | undefined; name: string; exactZone: boolean; happy: boolean }>();
+    tariffs
       .filter((item) => (item.simulatorZone === zone || item.simulatorZone === "all") && item.type !== "night")
-      .map((item) => ({ id: item.id, min: item.durationMinutes, price: item.price, bonus: item.bonus, name: item.name }))
-      // Ko'rinishi bir xil (daqiqa + narx + bonus) kartalarni bir martadan ko'rsatamiz.
-      .filter((preset) => {
-        const key = `${preset.min}-${preset.price}-${preset.bonus ?? ""}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
+      .forEach((item) => {
+        const preset = {
+          id: item.id,
+          min: item.durationMinutes,
+          price: item.price,
+          bonus: item.bonus,
+          name: item.name,
+          exactZone: item.simulatorZone === zone,
+          happy: Boolean(item.isHappyHour || item.pricePeriod === "happy_hour"),
+        };
+        const existing = byDuration.get(preset.min);
+        if (!existing) {
+          byDuration.set(preset.min, preset);
+          return;
+        }
+        // Add-time'da bir xil daqiqa ikki marta chiqmasin:
+        // 1) avval shu zona tarifi, 2) happy-hour/skidka, 3) arzonroq narx.
+        const presetScore = Number(preset.exactZone) * 100 + Number(preset.happy) * 10 - preset.price / 1_000_000;
+        const existingScore = Number(existing.exactZone) * 100 + Number(existing.happy) * 10 - existing.price / 1_000_000;
+        if (presetScore > existingScore) byDuration.set(preset.min, preset);
       });
+    return Array.from(byDuration.values()).sort((a, b) => a.min - b.min);
   }, [simulator?.zone, tariffs]);
   const fallbackPreset = useMemo(() => presets[0] ?? { id: "", min: 60, price: 0, bonus: undefined, name: "" }, [presets]);
   const [selectedPreset, setSelectedPreset] = useState(fallbackPreset);
