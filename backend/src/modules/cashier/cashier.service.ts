@@ -4,7 +4,7 @@ import { prisma } from "../../db/prisma";
 import { ApiError } from "../../utils/apiError";
 import { auditLog } from "../../services/auditLog.service";
 import { broadcastDashboard } from "../../websocket/dashboardConnection.manager";
-import { requireOpenShift } from "../shifts/shift.guard";
+import { requireOpenShiftOwner } from "../shifts/shift.guard";
 import { actorScope } from "../../utils/scope";
 
 function branchId(req: Request) {
@@ -20,6 +20,8 @@ export async function products(req: Request) {
 export async function scan(req: Request) { const rows=await prisma.$queryRawUnsafe<any[]>("select p.*, i.stock_quantity, i.low_stock_threshold from products p join inventory i on i.product_id=p.id where p.barcode=$1 and i.branch_id=$2::uuid", req.body.barcode, branchId(req)); if(!rows.length) throw new ApiError(404,"Product or inventory not found"); await auditLog({actor:req.user,branch_id:branchId(req),action_type:"product_scanned",entity_type:"product",entity_id:rows[0].id,details:{barcode:req.body.barcode}}); return {product:rows[0],inventory:{stock_quantity:rows[0].stock_quantity},available:rows[0].stock_quantity>0}; }
 export async function createSale(req: Request) {
   const b=branchId(req); let subtotal=0,totalCost=0; const detail=[] as any[];
+  if (!b) throw new ApiError(400, "branch_id is required");
+  await requireOpenShiftOwner(b, req);
   for(const item of req.body.items){ const rows=await prisma.$queryRawUnsafe<any[]>("select p.*, i.stock_quantity from products p join inventory i on i.product_id=p.id where p.id=$1::uuid and i.branch_id=$2::uuid", item.product_id,b); const p=rows[0]; if(!p) throw new ApiError(404,"Product not found"); if(p.stock_quantity<item.quantity) throw new ApiError(409,`Insufficient stock for ${p.name}`); subtotal+=Number(p.price)*item.quantity; totalCost+=Number(p.cost)*item.quantity; detail.push({p,quantity:item.quantity}); }
   const total=subtotal-Number(req.body.discount??0), profit=total-totalCost;
   const customer = req.body.customer_id ? (await prisma.$queryRawUnsafe<any[]>("select id,name,phone,balance from customers where id=$1::uuid and branch_id=$2::uuid", req.body.customer_id, b))[0] : null;
@@ -52,7 +54,7 @@ export async function paySale(req: Request) {
   if(sale.payment_status==="paid") throw new ApiError(409,"Sale already paid");
   const total=Number(req.body.cash_amount)+Number(req.body.card_amount)+Number(req.body.qr_amount)+Number(req.body.balance_amount);
   if(total!==Number(sale.total)) throw new ApiError(400,"Payment total must match sale total");
-  const shiftId = await requireOpenShift(sale.branch_id);
+  const shiftId = await requireOpenShiftOwner(sale.branch_id, req);
   const receivedAmount = req.body.received_amount === undefined ? null : Number(req.body.received_amount);
   const changeAmount = Number(req.body.change_amount ?? 0);
   if (receivedAmount !== null && receivedAmount < Number(req.body.cash_amount ?? 0)) throw new ApiError(400, "Received amount cannot be less than cash amount");

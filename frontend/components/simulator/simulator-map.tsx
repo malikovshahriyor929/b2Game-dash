@@ -31,8 +31,10 @@ const filterLabels: Record<string, string> = {
   Offline: "Oflayn",
   Locked: "Qulflangan",
 };
-const mapColumns = 24;
-const mapRows = 5;
+const secondFloorColumns = 5;
+const firstFloorStartColumn = secondFloorColumns + 1;
+const mapColumns = 22;
+const mapRows = 3;
 
 type MapPosition = SimulatorMapPosition;
 type FacilityKey = "cashier" | "wc" | "shop";
@@ -40,9 +42,9 @@ type LayoutSelection = { type: "simulator"; id: string } | { type: "facility"; k
 type SimulatorMapLayout = { facilities?: Partial<Record<FacilityKey, MapPosition>> };
 
 const facilities: Array<{ key: FacilityKey; label: string; icon: typeof FiCreditCard; position: MapPosition }> = [
-  { key: "cashier", label: "Kassa", icon: FiCreditCard, position: { floor: "1", col: 21, row: 5, colSpan: 1, rowSpan: 1 } },
-  { key: "wc", label: "WC", icon: FiUsers, position: { floor: "1", col: 22, row: 5, colSpan: 1, rowSpan: 1 } },
-  { key: "shop", label: "Do'kon", icon: FiCoffee, position: { floor: "1", col: 23, row: 5, colSpan: 1, rowSpan: 1 } },
+  { key: "cashier", label: "Kassa", icon: FiCreditCard, position: { floor: "1", col: 19, row: 3, colSpan: 1, rowSpan: 1 } },
+  { key: "wc", label: "WC", icon: FiUsers, position: { floor: "1", col: 20, row: 3, colSpan: 1, rowSpan: 1 } },
+  { key: "shop", label: "Do'kon", icon: FiCoffee, position: { floor: "1", col: 21, row: 3, colSpan: 1, rowSpan: 1 } },
 ];
 
 const statusClass: Record<SimulatorStatus, string> = {
@@ -94,12 +96,13 @@ function mapTypeLabel(simulator: Simulator) {
 function defaultMapPosition(simulator: Simulator): MapPosition {
   const number = Number(simulator.name.match(/\d+/)?.[0] ?? 1);
   const vipPositions: MapPosition[] = [
-    { floor: "2", col: 2, row: 1, colSpan: 2 },
-    { floor: "2", col: 5, row: 1, colSpan: 2 },
-    { floor: "2", col: 2, row: 5, colSpan: 2 },
-    { floor: "2", col: 5, row: 5, colSpan: 2 },
+    { floor: "2", col: 1, row: 1, colSpan: 2 },
+    { floor: "2", col: 4, row: 1, colSpan: 2 },
+    { floor: "2", col: 1, row: 3, colSpan: 2 },
+    { floor: "2", col: 4, row: 3, colSpan: 2 },
   ];
   const standardPositions: MapPosition[] = [
+    { floor: "1", col: 7, row: 1, colSpan: 2 },
     { floor: "1", col: 9, row: 1, colSpan: 2 },
     { floor: "1", col: 11, row: 1, colSpan: 2 },
     { floor: "1", col: 13, row: 1, colSpan: 2 },
@@ -107,19 +110,18 @@ function defaultMapPosition(simulator: Simulator): MapPosition {
     { floor: "1", col: 17, row: 1, colSpan: 2 },
     { floor: "1", col: 19, row: 1, colSpan: 2 },
     { floor: "1", col: 21, row: 1, colSpan: 2 },
-    { floor: "1", col: 23, row: 1, colSpan: 2 },
-    { floor: "1", col: 9, row: 5, colSpan: 2 },
-    { floor: "1", col: 11, row: 5, colSpan: 2 },
-    { floor: "1", col: 13, row: 5, colSpan: 2 },
-    { floor: "1", col: 15, row: 5, colSpan: 2 },
-    { floor: "1", col: 17, row: 5, colSpan: 2 },
-    { floor: "1", col: 19, row: 5, colSpan: 2 },
-    { floor: "1", col: 21, row: 5, colSpan: 2 },
-    { floor: "1", col: 23, row: 5, colSpan: 2 },
+    { floor: "1", col: 7, row: 3, colSpan: 2 },
+    { floor: "1", col: 9, row: 3, colSpan: 2 },
+    { floor: "1", col: 11, row: 3, colSpan: 2 },
+    { floor: "1", col: 13, row: 3, colSpan: 2 },
+    { floor: "1", col: 15, row: 3, colSpan: 2 },
+    { floor: "1", col: 17, row: 3, colSpan: 2 },
+    { floor: "1", col: 19, row: 3, colSpan: 2 },
+    { floor: "1", col: 21, row: 3, colSpan: 2 },
   ];
   const fallbackPosition = simulator.zone === "Standard"
-    ? { floor: "1", col: 9 + (((number - 1) % 8) * 2), row: number <= 8 ? 1 : 5, colSpan: 2 }
-    : { floor: "2", col: 2 + (((number - 1) % 2) * 3), row: number <= 2 ? 1 : 5, colSpan: 2 };
+    ? { floor: "1", col: 7 + (((number - 1) % 8) * 2), row: number <= 8 ? 1 : 3, colSpan: 2 }
+    : { floor: "2", col: 1 + (((number - 1) % 2) * 3), row: number <= 2 ? 1 : 3, colSpan: 2 };
   return simulator.zone === "Standard"
     ? standardPositions[number - 1] ?? fallbackPosition
     : vipPositions[number - 1] ?? fallbackPosition;
@@ -129,15 +131,27 @@ function positionKey(position: MapPosition) {
   return `${position.floor ?? ""}:${position.col}:${position.row}:${position.colSpan ?? 1}:${position.rowSpan ?? 1}`;
 }
 
+function clampMapPosition(position: MapPosition): MapPosition {
+  const colSpan = position.colSpan ?? 1;
+  const rowSpan = position.rowSpan ?? 1;
+  return {
+    ...position,
+    col: Math.min(Math.max(1, position.col), mapColumns - colSpan + 1),
+    row: Math.min(Math.max(1, position.row), mapRows - rowSpan + 1),
+    colSpan,
+    rowSpan,
+  };
+}
+
 function nextFreePosition(position: MapPosition, used: Set<string>) {
   const colSpan = position.colSpan ?? 2;
   const rowSpan = position.rowSpan ?? 1;
   const floor = position.floor === "2" ? "2" : "1";
-  const startCol = floor === "2" ? 1 : 8;
-  const endCol = floor === "2" ? 7 : mapColumns;
+  const startCol = floor === "2" ? 1 : firstFloorStartColumn;
+  const endCol = floor === "2" ? secondFloorColumns : mapColumns;
   for (let row = 1; row <= mapRows - rowSpan + 1; row += 1) {
     for (let col = startCol; col <= endCol - colSpan + 1; col += 1) {
-      const next = { ...position, floor, col, row, colSpan, rowSpan };
+      const next = clampMapPosition({ ...position, floor, col, row, colSpan, rowSpan });
       const key = positionKey(next);
       if (!used.has(key)) return next;
     }
@@ -167,13 +181,13 @@ function normalizedMapPosition(value: unknown, fallback: MapPosition): MapPositi
   const colSpan = Number(item.colSpan ?? fallback.colSpan ?? 1);
   const rowSpan = Number(item.rowSpan ?? fallback.rowSpan ?? 1);
   if (![col, row, colSpan, rowSpan].every(Number.isFinite) || col < 1 || row < 1 || colSpan < 1 || rowSpan < 1) return fallback;
-  return {
+  return clampMapPosition({
     floor: item.floor == null ? fallback.floor : String(item.floor),
     col,
     row,
     colSpan,
     rowSpan,
-  };
+  });
 }
 
 function Tile({ simulator, position, selected, editing, onClick }: { simulator: Simulator; position: MapPosition; selected: boolean; editing: boolean; onClick: () => void }) {
@@ -250,8 +264,8 @@ export function SimulatorMap() {
     return Object.fromEntries(simulators.map((item) => {
       const stored = layoutDraft[item.id] ?? savedLayout[item.id] ?? item.mapPosition;
       const raw = stored ?? defaultMapPosition(item);
-      const floor = raw.floor === "0" ? "1" : raw.floor === "1" && raw.col <= 7 ? "2" : raw.floor;
-      let position: MapPosition = { ...raw, floor };
+      const floor = raw.floor === "0" ? "1" : raw.floor === "1" && raw.col <= secondFloorColumns ? "2" : raw.floor;
+      let position: MapPosition = clampMapPosition({ ...raw, floor });
       if (!stored && used.has(positionKey(position))) position = nextFreePosition(position, used);
       used.add(positionKey(position));
       return [item.id, position];
@@ -321,8 +335,9 @@ export function SimulatorMap() {
     const colSpan = current.colSpan ?? 2;
     const rowSpan = current.rowSpan ?? 1;
     const safeCol = Math.min(Math.max(1, col), mapColumns - colSpan + 1);
-    const floor = safeCol <= 7 ? "2" : "1";
-    const next = { ...current, floor, col: safeCol, row, colSpan, rowSpan };
+    const safeRow = Math.min(Math.max(1, row), mapRows - rowSpan + 1);
+    const floor = safeCol <= secondFloorColumns ? "2" : "1";
+    const next = { ...current, floor, col: safeCol, row: safeRow, colSpan, rowSpan };
     if (layoutSelection.type === "simulator") {
       setSelectedId(layoutSelection.id);
       setLayoutDraft((items) => ({
@@ -453,29 +468,17 @@ export function SimulatorMap() {
               }}
             >
               <div
-                className="pointer-events-none z-0 flex items-center justify-center rounded-[30px] border border-slate-700/80 bg-slate-900/80 text-sm font-black uppercase text-slate-500 shadow-xl shadow-black/20"
-                style={{ gridColumn: "1 / span 7", gridRow: "1 / span 5" }}
-              >
-                2-qavat
-              </div>
-              <div
-                className="pointer-events-none z-0 flex items-center justify-center rounded-[30px] border border-slate-700/80 bg-slate-900/80 text-sm font-black uppercase text-slate-500 shadow-xl shadow-black/20"
-                style={{ gridColumn: "8 / span 17", gridRow: "1 / span 5" }}
-              >
-                1-qavat
-              </div>
-              <div
                 className="pointer-events-none z-20 overflow-hidden rounded-2xl border border-slate-600/70 bg-slate-900/70 shadow-2xl shadow-black/30 ring-1 ring-white/5"
-                style={{ gridColumn: "22 / span 3", gridRow: "3 / span 2" }}
+                style={{ gridColumn: "21 / span 2", gridRow: "2 / span 2" }}
                 aria-label="Kirish"
               >
-                <div className="relative flex h-full min-h-0 w-full items-stretch justify-center gap-3 px-5 py-4">
+                <div className="relative flex h-full min-h-0 w-full items-stretch justify-center gap-2 px-5 py-7">
                   <div className="absolute inset-x-4 top-4 h-px bg-gradient-to-r from-transparent via-sky-300/45 to-transparent" />
                   <div className="absolute inset-x-4 bottom-4 h-px bg-gradient-to-r from-transparent via-slate-400/35 to-transparent" />
-                  {[0, 1, 2, 3].map((item) => (
+                  {[0, 1].map((item) => (
                     <span
                       key={item}
-                      className="h-full flex-1 rounded-full border border-slate-500/50 bg-gradient-to-b from-slate-500 via-slate-700 to-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_10px_24px_rgba(0,0,0,0.35)]"
+                      className="h-full w-8 rounded-full border border-slate-500/50 bg-gradient-to-b from-slate-500 via-slate-700 to-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_10px_24px_rgba(0,0,0,0.35)]"
                     />
                   ))}
                   <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-600/70 bg-slate-950/95 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.16em] text-slate-100 shadow-xl shadow-black/40">

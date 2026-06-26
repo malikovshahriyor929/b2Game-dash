@@ -4,7 +4,7 @@ import { prisma } from "../../db/prisma";
 import { ApiError } from "../../utils/apiError";
 import { auditLog } from "../../services/auditLog.service";
 import { broadcastDashboard } from "../../websocket/dashboardConnection.manager";
-import { requireOpenShift } from "../shifts/shift.guard";
+import { requireOpenShiftOwner } from "../shifts/shift.guard";
 import { createGenericService } from "../_shared/generic.service";
 
 const TOPUP_METHODS = ["cash", "card", "qr"] as const;
@@ -49,7 +49,7 @@ export async function topUpBalance(req: Request) {
   // get() mijozni filial bo'yicha tekshiradi (yo'q bo'lsa 404) va branch_id ni qaytaradi.
   const customer = (await customersService.get(req, String(req.params.id))) as { id: string; branch_id: string };
   const branchId = String(customer.branch_id);
-  const shiftId = await requireOpenShift(branchId);
+  const shiftId = await requireOpenShiftOwner(branchId, req);
   const cashAmount = method === "cash" ? amount : 0;
   const cardAmount = method === "card" ? amount : 0;
   const qrAmount = method === "qr" ? amount : 0;

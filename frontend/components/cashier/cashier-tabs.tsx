@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import { FiCheckCircle, FiCreditCard, FiImage, FiPlusCircle, FiRefreshCw, FiUpload, FiX } from "react-icons/fi";
 import { RiQrScan2Line } from "react-icons/ri";
 import { ProductCard } from "@/components/cashier/product-card";
@@ -32,7 +33,8 @@ function normalizeScanCode(value: string) {
 }
 
 export function CashierTabs() {
-  const { loading, products, addProduct, addProductByQr, createProduct, updateProduct, deleteProduct, recordCashierTransaction, simulators, pay, addCashTransaction } = useDashboardStore();
+  const { data } = useSession();
+  const { loading, products, addProduct, addProductByQr, createProduct, updateProduct, deleteProduct, recordCashierTransaction, simulators, pay, addCashTransaction, activeShift } = useDashboardStore();
   const confirm = useConfirm();
   const paymentMethods = usePaymentMethods();
   const [activeTab, setActiveTab] = useState("shop");
@@ -63,6 +65,8 @@ export function CashierTabs() {
   const payableSimulators = simulators.filter((item) => ["busy", "unpaid", "reserved"].includes(item.status));
   const unpaidSimulators = payableSimulators.filter((item) => item.paymentStatus !== "paid" || item.status === "unpaid");
   const changeAmount = Math.max(Number(returnForm.receivedAmount || 0) - Number(returnForm.saleAmount || 0), 0);
+  const role = data?.user?.role;
+  const canOperateShift = Boolean(activeShift && (role === "super_admin" || role === "dev_super_admin" || activeShift.openedBy === data?.user?.id));
 
   function focusScannerInput() {
     window.setTimeout(() => {
@@ -294,6 +298,19 @@ export function CashierTabs() {
     const simulator = simulators.find((item) => item.id === sessionPayForm.simulatorId);
     setCashierMessage(`${simulator?.name ?? "Session"} uchun ${money(amount)} to'lov qilindi.`);
     setSessionPayForm({ simulatorId: "", amount: "", method: "Karta" });
+  }
+
+  if (!canOperateShift) {
+    return (
+      <Card className="border-amber-500/20 bg-amber-500/5 p-5">
+        <div className="text-lg font-black text-white">Kassa bloklangan</div>
+        <div className="mt-2 text-sm font-semibold text-amber-200">
+          {activeShift
+            ? `Smena ${activeShift.operator} nomiga ochilgan. U yopilmaguncha boshqa admin bar savdosi, to'lov, prixod yoki rasxod qila olmaydi.`
+            : "Avval smena oching. Smena ochilmaguncha kassa amallari bajarilmaydi."}
+        </div>
+      </Card>
+    );
   }
 
   return (

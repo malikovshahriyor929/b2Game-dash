@@ -21,6 +21,7 @@ export type CashTransaction = {
 export type Shift = {
   id: string;
   operator: string;
+  openedBy?: string;
   branchId?: string;
   date: string;
   shiftType: string;

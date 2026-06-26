@@ -16,6 +16,7 @@ import {
   RigMvpRig,
   unlockRigMvp,
 } from "../../services/rigMvp.service";
+import { requireOpenShiftOwner } from "../shifts/shift.guard";
 
 function zoneFromRig(rig: RigMvpRig) {
   const text = `${rig.label} ${rig.hostname} ${rig.rig_id}`.toLowerCase();
@@ -471,6 +472,7 @@ async function command(req: Request, action: string, work: (rig: RigMvpRig) => P
   const rig = await getRigMvpRig(await rigIdFromParam(String(req.params.id)));
   const currentRow = await rigToSimulatorRow(rig);
   if (baseRole(req.user?.role) === "admin" && currentRow.branch_id !== (req.user?.branch_id ?? null)) throw new ApiError(403, "Branch scope violation");
+  await requireOpenShiftOwner(currentRow.branch_id, req);
   await work(rig);
   const row = await rigToSimulatorRow(await getRigMvpRig(rig.rig_id));
   await auditLog({ actor: req.user, branch_id: row.branch_id, action_type: action, entity_type: "rig_mvp", entity_id: null, details: { rig_id: rig.rig_id } });

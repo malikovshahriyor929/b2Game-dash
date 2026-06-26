@@ -4,7 +4,7 @@ import { prisma } from "../../db/prisma";
 import { ApiError } from "../../utils/apiError";
 import { auditLog } from "../../services/auditLog.service";
 import { broadcastDashboard } from "../../websocket/dashboardConnection.manager";
-import { requireOpenShift } from "../shifts/shift.guard";
+import { requireOpenShiftOwner } from "../shifts/shift.guard";
 import { debitCustomerBalance } from "../customers/customers.service";
 import { actorScope } from "../../utils/scope";
 
@@ -16,7 +16,8 @@ export async function create(req: Request) {
   const changeAmount = Number(req.body.change_amount ?? 0);
   if (receivedAmount !== null && receivedAmount < Number(req.body.cash_amount ?? 0)) throw new ApiError(400, "Received amount cannot be less than cash amount");
   const branchId = baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : req.body.branch_id;
-  const shiftId = await requireOpenShift(branchId);
+  if (!branchId) throw new ApiError(400, "branch_id is required");
+  const shiftId = await requireOpenShiftOwner(branchId, req);
   // "balance" qismi bo'lsa — to'lov yozishdan oldin mijoz balansidan ayiramiz (mablag' yetmasa to'xtaydi).
   const balanceAmount = Number(req.body.balance_amount ?? 0);
   if (balanceAmount > 0) await debitCustomerBalance(req.body.customer_id ?? null, branchId, balanceAmount);
@@ -64,7 +65,7 @@ export async function payAdminPenalty(req: Request) {
   const changeAmount = Number(req.body.change_amount ?? 0);
   if (receivedAmount !== null && receivedAmount < cash) throw new ApiError(400, "Received amount cannot be less than cash amount");
   const method = String(req.body.method ?? "cash");
-  const shiftId = await requireOpenShift(admin.branch_id);
+  const shiftId = await requireOpenShiftOwner(admin.branch_id, req);
   const note = req.body.note ?? `Admin jarima to'lovi: ${admin.name}`;
 
   const penaltyPayment = (await prisma.$queryRawUnsafe<any[]>(
