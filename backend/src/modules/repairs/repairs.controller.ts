@@ -4,4 +4,5 @@ export const get=asyncHandler(async(req,res)=>ok(res,await s.get(String(req.para
 export const create=asyncHandler(async(req,res)=>created(res,await s.create(req)));
 export const createFromActiveSession=asyncHandler(async(req,res)=>created(res,await s.createFromActiveSession(req)));
 export const close=asyncHandler(async(req,res)=>ok(res,await s.close(req)));
+export const transferSession=asyncHandler(async(req,res)=>ok(res,await s.transferSession(req)));
 export const review=asyncHandler(async(req,res)=>ok(res,await s.review(req)));

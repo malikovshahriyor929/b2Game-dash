@@ -4,7 +4,7 @@ import { prisma } from "../../db/prisma";
 import { ApiError } from "../../utils/apiError";
 import { auditLog } from "../../services/auditLog.service";
 import { broadcastDashboard } from "../../websocket/dashboardConnection.manager";
-import { requireOpenShift } from "../shifts/shift.guard";
+import { requireOpenShiftOwner } from "../shifts/shift.guard";
 import { actorScope } from "../../utils/scope";
 
 function branchId(req: Request) {
@@ -34,7 +34,7 @@ export async function create(req: Request) {
   const source = String(req.body.source ?? "").trim();
   if (!source) throw new ApiError(400, "source is required");
   const method = String(req.body.method ?? "cash");
-  const shiftId = await requireOpenShift(branch);
+  const shiftId = await requireOpenShiftOwner(branch, req);
 
   const row = (await prisma.$queryRawUnsafe<any[]>(
     `insert into expenses(branch_id,shift_id,amount,method,source,note,spent_by)

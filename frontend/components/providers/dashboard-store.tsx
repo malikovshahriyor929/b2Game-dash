@@ -27,6 +27,7 @@ type StartPayload = { customerName: string; phone: string; tariff: string; tarif
 type PeriodFilter = "today" | "yesterday" | "week" | "month" | "year" | "custom";
 type RepairPayload = { title: string; description: string; errorType: RepairErrorType; priority: RepairPriority; note?: string };
 type RevenueEvent = { id: string; time: string; date?: string; amount: number; source: string; branchId?: string; operator?: string };
+type ProfitEvent = { id: string; date: string; amount: number; branchId?: string };
 type PaymentMethod = "cash" | "card" | "qr" | "balance" | "mixed";
 type PaymentPayload = {
   cash_amount: number;
@@ -83,7 +84,8 @@ type DashboardStore = {
   toggleLock: (id: string) => void;
   openMaintenance: (id: string, payload: RepairPayload) => void;
   openMaintenanceDuringSession: (id: string, payload: RepairPayload) => void;
-  closeMaintenance: (id: string) => void;
+  closeMaintenance: (id: string, payload?: RepairPayload) => void;
+  transferMaintenanceSession: (repairRequestId: string, simulatorId: string) => void;
   reviewMaintenance: (requestId: string, decision: "cleared" | "charged", note?: string) => void;
   addBooking: (booking: Booking) => void;
   updateBooking: (booking: Booking) => void;
@@ -134,6 +136,45 @@ function numberValue(value: unknown) {
 
 function dateTimeFromParts(date: string, time: string) {
   return localDateTimeWithOffset(date, time);
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function isoDate(date: Date) {
+  return localDate(date);
+}
+
+function startOfWeek(date: Date) {
+  const next = new Date(date);
+  const day = next.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  next.setDate(next.getDate() + diff);
+  return next;
+}
+
+function matchesPeriod(date: string | undefined, period: PeriodFilter, customStartDate: string, customEndDate: string) {
+  if (!date) return false;
+  const today = new Date();
+  const todayIso = isoDate(today);
+  if (period === "today") return date === todayIso;
+  if (period === "yesterday") return date === isoDate(addDays(today, -1));
+  if (period === "week") {
+    const start = isoDate(startOfWeek(today));
+    const end = isoDate(addDays(startOfWeek(today), 6));
+    return date >= start && date <= end;
+  }
+  if (period === "month") return date.startsWith(todayIso.slice(0, 7));
+  if (period === "year") return date.startsWith(todayIso.slice(0, 4));
+  if (period === "custom") {
+    const start = customStartDate || todayIso;
+    const end = customEndDate || start;
+    return date >= start && date <= end;
+  }
+  return true;
 }
 
 function toApiPaymentMethod(method?: string): PaymentMethod {
@@ -376,6 +417,7 @@ function mapShift(row: Record<string, unknown>, operator: string): Shift {
   return {
     id: String(row.id),
     operator: String(row.opened_by_name ?? operator),
+    openedBy: row.opened_by ? String(row.opened_by) : undefined,
     branchId: String(row.branch_id ?? ""),
     date: shortDate(openedAt),
     shiftType,
@@ -472,6 +514,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
   const [customStartDate, setCustomStartDate] = useState(() => localDate());
   const [customEndDate, setCustomEndDate] = useState(() => localDate());
   const [revenueEvents, setRevenueEvents] = useState<RevenueEvent[]>([]);
+  const [profitEvents, setProfitEvents] = useState<ProfitEvent[]>([]);
   const [repairRequests, setRepairRequests] = useState<RepairRequest[]>([]);
   const repairRequestsRef = useRef<RepairRequest[]>([]);
   const [revenue, setRevenue] = useState(0);
@@ -612,7 +655,16 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       setBarSales(mySaleRows.map((row) => mapSale(row, operator)));
       setCashTransactions([...myPaymentRows.map((row) => mapPayment(row, operator)), ...myExpenseRows.map((row) => mapExpense(row, operator))].sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)));
       setRevenue(myPaymentRows.reduce((sum, row) => sum + realRevenue(row), 0));
-      setProfit(mySaleRows.filter((row) => String(row.payment_status) === "paid").reduce((sum, row) => sum + numberValue(row.profit), 0));
+      const nextProfitEvents = mySaleRows
+        .filter((row) => String(row.payment_status) === "paid")
+        .map((row) => ({
+          id: String(row.id),
+          date: shortDate(String(row.created_at ?? "")),
+          amount: numberValue(row.profit),
+          branchId: String(row.branch_id ?? ""),
+        }));
+      setProfitEvents(nextProfitEvents);
+      setProfit(nextProfitEvents.reduce((sum, row) => sum + row.amount, 0));
       setShopSales(
         mySaleRows
           .filter((row) => String(row.payment_status) === "paid" && shortDate(String(row.created_at ?? "")) === today)
@@ -700,6 +752,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       "repair_status_changed",
       "maintenance_opened",
       "maintenance_closed",
+      "maintenance_session_transferred",
       "maintenance_reviewed",
       "booking_created",
       "shift_opened",
@@ -807,6 +860,30 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
   }
 
   const activeShift = useMemo(() => shifts.find((item) => item.status === "open") ?? null, [shifts]);
+  const periodMatches = (date?: string) => matchesPeriod(date, period, customStartDate, customEndDate);
+  const scopedRevenueEvents = revenueEvents.filter((event) => !event.branchId || visibleBranchIds.includes(event.branchId));
+  const filteredRevenueEvents = scopedRevenueEvents.filter((event) => periodMatches(event.date));
+  const scopedBarSales = barSales.filter((sale) => !sale.branchId || visibleBranchIds.includes(sale.branchId));
+  const filteredBarSales = scopedBarSales.filter((sale) => periodMatches(sale.date));
+  const scopedCashTransactions = cashTransactions.filter((tx) => !tx.branchId || visibleBranchIds.includes(tx.branchId));
+  const filteredCashTransactions = scopedCashTransactions.filter((tx) => periodMatches(tx.date));
+  const scopedShifts = shifts.filter((shift) => !shift.branchId || visibleBranchIds.includes(shift.branchId));
+  const filteredShifts = scopedShifts.filter((shift) => periodMatches(shift.date));
+  const filteredProfit = profitEvents
+    .filter((event) => !event.branchId || visibleBranchIds.includes(event.branchId))
+    .filter((event) => periodMatches(event.date))
+    .reduce((sum, event) => sum + event.amount, 0);
+  const filteredRevenue = filteredRevenueEvents.reduce((sum, event) => sum + event.amount, 0);
+  const filteredExpenses = filteredCashTransactions
+    .filter((tx) => tx.type === "expense")
+    .reduce((sum, tx) => sum + tx.amount, 0);
+  const filteredShopSales = filteredBarSales.reduce((sum, sale) => sum + sale.totalAmount, 0);
+  const canOperateActiveShift = Boolean(activeShift && (role === "super_admin" || role === "dev_super_admin" || activeShift.openedBy === myUserId));
+  function requireActiveShiftOwner() {
+    if (canOperateActiveShift) return true;
+    toast.error(activeShift ? "Bu smena boshqa admin nomiga ochilgan" : "Avval smena oching");
+    return false;
+  }
 
   const value = useMemo<DashboardStore>(() => ({
     loading,
@@ -815,17 +892,17 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     selectedId,
     selected: allSimulators.find((item) => item.id === selectedId && visibleBranchIds.includes(item.branchId)),
     setSelectedId,
-    revenue,
-    profit,
-    expenses,
-    shopSales,
+    revenue: filteredRevenue,
+    profit: filteredProfit,
+    expenses: filteredExpenses,
+    shopSales: filteredShopSales,
     withdrawalRequests: withdrawalRequests.filter((w) => !w.branchId || visibleBranchIds.includes(w.branchId)),
-    revenueEvents: revenueEvents.filter((event) => !event.branchId || visibleBranchIds.includes(event.branchId)),
+    revenueEvents: filteredRevenueEvents,
     logs,
     lockUnlockLogs,
-    barSales: barSales.filter((sale) => !sale.branchId || visibleBranchIds.includes(sale.branchId)),
-    cashTransactions: cashTransactions.filter((tx) => !tx.branchId || visibleBranchIds.includes(tx.branchId)),
-    shifts: shifts.filter((shift) => !shift.branchId || visibleBranchIds.includes(shift.branchId)),
+    barSales: filteredBarSales,
+    cashTransactions: filteredCashTransactions,
+    shifts: filteredShifts,
     activeShift,
     repairRequests: scopedRepairRequests,
     products: inventory,
@@ -860,6 +937,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     customEndDate,
     setCustomEndDate,
     startSession(id, payload) {
+      if (!requireActiveShiftOwner()) return;
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator || !visibleBranchIds.includes(simulator.branchId) || ["offline", "locked", "broken", "repair_requested", "repair_approved", "fixing", "fixed_waiting_confirmation"].includes(simulator.status)) return;
       const isPaid = payload.paymentStatus === "paid";
@@ -892,6 +970,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       appendLog(`started session on ${simulator.name}`, simulator.name);
     },
     addTime(id, minutes, amount, method) {
+      if (!requireActiveShiftOwner()) return;
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator) return;
       const currentSeconds = simulator.remainingSeconds ?? simulator.remainingMinutes * 60;
@@ -938,6 +1017,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       applyLocal();
     },
     pay(id, amount, method) {
+      if (!requireActiveShiftOwner()) return;
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator) return;
       const apiMethod = toApiPaymentMethod(method);
@@ -952,6 +1032,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       appendLog(`received ${amount.toLocaleString("uz-UZ")} by ${method}`, simulator.name, method);
     },
     stopSession(id, override) {
+      if (!requireActiveShiftOwner()) return;
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator || (simulator.paymentStatus !== "paid" && !override)) return;
       if (simulator.rigId) void lockAdminRig(simulator.rigId).then(refreshAfterAction).catch(() => undefined);
@@ -960,6 +1041,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       appendLog(`stopped session on ${simulator.name}`, simulator.name);
     },
     toggleLock(id) {
+      if (!requireActiveShiftOwner()) return;
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator) return;
       const isLocked = simulator.rigId ? Boolean(simulator.rigOnline && simulator.status === "ready_to_play") : simulator.status === "locked";
@@ -1099,7 +1181,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       patchSimulator(id, { status: "repair_requested", repairRequestId: request.id, currentSessionId: null, currentUser: undefined, phone: undefined, tariff: undefined, remainingMinutes: 0, remainingSeconds: 0, paidAmount: 0, paymentStatus: "paid" });
       appendLog(`opened maintenance during session for ${simulator.name}`, simulator.name);
     },
-    closeMaintenance(id) {
+    closeMaintenance(id, payload) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator) return;
       const activeRepair = repairRequests.find((item) => item.simulatorId === simulator.id && item.reviewStatus === "open");
@@ -1109,7 +1191,13 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         refreshAfterAction();
         return;
       }
-      void backendPost<Record<string, unknown>>(`/repair-requests/${repairRequestId}/close`)
+      void backendPost<Record<string, unknown>>(`/repair-requests/${repairRequestId}/close`, payload ? {
+        title: payload.title,
+        description: payload.description,
+        error_type: payload.errorType,
+        priority: payload.priority,
+        admin_note: payload.note,
+      } : {})
         .then((row) => {
           const saved = mapRepair(row);
           setRepairRequests((items) => items.map((item) => (item.id === saved.id ? saved : item)));
@@ -1119,6 +1207,14 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       patchRepair(repairRequestId, { reviewStatus: "pending_review", closedAt: new Date().toLocaleString("uz-UZ") });
       patchSimulator(id, { status: "ready_to_play", repairRequestId: undefined });
       appendLog(`closed maintenance for ${simulator.name}`, simulator.name);
+    },
+    transferMaintenanceSession(repairRequestId, simulatorId) {
+      void backendPost<Record<string, unknown>>(`/repair-requests/${repairRequestId}/transfer-session`, { simulator_id: simulatorId })
+        .then(() => {
+          toast.success("Sessiya qolgan vaqti bilan boshqa simulyatorga o'tkazildi.");
+          refreshAfterAction();
+        })
+        .catch((error) => revertWithError(error, "Sessiyani boshqa simulyatorga o'tkazib bo'lmadi"));
     },
     reviewMaintenance(requestId, decision, note) {
       const request = repairRequests.find((item) => item.id === requestId);
@@ -1263,6 +1359,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       if (existing) appendLog(`deleted product ${existing.name}`);
     },
     recordCashierTransaction(action, amount, method) {
+      if (!requireActiveShiftOwner()) return;
       if (!Number.isFinite(amount) || amount <= 0) return;
       const apiMethod = toApiPaymentMethod(method);
       void backendPost<Record<string, unknown>>("/payments", {
@@ -1282,6 +1379,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       setOrder([]);
     },
     payOrder(attachTo, paymentMethod = "Karta", customerId, payment) {
+      if (!requireActiveShiftOwner()) return;
       const total = order.reduce((sum, item) => sum + item.price * item.qty, 0);
       if (!total) return;
       const simulator = attachTo ? allSimulators.find((item) => item.id === attachTo) : undefined;
@@ -1359,6 +1457,8 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       const newShift: Shift = {
         id: crypto.randomUUID(),
         operator: operatorName,
+        openedBy: myUserId,
+        branchId: effectiveBranchId === "all" ? firstBackendBranchId : effectiveBranchId,
         date: dateStr,
         shiftType,
         status: "open",
@@ -1374,6 +1474,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     },
     closeShift(actualCash, cashWithdrawn, notes) {
       if (!activeShift) return;
+      if (!requireActiveShiftOwner()) return;
       const d = new Date();
       const timeStr = d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
       void backendPost<Record<string, unknown>>(`/shifts/${activeShift.id}/close`, {
@@ -1406,6 +1507,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       appendLog(`closed shift: ${activeShift.shiftType}. Actual cash: ${actualCash.toLocaleString()}`);
     },
     addCashTransaction(type, amount, source, method) {
+      if (!requireActiveShiftOwner()) return;
       const d = new Date();
       const timeStr = d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
       const dateStr = localDate(d);
@@ -1518,16 +1620,22 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
     activeShift,
     customStartDate,
     customEndDate,
+    canOperateActiveShift,
     order,
     operator,
+    myUserId,
     period,
+    profitEvents,
     repairRequests,
-    revenue,
-    profit,
-    expenses,
-    shopSales,
+    filteredRevenue,
+    filteredProfit,
+    filteredExpenses,
+    filteredShopSales,
     withdrawalRequests,
-    revenueEvents,
+    filteredRevenueEvents,
+    filteredBarSales,
+    filteredCashTransactions,
+    filteredShifts,
     role,
     scopedRepairRequests,
     selectedId,

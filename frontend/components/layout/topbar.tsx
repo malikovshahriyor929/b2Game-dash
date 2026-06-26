@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Label } from "@/components/ui/label";
 import { canUseAction } from "@/lib/permissions";
 import { money } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { CreateBranchDialog } from "@/components/layout/create-branch-dialog";
 import { ChangePasswordDialog } from "@/components/shared/change-password-dialog";
@@ -38,7 +39,11 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
     revenue,
     selected,
     selectedBranchId,
+    customEndDate,
+    customStartDate,
     setPeriod,
+    setCustomEndDate,
+    setCustomStartDate,
     setSelectedBranchId,
     simulators,
     toggleLock,
@@ -59,6 +64,8 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
   const [closeNotes, setCloseNotes] = useState("");
 
   const role = data?.user?.role;
+  const isSuperRole = role === "super_admin" || role === "dev_super_admin";
+  const canOperateShift = Boolean(activeShift && (isSuperRole || activeShift.openedBy === data?.user?.id));
   const branchOptions = role === "super_admin" ? branches : branches.filter((branch) => data?.user?.branchIds?.includes(branch.id));
   const active = simulators.filter((item) => ["busy", "unpaid"].includes(item.status)).length;
   const ready = simulators.filter((item) => item.status === "ready_to_play").length;
@@ -90,11 +97,11 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
 
   const quickActions = [
     { key: "refresh", label: "Yangilash", icon: FiRefreshCw, enabled: true, click: () => location.reload() },
-    { key: "start", label: "Boshlash", icon: FiPlay, enabled: Boolean(selected && ["ready_to_play", "reserved"].includes(selected.status) && canUseAction(role, "start")), click: () => onAction("start") },
-    { key: "addTime", label: "Vaqt qo'shish", icon: FiPlusCircle, enabled: Boolean(selected && ["busy", "unpaid"].includes(selected.status) && canUseAction(role, "addTime")), click: () => onAction("addTime") },
-    { key: "payment", label: "To'lov", icon: FiClock, enabled: Boolean(selected && selected.status !== "ready_to_play" && canUseAction(role, "payment")), click: () => onAction("payment") },
-    { key: "stop", label: "To'xtatish", icon: FiSquare, enabled: Boolean(selected && ["busy", "unpaid"].includes(selected.status) && canUseAction(role, "stop")), click: () => onAction("stop") },
-    { key: "lock", label: "Qulflash", icon: FiLock, enabled: Boolean(selected && canUseAction(role, "lock")), click: () => selected && toggleLock(selected.id) },
+    { key: "start", label: "Boshlash", icon: FiPlay, enabled: Boolean(canOperateShift && selected && ["ready_to_play", "reserved"].includes(selected.status) && canUseAction(role, "start")), click: () => onAction("start") },
+    { key: "addTime", label: "Vaqt qo'shish", icon: FiPlusCircle, enabled: Boolean(canOperateShift && selected && ["busy", "unpaid"].includes(selected.status) && canUseAction(role, "addTime")), click: () => onAction("addTime") },
+    { key: "payment", label: "To'lov", icon: FiClock, enabled: Boolean(canOperateShift && selected && selected.status !== "ready_to_play" && canUseAction(role, "payment")), click: () => onAction("payment") },
+    { key: "stop", label: "To'xtatish", icon: FiSquare, enabled: Boolean(canOperateShift && selected && ["busy", "unpaid"].includes(selected.status) && canUseAction(role, "stop")), click: () => onAction("stop") },
+    { key: "lock", label: "Qulflash", icon: FiLock, enabled: Boolean(canOperateShift && selected && canUseAction(role, "lock")), click: () => selected && toggleLock(selected.id) },
   ];
 
   return (
@@ -156,8 +163,8 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
         </div>
       </div>
 
-      <div className="mt-2 grid min-w-0 gap-2 lg:grid-cols-[360px_minmax(220px,1fr)_auto] xl:grid-cols-[420px_minmax(260px,1fr)_auto]">
-        <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+      <div className={cn("mt-2 grid min-w-0 gap-2 lg:grid-cols-[360px_minmax(220px,1fr)_auto] xl:grid-cols-[420px_minmax(260px,1fr)_auto]", period === "custom" && "lg:grid-cols-[620px_minmax(220px,1fr)_auto] xl:grid-cols-[680px_minmax(260px,1fr)_auto]")}>
+        <div className={cn("grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2", period === "custom" && "sm:grid-cols-4")}>
           <Select open={branchSelectOpen} onOpenChange={setBranchSelectOpen} value={selectedBranchId} onValueChange={setSelectedBranchId} disabled={role !== "super_admin"}>
             <SelectTrigger className="h-9 min-w-0"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -188,6 +195,24 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
               <SelectItem value="custom">Maxsus oraliq</SelectItem>
             </SelectContent>
           </Select>
+          {period === "custom" ? (
+            <>
+              <Input
+                type="date"
+                value={customStartDate}
+                onChange={(event) => setCustomStartDate(event.target.value)}
+                className="h-9 min-w-0"
+                aria-label="Boshlanish sanasi"
+              />
+              <Input
+                type="date"
+                value={customEndDate}
+                onChange={(event) => setCustomEndDate(event.target.value)}
+                className="h-9 min-w-0"
+                aria-label="Tugash sanasi"
+              />
+            </>
+          ) : null}
         </div>
 
         <div className="relative min-w-0">
@@ -296,6 +321,7 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
                 <Button
                   className="flex-1"
                   variant="destructive"
+                  disabled={!canOperateShift}
                   onClick={() => {
                     closeShift(actualCashNum ?? expectedCashVal, cashWithdrawnNum, closeNotes);
                     setActualCash("");
@@ -307,6 +333,7 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
                   Smenani yopish
                 </Button>
               </div>
+              {!canOperateShift ? <p className="text-xs font-semibold text-amber-300">Bu smena boshqa admin nomiga ochilgan. Uni faqat smenani ochgan admin yopadi.</p> : null}
             </div>
           ) : (
             <div className="space-y-4 pt-3">

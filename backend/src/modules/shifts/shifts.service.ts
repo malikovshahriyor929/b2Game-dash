@@ -17,6 +17,12 @@ function assertBranchAccess(req: Request, branch: string) {
   }
 }
 
+function assertShiftOwner(req: Request, shift: { opened_by?: string | null }) {
+  if (baseRole(req.user?.role) === "admin" && shift.opened_by !== req.user?.user_id) {
+    throw new ApiError(403, "Open shift belongs to another admin");
+  }
+}
+
 async function computeShiftMoney(shiftId: string) {
   const rows = await prisma.$queryRawUnsafe<Array<{ cash: string; card: string; bank: string; balance: string }>>(
     `select
@@ -148,6 +154,7 @@ export async function close(req: Request) {
   const shift = (await prisma.$queryRawUnsafe<any[]>("select * from shifts where id=$1::uuid", req.params.id))[0];
   if (!shift) throw new ApiError(404, "Shift not found");
   assertBranchAccess(req, shift.branch_id);
+  assertShiftOwner(req, shift);
   if (shift.status === "closed") throw new ApiError(409, "Shift already closed");
 
   const branch = shift.branch_id;

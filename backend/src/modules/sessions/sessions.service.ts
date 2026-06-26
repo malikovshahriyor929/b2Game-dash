@@ -6,7 +6,7 @@ import { auditLog } from "../../services/auditLog.service";
 import { broadcastDashboard } from "../../websocket/dashboardConnection.manager";
 import { getRigMvpRig, lockRigMvp, sendRigMvpCommand, unlockRigMvp } from "../../services/rigMvp.service";
 import { isUuid } from "../../utils/ids";
-import { requireOpenShift } from "../shifts/shift.guard";
+import { requireOpenShiftOwner } from "../shifts/shift.guard";
 import { debitCustomerBalance } from "../customers/customers.service";
 
 async function getSessionScoped(req: Request) {
@@ -27,6 +27,15 @@ function paymentMode(value: unknown) {
 async function sendRigMvpCommandIfSupported(rigId: string, payload: Record<string, unknown>) {
   try {
     await sendRigMvpCommand(rigId, payload);
+  } catch (error) {
+    if (error instanceof ApiError && error.statusCode === 404) return;
+    throw error;
+  }
+}
+
+async function unlockRigMvpIfSupported(rigId: string, minutes?: number) {
+  try {
+    await unlockRigMvp(rigId, minutes);
   } catch (error) {
     if (error instanceof ApiError && error.statusCode === 404) return;
     throw error;
@@ -129,10 +138,13 @@ export async function start(req: Request) {
     const rig = await getRigMvpRig(String(req.body.simulator_id));
     if (!rig.online) throw new ApiError(409, `Rig '${rig.rig_id}' is offline`);
     const durationMinutes = Number(req.body.duration_minutes ?? 0);
-    await unlockRigMvp(rig.rig_id, durationMinutes);
+    const branchId = req.user?.branch_id ?? req.body.branch_id ?? null;
+    if (!branchId) throw new ApiError(400, "branch_id is required");
+    await requireOpenShiftOwner(branchId, req);
+    await unlockRigMvpIfSupported(rig.rig_id, durationMinutes);
     const session = {
       id: `rig-mvp:${rig.rig_id}:${Date.now()}`,
-      branch_id: req.user?.branch_id ?? req.body.branch_id ?? null,
+      branch_id: branchId,
       simulator_id: rig.rig_id,
       customer_name: req.body.customer_name ?? null,
       phone: req.body.phone ?? null,
@@ -150,8 +162,8 @@ export async function start(req: Request) {
       phone: req.body.phone ?? null,
       duration_minutes: durationMinutes,
     });
-    await auditLog({ actor: req.user, branch_id: null, action_type: "start_session", entity_type: "rig_mvp", details: { rig_id: rig.rig_id, duration_minutes: session.duration_minutes } });
-    broadcastDashboard("session_started", session, null);
+    await auditLog({ actor: req.user, branch_id: branchId, action_type: "start_session", entity_type: "rig_mvp", details: { rig_id: rig.rig_id, duration_minutes: session.duration_minutes } });
+    broadcastDashboard("session_started", session, branchId);
     return session;
   }
   const simRows = await prisma.$queryRawUnsafe<any[]>("select * from simulators where id=$1::uuid", req.body.simulator_id);
@@ -184,7 +196,7 @@ export async function start(req: Request) {
     throw new ApiError(409, `Bu PC ${conflict.start_label} da bron qilingan${conflict.customer_name ? ` (${conflict.customer_name})` : ""} — sessiya bron vaqtiga to'g'ri keladi. Qisqaroq vaqt tanlang.`);
   }
   // To'lov bo'ladigan bo'lsa, ochiq smena shart — sessiya yaratishdan oldin tekshiramiz (orphan bo'lmasligi uchun).
-  const shiftId = amount > 0 ? await requireOpenShift(sim.branch_id) : null;
+  const shiftId = await requireOpenShiftOwner(sim.branch_id, req);
   // "balance" usulida — sessiya yaratishdan OLDIN balansdan ayiramiz (mablag' yetmasa bu yerda to'xtaydi).
   if (req.body.method === "balance" && amount > 0) await debitCustomerBalance(req.body.customer_id ?? null, sim.branch_id, amount);
   const rows = await prisma.$queryRawUnsafe<any[]>(
@@ -203,7 +215,7 @@ export async function start(req: Request) {
   if (amount > 0) await prisma.$executeRawUnsafe("insert into payments(branch_id,shift_id,session_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,paid_by_admin_id) values($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6,$7,$8,$9,$10,$11::uuid)", sim.branch_id, shiftId, session.id, req.body.customer_id ?? null, amount, req.body.method, req.body.method === "cash" ? amount : 0, req.body.method === "card" ? amount : 0, req.body.method === "qr" ? amount : 0, req.body.method === "balance" ? amount : 0, req.user!.user_id);
   if (sim.ws_rig_id) {
     // Open sessions unlock the rig indefinitely (no duration cap); fixed sessions cap to duration.
-    await unlockRigMvp(sim.ws_rig_id, billing.open ? undefined : durationMinutes);
+    await unlockRigMvpIfSupported(sim.ws_rig_id, billing.open ? undefined : durationMinutes);
     await sendRigMvpCommandIfSupported(sim.ws_rig_id, {
       type: "start_session",
       session_id: session.id,
@@ -321,7 +333,7 @@ async function extendRigSessionTime(simulatorId: string, addedMinutes: number, r
   if (!rigId) return;
 
   const remainingMinutes = Math.max(1, Math.ceil(remainingSeconds / 60));
-  await unlockRigMvp(rigId, remainingMinutes);
+  await unlockRigMvpIfSupported(rigId, remainingMinutes);
   await sendRigMvpCommandIfSupported(rigId, {
     type: "add_time",
     minutes: addedMinutes,
@@ -335,7 +347,7 @@ export async function addTime(req: Request) {
   const amount = Number(req.body.amount ?? 0);
   if (!Number.isFinite(minutes) || minutes <= 0) throw new ApiError(400, "minutes must be positive");
   // To'lov bo'ladigan bo'lsa, ochiq smena shart — sessiyani o'zgartirishdan oldin tekshiramiz.
-  const shiftId = amount > 0 ? await requireOpenShift(s.branch_id) : null;
+  const shiftId = await requireOpenShiftOwner(s.branch_id, req);
   // "balance" usulida — o'zgartirishdan oldin balansdan ayiramiz (mablag' yetmasa to'xtaydi).
   if (req.body.method === "balance" && amount > 0) await debitCustomerBalance(s.customer_id ?? null, s.branch_id, amount);
 
@@ -393,10 +405,24 @@ export async function addTime(req: Request) {
   broadcastDashboard("simulator_updated", { session_id: updated.id }, updated.branch_id);
   return updated;
 }
-export async function pause(req: Request) { const s = await getSessionScoped(req); await prisma.$executeRawUnsafe("update sessions set status='paused' where id=$1::uuid", s.id); await auditLog({ actor: req.user, branch_id: s.branch_id, action_type: "pause_session", entity_type: "session", entity_id: s.id, session_id: s.id }); return { ok: true }; }
-export async function resume(req: Request) { const s = await getSessionScoped(req); await prisma.$executeRawUnsafe("update sessions set status='active' where id=$1::uuid", s.id); await auditLog({ actor: req.user, branch_id: s.branch_id, action_type: "resume_session", entity_type: "session", entity_id: s.id, session_id: s.id }); return { ok: true }; }
+export async function pause(req: Request) {
+  const s = await getSessionScoped(req);
+  await requireOpenShiftOwner(s.branch_id, req);
+  await prisma.$executeRawUnsafe("update sessions set status='paused' where id=$1::uuid", s.id);
+  await auditLog({ actor: req.user, branch_id: s.branch_id, action_type: "pause_session", entity_type: "session", entity_id: s.id, session_id: s.id });
+  return { ok: true };
+}
+
+export async function resume(req: Request) {
+  const s = await getSessionScoped(req);
+  await requireOpenShiftOwner(s.branch_id, req);
+  await prisma.$executeRawUnsafe("update sessions set status='active' where id=$1::uuid", s.id);
+  await auditLog({ actor: req.user, branch_id: s.branch_id, action_type: "resume_session", entity_type: "session", entity_id: s.id, session_id: s.id });
+  return { ok: true };
+}
 export async function stop(req: Request) {
   const s = await getSessionScoped(req);
+  await requireOpenShiftOwner(s.branch_id, req);
   await finalizeSessionStop(s, { stoppedBy: req.user!.user_id });
   await auditLog({
     actor: req.user,
