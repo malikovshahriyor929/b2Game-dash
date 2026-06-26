@@ -8,6 +8,7 @@ import { getRigMvpRig, lockRigMvp, sendRigMvpCommand, unlockRigMvp } from "../..
 import { isUuid } from "../../utils/ids";
 import { requireOpenShiftOwner } from "../shifts/shift.guard";
 import { debitCustomerBalance } from "../customers/customers.service";
+import { assertTariffAvailableNow } from "../tariffs/tariffs.service";
 
 async function getSessionScoped(req: Request) {
   const rows = await prisma.$queryRawUnsafe<any[]>("select * from sessions where id=$1::uuid and ($2::uuid is null or branch_id=$2::uuid)", req.params.id, baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : null);
@@ -171,6 +172,7 @@ export async function start(req: Request) {
   if (!sim) throw new ApiError(404, "Simulator not found");
   if (baseRole(req.user?.role) === "admin" && sim.branch_id !== (req.user?.branch_id ?? null)) throw new ApiError(403, "Branch scope violation");
   if (!["ready_to_play","reserved"].includes(sim.status)) throw new ApiError(409, `Simulator is ${sim.status}`);
+  if (isUuid(req.body.tariff_id)) await assertTariffAvailableNow(req.body.tariff_id);
   const billing = await resolveTariffBilling(req.body.tariff_id);
   const amount = Number(req.body.paid_amount ?? 0);
   // Open (VIP) sessions have no fixed duration — they count up and are billed at stop.

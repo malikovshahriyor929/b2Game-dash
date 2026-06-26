@@ -2,6 +2,7 @@ import { baseRole } from "../../types/auth.types";
 import { createGenericService } from "../_shared/generic.service";
 import { Request } from "express";
 import { prisma } from "../../db/prisma";
+import { ApiError } from "../../utils/apiError";
 
 function branchScope(req: Request) {
   if (baseRole(req.user?.role) === "admin") return { where: "branch_id=$1::uuid", values: [(req.user?.branch_id ?? null)] };
@@ -29,6 +30,17 @@ const HAPPY_HOUR = {
   isodowTo: 4,
 } as const;
 
+function happyHourSql(alias = "t") {
+  return `(
+    lower(${alias}.type) = 'happy_hour'
+    or (
+      ${alias}.simulator_zone = 'main'
+      and ${alias}.duration_minutes = 25
+      and coalesce(${alias}.weekday_price, ${alias}.price)::numeric = ${HAPPY_HOUR.price}
+    )
+  )`;
+}
+
 export const tariffsService = {
   ...baseService,
   async list(req: Request) {
@@ -45,8 +57,10 @@ export const tariffsService = {
            c.dow in (6,7) as is_weekend,
            (
              c.dow between ${HAPPY_HOUR.isodowFrom} and ${HAPPY_HOUR.isodowTo}
-             and lower(t.type) = 'time'
-             and t.name ilike '${HAPPY_HOUR.brandPattern}'
+             and (
+               (lower(t.type) = 'time' and t.name ilike '${HAPPY_HOUR.brandPattern}')
+               or ${happyHourSql("t")}
+             )
              and c.local_time >= time '${HAPPY_HOUR.startHour}:00'
              and (c.local_time + make_interval(mins => t.duration_minutes)) <= time '${HAPPY_HOUR.endHour}:00'
            ) as is_happy_hour
@@ -77,8 +91,34 @@ export const tariffsService = {
          current_price as price,
          current_bonus as bonus
        from priced
+       where not ${happyHourSql("priced")} or is_happy_hour
        order by branch_id, simulator_zone, lower(trim(name)), duration_minutes, type, updated_at desc, id`,
       ...s.values,
     );
   },
 };
+
+export async function assertTariffAvailableNow(tariffId: string) {
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+    `with clock as (
+       select
+         extract(isodow from now() at time zone 'Asia/Tashkent')::int as dow,
+         (now() at time zone 'Asia/Tashkent')::time as local_time
+     )
+     select t.id
+       from tariffs t cross join clock c
+      where t.id=$1::uuid
+        and t.is_active=true
+        and (
+          not ${happyHourSql("t")}
+          or (
+            c.dow between ${HAPPY_HOUR.isodowFrom} and ${HAPPY_HOUR.isodowTo}
+            and c.local_time >= time '${HAPPY_HOUR.startHour}:00'
+            and (c.local_time + make_interval(mins => t.duration_minutes)) <= time '${HAPPY_HOUR.endHour}:00'
+          )
+        )
+      limit 1`,
+    tariffId,
+  );
+  if (!rows.length) throw new ApiError(409, "Bu tarif hozir aktiv emas");
+}
