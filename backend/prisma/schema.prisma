@@ -48,9 +48,9 @@ model Simulator {
   isOnline         Boolean   @default(false) @map("is_online")
   currentSessionId String?   @map("current_session_id") @db.Uuid
   lastSeenAt       DateTime? @map("last_seen_at")
-  mapPosition      Json?     @map("map_position")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
+  mapPosition      Json?     @map("map_position")
 
   @@unique([branchId, code])
   @@map("simulators")
@@ -73,14 +73,14 @@ model Tariff {
   simulatorZone   String   @map("simulator_zone")
   durationMinutes Int      @map("duration_minutes")
   price           Decimal
-  type            String
-  isActive        Boolean  @default(true) @map("is_active")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
   weekdayPrice    Decimal? @map("weekday_price") @db.Decimal(14, 2)
   weekendPrice    Decimal? @map("weekend_price") @db.Decimal(14, 2)
   weekdayBonus    String?  @map("weekday_bonus")
   weekendBonus    String?  @map("weekend_bonus")
+  type            String
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("tariffs")
 }
@@ -111,8 +111,6 @@ model Session {
   tariffId         String?   @map("tariff_id") @db.Uuid
   status           String
   paymentMode      String    @map("payment_mode")
-  billingMode      String    @default("fixed") @map("billing_mode")
-  hourlyRate       Decimal   @default(0) @map("hourly_rate") @db.Decimal(14, 2)
   startedAt        DateTime  @default(now()) @map("started_at")
   endedAt          DateTime? @map("ended_at")
   durationMinutes  Int       @map("duration_minutes")
@@ -128,6 +126,8 @@ model Session {
   stoppedBy        String?   @map("stopped_by") @db.Uuid
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
+  billingMode      String    @default("fixed") @map("billing_mode")
+  hourlyRate       Decimal   @default(0) @map("hourly_rate") @db.Decimal(14, 2)
 
   @@map("sessions")
 }
@@ -135,7 +135,6 @@ model Session {
 model Payment {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   branchId       String   @map("branch_id") @db.Uuid
-  shiftId        String?  @map("shift_id") @db.Uuid
   sessionId      String?  @map("session_id") @db.Uuid
   saleId         String?  @map("sale_id") @db.Uuid
   customerId     String?  @map("customer_id") @db.Uuid
@@ -145,12 +144,13 @@ model Payment {
   cardAmount     Decimal  @default(0) @map("card_amount")
   qrAmount       Decimal  @default(0) @map("qr_amount")
   balanceAmount  Decimal  @default(0) @map("balance_amount")
+  receivedAmount Decimal? @map("received_amount") @db.Decimal(14, 2)
+  changeAmount   Decimal  @default(0) @map("change_amount") @db.Decimal(14, 2)
   status         String   @default("paid")
   paidByAdminId  String   @map("paid_by_admin_id") @db.Uuid
   paidAt         DateTime @default(now()) @map("paid_at")
   createdAt      DateTime @default(now()) @map("created_at")
-  receivedAmount Decimal? @map("received_amount") @db.Decimal(14, 2)
-  changeAmount   Decimal  @default(0) @map("change_amount") @db.Decimal(14, 2)
+  shiftId        String?  @map("shift_id") @db.Uuid
   sourceType     String   @default("payment") @map("source_type")
   sourceNote     String?  @map("source_note")
 
@@ -204,10 +204,10 @@ model Product {
   barcode   String   @unique
   price     Decimal
   cost      Decimal  @default(0)
+  icon      String   @default("snack") @db.VarChar(40)
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
-  icon      String   @default("snack") @db.VarChar(40)
 
   @@map("products")
 }
@@ -287,80 +287,79 @@ model Booking {
   startTime       DateTime @map("start_time")
   endTime         DateTime @map("end_time")
   status          String   @default("pending")
-  tariffName      String?  @map("tariff_name")
-  prepayment      Decimal  @default(0) @db.Decimal(14, 2)
   note            String?
   createdBy       String   @map("created_by") @db.Uuid
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+  tariffName      String?  @map("tariff_name")
+  prepayment      Decimal  @default(0) @db.Decimal(14, 2)
 
   @@map("bookings")
 }
 
 model RepairRequest {
-  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  branchId        String    @map("branch_id") @db.Uuid
-  simulatorId     String    @map("simulator_id") @db.Uuid
-  sessionId       String?   @map("session_id") @db.Uuid
-  openedDuringSession Boolean @default(false) @map("opened_during_session")
-  requestedBy     String    @map("requested_by") @db.Uuid
-  approvedBy      String?   @map("approved_by") @db.Uuid
-  confirmedBy     String?   @map("confirmed_by") @db.Uuid
-  title           String
-  description     String
-  errorType       String    @map("error_type")
-  priority        String
-  status          String    @default("requested")
-  adminNote       String?   @map("admin_note")
-  superAdminNote  String?   @map("super_admin_note")
-  requestedAt     DateTime  @default(now()) @map("requested_at")
-  approvedAt      DateTime? @map("approved_at")
-  fixingStartedAt DateTime? @map("fixing_started_at")
-  markedFixedAt   DateTime? @map("marked_fixed_at")
-  confirmedAt     DateTime? @map("confirmed_at")
-  revenueImpact   Decimal   @default(0) @map("revenue_impact")
-  // Maintenance accountability flow (admin opens & closes; super admin reviews & charges)
-  closedAt        DateTime? @map("closed_at")
-  durationMinutes Int?      @map("duration_minutes")
-  chargeAmount    Decimal   @default(0) @map("charge_amount") @db.Decimal(14, 2)
-  reviewStatus    String    @default("open") @map("review_status")
-  reviewedBy      String?   @map("reviewed_by") @db.Uuid
-  reviewedAt      DateTime? @map("reviewed_at")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  branchId            String    @map("branch_id") @db.Uuid
+  simulatorId         String    @map("simulator_id") @db.Uuid
+  requestedBy         String    @map("requested_by") @db.Uuid
+  approvedBy          String?   @map("approved_by") @db.Uuid
+  confirmedBy         String?   @map("confirmed_by") @db.Uuid
+  title               String
+  description         String
+  errorType           String    @map("error_type")
+  priority            String
+  status              String    @default("requested")
+  adminNote           String?   @map("admin_note")
+  superAdminNote      String?   @map("super_admin_note")
+  requestedAt         DateTime  @default(now()) @map("requested_at")
+  approvedAt          DateTime? @map("approved_at")
+  fixingStartedAt     DateTime? @map("fixing_started_at")
+  markedFixedAt       DateTime? @map("marked_fixed_at")
+  confirmedAt         DateTime? @map("confirmed_at")
+  revenueImpact       Decimal   @default(0) @map("revenue_impact")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at")
+  closedAt            DateTime? @map("closed_at")
+  durationMinutes     Int?      @map("duration_minutes")
+  chargeAmount        Decimal   @default(0) @map("charge_amount") @db.Decimal(14, 2)
+  reviewStatus        String    @default("open") @map("review_status")
+  reviewedBy          String?   @map("reviewed_by") @db.Uuid
+  reviewedAt          DateTime? @map("reviewed_at")
+  sessionId           String?   @map("session_id") @db.Uuid
+  openedDuringSession Boolean   @default(false) @map("opened_during_session")
 
   @@map("repair_requests")
 }
 
 model Shift {
-  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  branchId      String    @map("branch_id") @db.Uuid
-  openedBy      String    @map("opened_by") @db.Uuid
-  closedBy      String?   @map("closed_by") @db.Uuid
-  status        String    @default("open")
-  shiftType     String?   @map("shift_type")
-  startingCash  Decimal   @default(0) @map("starting_cash")
-  expectedCash  Decimal   @default(0) @map("expected_cash")
-  actualCash    Decimal?  @map("actual_cash")
-  cashSales     Decimal   @default(0) @map("cash_sales")
-  cardTotal     Decimal   @default(0) @map("card_total")
-  qrTotal       Decimal   @default(0) @map("qr_total")
-  balanceSales  Decimal   @default(0) @map("balance_sales")
-  totalRevenue  Decimal   @default(0) @map("total_revenue")
-  productSales  Decimal   @default(0) @map("product_sales")
-  sessionSales  Decimal   @default(0) @map("session_sales")
-  cashWithdrawn Decimal   @default(0) @map("cash_withdrawn")
-  cardWithdrawn Decimal   @default(0) @map("card_withdrawn")
-  bankWithdrawn Decimal   @default(0) @map("bank_withdrawn")
-  remainingCash Decimal   @default(0) @map("remaining_cash")
-  withdrawRecipient String? @map("withdraw_recipient")
-  refunds       Decimal   @default(0)
-  difference    Decimal   @default(0)
-  notes         String?
-  openedAt      DateTime  @default(now()) @map("opened_at")
-  closedAt      DateTime? @map("closed_at")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at")
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  branchId          String    @map("branch_id") @db.Uuid
+  openedBy          String    @map("opened_by") @db.Uuid
+  closedBy          String?   @map("closed_by") @db.Uuid
+  status            String    @default("open")
+  startingCash      Decimal   @default(0) @map("starting_cash")
+  expectedCash      Decimal   @default(0) @map("expected_cash")
+  actualCash        Decimal?  @map("actual_cash")
+  cardTotal         Decimal   @default(0) @map("card_total")
+  qrTotal           Decimal   @default(0) @map("qr_total")
+  productSales      Decimal   @default(0) @map("product_sales")
+  sessionSales      Decimal   @default(0) @map("session_sales")
+  refunds           Decimal   @default(0)
+  difference        Decimal   @default(0)
+  notes             String?
+  openedAt          DateTime  @default(now()) @map("opened_at")
+  closedAt          DateTime? @map("closed_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at")
+  shiftType         String?   @map("shift_type")
+  cashSales         Decimal   @default(0) @map("cash_sales")
+  balanceSales      Decimal   @default(0) @map("balance_sales")
+  totalRevenue      Decimal   @default(0) @map("total_revenue")
+  cashWithdrawn     Decimal   @default(0) @map("cash_withdrawn")
+  cardWithdrawn     Decimal   @default(0) @map("card_withdrawn")
+  bankWithdrawn     Decimal   @default(0) @map("bank_withdrawn")
+  remainingCash     Decimal   @default(0) @map("remaining_cash")
+  withdrawRecipient String?   @map("withdraw_recipient")
 
   @@map("shifts")
 }
@@ -369,7 +368,7 @@ model ShiftWithdrawal {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   shiftId     String   @map("shift_id") @db.Uuid
   branchId    String   @map("branch_id") @db.Uuid
-  source      String // 'cash' | 'card' | 'bank'
+  source      String
   amount      Decimal
   recipient   String?
   note        String?
@@ -389,7 +388,7 @@ model CashWithdrawalRequest {
   amount        Decimal   @db.Decimal(14, 2)
   initiatedBy   String    @map("initiated_by") @db.Uuid
   initiatorRole String    @map("initiator_role")
-  status        String    @default("pending") // 'pending' | 'confirmed' | 'rejected'
+  status        String    @default("pending")
   note          String?
   confirmedBy   String?   @map("confirmed_by") @db.Uuid
   createdAt     DateTime  @default(now()) @map("created_at")
