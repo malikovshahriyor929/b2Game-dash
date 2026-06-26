@@ -13,6 +13,7 @@ import { backendDateTime } from "@/lib/datetime";
 import { Simulator } from "@/types/simulator";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { RequestFixDialog } from "@/components/simulator/request-fix-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 function Field({ label, value }: { label: string; value?: React.ReactNode }) {
   return <div className="rounded-xl bg-slate-900/70 p-3"><div className="text-xs text-slate-500">{label}</div><div className="mt-1 text-sm font-semibold text-slate-100">{value ?? "-"}</div></div>;
@@ -30,7 +31,7 @@ const MAINTENANCE_STATUS_LABELS: Record<string, string> = {
 };
 
 export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator; onAction: (action: "start" | "addTime" | "payment" | "stop") => void }) {
-  const { closeMaintenance, repairRequests, toggleLock, notifyRig, pushRigUpdate, removeOfflineRig } = useDashboardStore();
+  const { closeMaintenance, transferMaintenanceSession, repairRequests, allSimulators, toggleLock, notifyRig, pushRigUpdate, removeOfflineRig } = useDashboardStore();
   const confirm = useConfirm();
   const { data } = useSession();
 
@@ -46,6 +47,8 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
   }
   const [fixOpen, setFixOpen] = useState(false);
   const [sessionFixOpen, setSessionFixOpen] = useState(false);
+  const [closeMaintenanceOpen, setCloseMaintenanceOpen] = useState(false);
+  const [transferTargetId, setTransferTargetId] = useState("");
   if (!simulator) return null;
   const role = data?.user?.role;
   const canOperate = role === "admin" || role === "super_admin";
@@ -70,6 +73,9 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
   const showRigDetails = isSuperAdmin && Boolean(simulator.rigId);
   const showRigActions = isSuperAdmin && Boolean(simulator.rigId);
   const showRepairActions = canCloseMaintenance;
+  const transferTargets = repairRequest?.sessionId
+    ? allSimulators.filter((item) => item.branchId === simulator.branchId && item.id !== simulator.id && item.status === "ready_to_play")
+    : [];
 
   return (
     <>
@@ -154,15 +160,25 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
           <div className="mt-5 space-y-2">
             <div className="text-xs font-semibold uppercase text-slate-500">Ta'mir jarayoni</div>
             <div className="grid gap-2 sm:grid-cols-2">
-              {canCloseMaintenance ? <Button variant="success" onClick={() => closeMaintenance(simulator.id)}><FiCheckCircle /> Maintenance yopish</Button> : null}
+              {canCloseMaintenance ? <Button variant="success" onClick={() => repairRequest?.openedDuringSession ? setCloseMaintenanceOpen(true) : closeMaintenance(simulator.id)}><FiCheckCircle /> Maintenance yopish</Button> : null}
+              {repairRequest?.sessionId ? (
+                <div className="flex gap-2 sm:col-span-2">
+                  <Select value={transferTargetId} onValueChange={setTransferTargetId}>
+                    <SelectTrigger><SelectValue placeholder="Bo'sh simulyatorni tanlang" /></SelectTrigger>
+                    <SelectContent>{transferTargets.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                  <Button variant="secondary" disabled={!transferTargetId} onClick={() => transferMaintenanceSession(repairRequest.id, transferTargetId)}><FiPlay /> Sessiyani ko'chirish</Button>
+                </div>
+              ) : null}
             </div>
-            <p className="text-xs text-slate-500">Yopgach simulyator darhol ishga qaytadi. Ketgan vaqt tarif bo'yicha hisoblanib, super admin tekshiruviga yuboriladi.</p>
+            <p className="text-xs text-slate-500">Yopilgach mijoz sessiyasi qolgan vaqt bilan davom etadi. Ta'mir cho'zilishini bilsangiz, sessiyani istalgan payt bo'sh simulyatorga ko'chiring; maintenance vaqti super admin tekshiruviga darhol yuboriladi.</p>
           </div>
         ) : null}
         </SheetContent>
       </Sheet>
       <RequestFixDialog open={fixOpen} onOpenChange={setFixOpen} simulator={simulator} />
       <RequestFixDialog open={sessionFixOpen} onOpenChange={setSessionFixOpen} simulator={simulator} duringSession />
+      <RequestFixDialog open={closeMaintenanceOpen} onOpenChange={setCloseMaintenanceOpen} simulator={simulator} closing repairRequest={repairRequest} />
     </>
   );
 }

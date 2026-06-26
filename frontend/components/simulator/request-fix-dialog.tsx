@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
-import { RepairErrorType, RepairPriority, Simulator } from "@/types/simulator";
+import { RepairErrorType, RepairPriority, RepairRequest, Simulator } from "@/types/simulator";
 
 const ERROR_TYPE_LABELS: Record<RepairErrorType, string> = {
   game_error: "O'yin xatosi",
@@ -25,8 +25,8 @@ const PRIORITY_LABELS: Record<RepairPriority, string> = {
   critical: "Juda muhim",
 };
 
-export function RequestFixDialog({ open, onOpenChange, simulator, duringSession = false }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator; duringSession?: boolean }) {
-  const { openMaintenance, openMaintenanceDuringSession } = useDashboardStore();
+export function RequestFixDialog({ open, onOpenChange, simulator, duringSession = false, closing = false, repairRequest }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator; duringSession?: boolean; closing?: boolean; repairRequest?: RepairRequest }) {
+  const { openMaintenance, openMaintenanceDuringSession, closeMaintenance } = useDashboardStore();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [errorType, setErrorType] = useState<RepairErrorType>("device_error");
@@ -35,17 +35,26 @@ export function RequestFixDialog({ open, onOpenChange, simulator, duringSession 
 
   useEffect(() => {
     if (!open) return;
-    setTitle("");
-    setDescription("");
-    setErrorType("device_error");
-    setPriority("medium");
-    setNote("");
-  }, [open, simulator?.id]);
+    setTitle(closing ? repairRequest?.title ?? "" : "");
+    setDescription(closing ? repairRequest?.description ?? "" : "");
+    setErrorType(closing ? repairRequest?.errorType ?? "device_error" : "device_error");
+    setPriority(closing ? repairRequest?.priority ?? "medium" : "medium");
+    setNote(closing ? repairRequest?.note ?? "" : "");
+  }, [open, simulator?.id, closing, repairRequest]);
 
   function submit() {
-    if (!simulator || !title.trim() || !description.trim()) return;
+    if (!simulator) return;
+    if (!duringSession || closing) {
+      if (!title.trim() || !description.trim()) return;
+    }
     const payload = { title, description, errorType, priority, note };
-    if (duringSession) openMaintenanceDuringSession(simulator.id, payload);
+    if (closing) closeMaintenance(simulator.id, payload);
+    else if (duringSession) openMaintenanceDuringSession(simulator.id, {
+      title: "Sessiya vaqtida texnik nosozlik",
+      description: "Muammo tafsilotlari maintenance yopilayotganda kiritiladi.",
+      errorType: "other",
+      priority: "medium",
+    });
     else openMaintenance(simulator.id, payload);
     onOpenChange(false);
   }
@@ -54,14 +63,16 @@ export function RequestFixDialog({ open, onOpenChange, simulator, duringSession 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{duringSession ? "Sessiya vaqtida buzildi" : "Maintenance ochish"}</DialogTitle>
+          <DialogTitle>{closing ? "Maintenance yakunlash" : duringSession ? "Sessiya vaqtida buzildi" : "Maintenance ochish"}</DialogTitle>
           <DialogDescription>
-            {duringSession
-              ? `${simulator?.name} aktiv sessiyasi to'xtatiladi va simulator ta'mirga olinadi. Super admin keyin sessiya bilan bog'langan maintenance'ni ko'radi.`
+            {closing
+              ? "Muammo tafsilotlarini kiriting. Sessiya qolgan vaqti bilan davom etadi, maintenance vaqti esa super admin tekshiruviga yuboriladi."
+              : duringSession
+              ? `${simulator?.name} aktiv sessiyasi pauzaga qo'yiladi: qolgan vaqt saqlanadi, simulator lock qilinmaydi. Ta'mir tugagach sessiya shu qolgan vaqt bilan davom etadi; cho'zilsa bo'sh simulyatorga ko'chiriladi.`
               : `${simulator?.name} ta'mirga olinadi. Yopilgach super admin tekshiradi — bekorga ochilsa, ketgan vaqt jarima sifatida hisobingizdan ayiriladi.`}
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-3">
+        {(!duringSession || closing) ? <div className="grid gap-3">
           <div className="space-y-2">
             <Label>Muammo sarlavhasi</Label>
             <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Qisqa muammo sarlavhasi" />
@@ -94,10 +105,10 @@ export function RequestFixDialog({ open, onOpenChange, simulator, duringSession 
             <Label>Qo&apos;shimcha izoh (ixtiyoriy)</Label>
             <Input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Qo'shimcha ma'lumot" />
           </div>
-        </div>
+        </div> : null}
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Bekor qilish</Button>
-          <Button disabled={!title.trim() || !description.trim()} onClick={submit}>{duringSession ? "Sessiyani to'xtatib maintenance ochish" : "Maintenance ochish"}</Button>
+          <Button disabled={(!duringSession || closing) && (!title.trim() || !description.trim())} onClick={submit}>{closing ? "Maintenance yakunlash" : duringSession ? "Tasdiqlash va sessiyani pauza qilish" : "Maintenance ochish"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -5,9 +5,29 @@ import { ApiError } from "../../utils/apiError";
 import { auditLog } from "../../services/auditLog.service";
 import { broadcastDashboard } from "../../websocket/dashboardConnection.manager";
 import { isUuid } from "../../utils/ids";
-import { finalizeSessionStop } from "../sessions/sessions.service";
+import { sendRigMvpCommand, unlockRigMvp } from "../../services/rigMvp.service";
 
 const MAX_MAINTENANCE_CHARGE_MINUTES = 24 * 60;
+
+// Older Rig-MVP agents do not implement /command. The dashboard session remains
+// authoritative, so an optional device command must not fail a maintenance resume.
+async function sendRigCommandIfSupported(rigId: string, payload: Record<string, unknown>) {
+  try {
+    await sendRigMvpCommand(rigId, payload);
+  } catch (error) {
+    if (error instanceof ApiError && error.statusCode === 404) return;
+    throw error;
+  }
+}
+
+async function unlockRigIfSupported(rigId: string, minutes?: number) {
+  try {
+    await unlockRigMvp(rigId, minutes);
+  } catch (error) {
+    if (error instanceof ApiError && error.statusCode === 404) return;
+    throw error;
+  }
+}
 
 function cappedStoredMaintenance(row: { charge_amount?: unknown; duration_minutes?: unknown }) {
   const chargeAmount = Number(row.charge_amount ?? 0);
@@ -151,8 +171,8 @@ export async function create(req: Request) {
   return row;
 }
 
-// Admin opens maintenance while a game session is active. The session is stopped first,
-// then the repair request is linked to that interrupted session for super-admin review.
+// Admin opens maintenance while a game session is active. The customer timer is paused,
+// not stopped, and the request is linked to it for super-admin review.
 export async function createFromActiveSession(req: Request) {
   if (!isUuid(req.body.simulator_id)) throw new ApiError(400, "Repair simulator_id must be backend simulator UUID");
   const sim = (await prisma.$queryRawUnsafe<any[]>("select * from simulators where id=$1::uuid", req.body.simulator_id))[0];
@@ -160,7 +180,8 @@ export async function createFromActiveSession(req: Request) {
   if (baseRole(req.user?.role) === "admin" && sim.branch_id !== (req.user?.branch_id ?? null)) throw new ApiError(403, "Branch scope violation");
 
   const session = (await prisma.$queryRawUnsafe<any[]>(
-    `select id, simulator_id, branch_id, debt_amount, billing_mode
+    `select id, simulator_id, branch_id, debt_amount, billing_mode, duration_minutes, added_minutes,
+            remaining_seconds, started_at
        from sessions
       where simulator_id=$1::uuid and status='active'
       order by started_at desc
@@ -172,7 +193,17 @@ export async function createFromActiveSession(req: Request) {
   const openExists = (await prisma.$queryRawUnsafe<any[]>("select id from repair_requests where simulator_id=$1::uuid and review_status='open' limit 1", sim.id))[0];
   if (openExists) throw new ApiError(409, "Simulator already has an open maintenance");
 
-  await finalizeSessionStop(session, { stoppedBy: req.user!.user_id });
+  // Freeze the exact remainder. When the session resumes its started_at is rebased,
+  // so maintenance time cannot be deducted by normal expiry calculations.
+  const paused = (await prisma.$queryRawUnsafe<any[]>(
+    `update sessions set status='paused',
+       remaining_seconds=case when billing_mode='open' then greatest(extract(epoch from (now() - started_at))::int, 0)
+         else greatest(((duration_minutes + added_minutes) * 60 - extract(epoch from (now() - started_at))::int), 0) end,
+       updated_at=now()
+     where id=$1::uuid and status='active' returning *`,
+    session.id,
+  ))[0];
+  if (!paused) throw new ApiError(409, "Session is no longer active");
 
   const row = (await prisma.$queryRawUnsafe<any[]>(
     `insert into repair_requests(branch_id,simulator_id,session_id,opened_during_session,requested_by,title,description,error_type,priority,status,review_status,admin_note)
@@ -188,6 +219,8 @@ export async function createFromActiveSession(req: Request) {
     req.body.admin_note ?? null,
   ))[0];
   await prisma.$executeRawUnsafe("update simulators set status='repair_requested', current_session_id=null where id=$1::uuid", sim.id);
+  // Maintenance is not a lock: technician must be able to use the workstation.
+  if (sim.ws_rig_id) await unlockRigIfSupported(sim.ws_rig_id);
   await auditLog({
     actor: req.user,
     branch_id: sim.branch_id,
@@ -196,14 +229,43 @@ export async function createFromActiveSession(req: Request) {
     entity_id: row.id,
     simulator_id: sim.id,
     session_id: session.id,
-    details: { opened_during_session: true },
+    details: { opened_during_session: true, remaining_seconds: Number(paused.remaining_seconds ?? 0) },
   });
   broadcastDashboard("maintenance_opened", row, sim.branch_id);
   return row;
 }
 
-// Admin (or super admin) closes maintenance: simulator returns to service immediately and
-// the time-aware chargeable cost is computed and stored, pending super-admin review.
+async function resumeInterruptedSession(repair: any, simulatorId: string) {
+  if (!repair.session_id) return null;
+  const session = (await prisma.$queryRawUnsafe<any[]>("select * from sessions where id=$1::uuid and status='paused' limit 1", repair.session_id))[0];
+  if (!session) return null;
+  const target = (await prisma.$queryRawUnsafe<any[]>("select * from simulators where id=$1::uuid limit 1", simulatorId))[0];
+  if (!target) throw new ApiError(404, "Target simulator not found");
+  if (target.branch_id !== repair.branch_id) throw new ApiError(409, "Session can only be moved within the same branch");
+  const isOriginalSimulator = String(target.id) === String(repair.simulator_id);
+  if (target.current_session_id || !(isOriginalSimulator ? ["repair_requested"] : ["ready_to_play", "reserved"]).includes(String(target.status))) throw new ApiError(409, "Target simulator is not available");
+
+  const remainingSeconds = Number(session.remaining_seconds ?? 0);
+  if (String(session.billing_mode) !== "open" && remainingSeconds <= 0) throw new ApiError(409, "Session time has already ended");
+  // Exclude every paused minute by rebasing the active-session clock.
+  await prisma.$executeRawUnsafe(
+    `update sessions set simulator_id=$1::uuid, status='active',
+       started_at=case when billing_mode='open' then now() - make_interval(secs => remaining_seconds)
+         else now() - make_interval(secs => greatest((duration_minutes + added_minutes) * 60 - remaining_seconds, 0)) end,
+       updated_at=now() where id=$2::uuid`,
+    simulatorId, session.id,
+  );
+  await prisma.$executeRawUnsafe("update simulators set status='busy', current_session_id=$1::uuid where id=$2::uuid", session.id, simulatorId);
+  if (target.ws_rig_id) {
+    const minutes = String(session.billing_mode) === "open" ? undefined : Math.max(1, Math.ceil(remainingSeconds / 60));
+    await unlockRigIfSupported(target.ws_rig_id, minutes);
+    await sendRigCommandIfSupported(target.ws_rig_id, { type: "start_session", session_id: session.id, customer_name: session.customer_name ?? "Guest", phone: session.phone ?? null, duration_minutes: minutes ?? 0, tariff_id: session.tariff_id ?? null });
+  }
+  return { session, target, remainingSeconds };
+}
+
+// Admin (or super admin) closes maintenance: service resumes with the untouched session
+// remainder; the maintenance cost is still sent to super-admin review.
 export async function close(req: Request) {
   const rr = await get(String(req.params.id));
   if (baseRole(req.user?.role) === "admin" && rr.branch_id !== (req.user?.branch_id ?? null)) throw new ApiError(403, "Branch scope violation");
@@ -213,14 +275,35 @@ export async function close(req: Request) {
   const { chargeAmount, durationMinutes } = await computeMaintenanceCost(rr.simulator_id, openedAt, closedAt);
   const row = (await prisma.$queryRawUnsafe<any[]>(
     `update repair_requests set review_status='pending_review', closed_at=$1::timestamptz, duration_minutes=$2,
-            charge_amount=$3, marked_fixed_at=$1::timestamptz, super_admin_note=coalesce($4,super_admin_note), updated_at=now()
-      where id=$5::uuid returning *`,
-    closedAt.toISOString(), durationMinutes, chargeAmount, req.body?.note ?? null, rr.id,
+            charge_amount=$3, marked_fixed_at=$1::timestamptz,
+            title=coalesce(nullif($4,''),title), description=coalesce(nullif($5,''),description),
+            error_type=coalesce(nullif($6,''),error_type), priority=coalesce(nullif($7,''),priority),
+            admin_note=coalesce(nullif($8,''),admin_note), super_admin_note=coalesce($9,super_admin_note), updated_at=now()
+      where id=$10::uuid returning *`,
+    closedAt.toISOString(), durationMinutes, chargeAmount,
+    req.body?.title ?? null, req.body?.description ?? null, req.body?.error_type ?? null, req.body?.priority ?? null,
+    req.body?.admin_note ?? null, req.body?.note ?? null, rr.id,
   ))[0];
-  await prisma.$executeRawUnsafe("update simulators set status='ready_to_play' where id=$1::uuid", rr.simulator_id);
+  const resumed = await resumeInterruptedSession(rr, rr.simulator_id);
+  if (!resumed) await prisma.$executeRawUnsafe("update simulators set status='ready_to_play' where id=$1::uuid", rr.simulator_id);
   await auditLog({ actor: req.user, branch_id: rr.branch_id, action_type: "maintenance_closed", entity_type: "repair_request", entity_id: rr.id, simulator_id: rr.simulator_id, amount: chargeAmount });
-  broadcastDashboard("maintenance_closed", row, rr.branch_id);
+  broadcastDashboard("maintenance_closed", { ...row, resumed_session_id: resumed?.session.id ?? null }, rr.branch_id);
   return row;
+}
+
+// For an extended repair, keep the repair open on the bad PC and continue the exact
+// paused package on another free simulator in the same branch.
+export async function transferSession(req: Request) {
+  const rr = await get(String(req.params.id));
+  if (baseRole(req.user?.role) === "admin" && rr.branch_id !== (req.user?.branch_id ?? null)) throw new ApiError(403, "Branch scope violation");
+  if (rr.review_status !== "open" || !rr.session_id) throw new ApiError(409, "This maintenance has no paused session to transfer");
+  if (!isUuid(req.body?.simulator_id)) throw new ApiError(400, "Target simulator is required");
+  if (String(req.body.simulator_id) === String(rr.simulator_id)) throw new ApiError(400, "Choose another simulator");
+  const resumed = await resumeInterruptedSession(rr, String(req.body.simulator_id));
+  if (!resumed) throw new ApiError(409, "Paused session was not found");
+  await auditLog({ actor: req.user, branch_id: rr.branch_id, action_type: "maintenance_session_transferred", entity_type: "repair_request", entity_id: rr.id, simulator_id: resumed.target.id, session_id: resumed.session.id, details: { from_simulator_id: rr.simulator_id, remaining_seconds: resumed.remainingSeconds } });
+  broadcastDashboard("maintenance_session_transferred", { repair_request_id: rr.id, session_id: resumed.session.id, from_simulator_id: rr.simulator_id, to_simulator_id: resumed.target.id }, rr.branch_id);
+  return { repair_request_id: rr.id, session_id: resumed.session.id, simulator_id: resumed.target.id, remaining_seconds: resumed.remainingSeconds };
 }
 
 // Super admin reviews a closed maintenance: 'cleared' (legitimate, no charge) or 'charged'

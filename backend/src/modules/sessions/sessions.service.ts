@@ -33,6 +33,15 @@ async function sendRigMvpCommandIfSupported(rigId: string, payload: Record<strin
   }
 }
 
+async function unlockRigMvpIfSupported(rigId: string, minutes?: number) {
+  try {
+    await unlockRigMvp(rigId, minutes);
+  } catch (error) {
+    if (error instanceof ApiError && error.statusCode === 404) return;
+    throw error;
+  }
+}
+
 // VIP tariffs (type='vip') bill as open/hourly sessions: the timer counts up and the
 // final amount is elapsed time * hourly rate (no package discount), calculated at stop.
 // hourlyRate is normalized to a per-hour price, so a 60-min/100k VIP tariff = 100k/hour.
@@ -129,7 +138,7 @@ export async function start(req: Request) {
     const rig = await getRigMvpRig(String(req.body.simulator_id));
     if (!rig.online) throw new ApiError(409, `Rig '${rig.rig_id}' is offline`);
     const durationMinutes = Number(req.body.duration_minutes ?? 0);
-    await unlockRigMvp(rig.rig_id, durationMinutes);
+    await unlockRigMvpIfSupported(rig.rig_id, durationMinutes);
     const session = {
       id: `rig-mvp:${rig.rig_id}:${Date.now()}`,
       branch_id: req.user?.branch_id ?? req.body.branch_id ?? null,
@@ -203,7 +212,7 @@ export async function start(req: Request) {
   if (amount > 0) await prisma.$executeRawUnsafe("insert into payments(branch_id,shift_id,session_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,paid_by_admin_id) values($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6,$7,$8,$9,$10,$11::uuid)", sim.branch_id, shiftId, session.id, req.body.customer_id ?? null, amount, req.body.method, req.body.method === "cash" ? amount : 0, req.body.method === "card" ? amount : 0, req.body.method === "qr" ? amount : 0, req.body.method === "balance" ? amount : 0, req.user!.user_id);
   if (sim.ws_rig_id) {
     // Open sessions unlock the rig indefinitely (no duration cap); fixed sessions cap to duration.
-    await unlockRigMvp(sim.ws_rig_id, billing.open ? undefined : durationMinutes);
+    await unlockRigMvpIfSupported(sim.ws_rig_id, billing.open ? undefined : durationMinutes);
     await sendRigMvpCommandIfSupported(sim.ws_rig_id, {
       type: "start_session",
       session_id: session.id,
@@ -321,7 +330,7 @@ async function extendRigSessionTime(simulatorId: string, addedMinutes: number, r
   if (!rigId) return;
 
   const remainingMinutes = Math.max(1, Math.ceil(remainingSeconds / 60));
-  await unlockRigMvp(rigId, remainingMinutes);
+  await unlockRigMvpIfSupported(rigId, remainingMinutes);
   await sendRigMvpCommandIfSupported(rigId, {
     type: "add_time",
     minutes: addedMinutes,

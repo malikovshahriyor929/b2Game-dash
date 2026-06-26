@@ -83,7 +83,8 @@ type DashboardStore = {
   toggleLock: (id: string) => void;
   openMaintenance: (id: string, payload: RepairPayload) => void;
   openMaintenanceDuringSession: (id: string, payload: RepairPayload) => void;
-  closeMaintenance: (id: string) => void;
+  closeMaintenance: (id: string, payload?: RepairPayload) => void;
+  transferMaintenanceSession: (repairRequestId: string, simulatorId: string) => void;
   reviewMaintenance: (requestId: string, decision: "cleared" | "charged", note?: string) => void;
   addBooking: (booking: Booking) => void;
   updateBooking: (booking: Booking) => void;
@@ -700,6 +701,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       "repair_status_changed",
       "maintenance_opened",
       "maintenance_closed",
+      "maintenance_session_transferred",
       "maintenance_reviewed",
       "booking_created",
       "shift_opened",
@@ -1099,7 +1101,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       patchSimulator(id, { status: "repair_requested", repairRequestId: request.id, currentSessionId: null, currentUser: undefined, phone: undefined, tariff: undefined, remainingMinutes: 0, remainingSeconds: 0, paidAmount: 0, paymentStatus: "paid" });
       appendLog(`opened maintenance during session for ${simulator.name}`, simulator.name);
     },
-    closeMaintenance(id) {
+    closeMaintenance(id, payload) {
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator) return;
       const activeRepair = repairRequests.find((item) => item.simulatorId === simulator.id && item.reviewStatus === "open");
@@ -1109,7 +1111,13 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         refreshAfterAction();
         return;
       }
-      void backendPost<Record<string, unknown>>(`/repair-requests/${repairRequestId}/close`)
+      void backendPost<Record<string, unknown>>(`/repair-requests/${repairRequestId}/close`, payload ? {
+        title: payload.title,
+        description: payload.description,
+        error_type: payload.errorType,
+        priority: payload.priority,
+        admin_note: payload.note,
+      } : {})
         .then((row) => {
           const saved = mapRepair(row);
           setRepairRequests((items) => items.map((item) => (item.id === saved.id ? saved : item)));
@@ -1119,6 +1127,14 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       patchRepair(repairRequestId, { reviewStatus: "pending_review", closedAt: new Date().toLocaleString("uz-UZ") });
       patchSimulator(id, { status: "ready_to_play", repairRequestId: undefined });
       appendLog(`closed maintenance for ${simulator.name}`, simulator.name);
+    },
+    transferMaintenanceSession(repairRequestId, simulatorId) {
+      void backendPost<Record<string, unknown>>(`/repair-requests/${repairRequestId}/transfer-session`, { simulator_id: simulatorId })
+        .then(() => {
+          toast.success("Sessiya qolgan vaqti bilan boshqa simulyatorga o'tkazildi.");
+          refreshAfterAction();
+        })
+        .catch((error) => revertWithError(error, "Sessiyani boshqa simulyatorga o'tkazib bo'lmadi"));
     },
     reviewMaintenance(requestId, decision, note) {
       const request = repairRequests.find((item) => item.id === requestId);

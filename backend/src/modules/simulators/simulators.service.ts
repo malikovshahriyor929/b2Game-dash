@@ -26,7 +26,10 @@ function statusFromRig(rig: RigMvpRig) {
   if (!rig.online || rig.state === "Offline") return "offline";
   if (rig.state === "Updating") return "offline";
   if (rig.locked || rig.state === "Available") return "ready_to_play";
-  return "busy";
+  // Rig-MVP's "In use" is a device-level signal (for example a stale desktop
+  // process), not proof that this dashboard has a customer session.  Session
+  // status is decided from the sessions table below.
+  return "ready_to_play";
 }
 
 function normalizedRigKeys(rig: RigMvpRig) {
@@ -70,9 +73,17 @@ export async function rigToSimulatorRow(rig: RigMvpRig, options: { persist?: boo
   const persist = options.persist ?? true;
   const branch = await resolveRigBranch(rig);
   const zone = zoneFromRig(rig);
-  const status = statusFromRig(rig);
   const name = rig.label || rig.hostname || rig.rig_id;
   const existing = await findExistingSimulatorForRig(rig, branch.id);
+  const hasActiveSession = existing?.current_session_id
+    ? Boolean((await prisma.$queryRawUnsafe<any[]>(
+      "select id from sessions where id=$1::uuid and status in ('active','paused','unpaid') limit 1",
+      existing.current_session_id,
+    ))[0])
+    : false;
+  // The database is the source of truth for customer occupancy. This prevents a
+  // stale rig state from creating a ghost "Band" card with no session details.
+  const status = hasActiveSession ? "busy" : statusFromRig(rig);
   const rows = persist
     ? existing
       ? await prisma.$queryRawUnsafe<any[]>(
