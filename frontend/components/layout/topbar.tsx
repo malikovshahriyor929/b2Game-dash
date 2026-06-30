@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { canUseAction } from "@/lib/permissions";
 import { money } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { backendGet } from "@/server/api";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { CreateBranchDialog } from "@/components/layout/create-branch-dialog";
 import { ChangePasswordDialog } from "@/components/shared/change-password-dialog";
@@ -62,6 +63,7 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
   const [actualCash, setActualCash] = useState("");
   const [cashWithdrawn, setCashWithdrawn] = useState("");
   const [closeNotes, setCloseNotes] = useState("");
+  const [previousRemaining, setPreviousRemaining] = useState(0);
 
   const role = data?.user?.role;
   const isSuperRole = role === "super_admin" || role === "dev_super_admin";
@@ -86,7 +88,23 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
   const actualCashNum = actualCash === "" ? null : Number(actualCash);
   const cashDifference = actualCashNum === null ? 0 : actualCashNum - expectedCashVal;
   // Oldingi smena qoldirgan naqd (yangi smena boshlanishi uchun)
-  const previousRemaining = shifts.find((s) => s.status === "closed")?.remainingCash ?? 0;
+  const fallbackPreviousRemaining = shifts.find((s) => s.status === "closed")?.remainingCash ?? 0;
+  const openInfoBranchId = selectedBranchId === "all" ? branches[0]?.id : selectedBranchId;
+
+  useEffect(() => {
+    if (!shiftModalOpen || activeShift || !openInfoBranchId) return;
+    let cancelled = false;
+    backendGet<{ previous_remaining_cash?: number | string | null }>(`/shifts/open-info?branch_id=${encodeURIComponent(openInfoBranchId)}`)
+      .then((info) => {
+        if (!cancelled) setPreviousRemaining(Number(info.previous_remaining_cash ?? 0));
+      })
+      .catch(() => {
+        if (!cancelled) setPreviousRemaining(fallbackPreviousRemaining);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [shiftModalOpen, activeShift, openInfoBranchId, fallbackPreviousRemaining]);
 
   // Yangi smena ochilayotganda boshlang'ich naqdni oldingi qoldiq bilan to'ldiramiz
   useEffect(() => {
