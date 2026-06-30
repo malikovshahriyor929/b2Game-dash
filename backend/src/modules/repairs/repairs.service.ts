@@ -9,7 +9,6 @@ import { sendRigMvpCommand, unlockRigMvp } from "../../services/rigMvp.service";
 
 const MAX_MAINTENANCE_CHARGE_MINUTES = 24 * 60;
 
-// Older Rig-MVP agents do not implement /command. The dashboard session remains
 // authoritative, so an optional device command must not fail a maintenance resume.
 async function sendRigCommandIfSupported(rigId: string, payload: Record<string, unknown>) {
   try {

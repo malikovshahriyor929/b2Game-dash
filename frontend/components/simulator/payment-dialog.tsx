@@ -12,29 +12,44 @@ import { usePaymentMethods } from "@/lib/use-payment-methods";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { Simulator } from "@/types/simulator";
 
+type PaymentParts = {
+  cash_amount: number;
+  card_amount: number;
+};
+
+const emptyParts: PaymentParts = { cash_amount: 0, card_amount: 0 };
+
+function numeric(value: string) {
+  const next = Number(value);
+  return Number.isFinite(next) ? next : 0;
+}
+
 export function PaymentDialog({ open, onOpenChange, simulator }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator }) {
   const { pay } = useDashboardStore();
   const tariffs = useBackendTariffs(simulator?.branchId, open);
   const paymentMethods = usePaymentMethods(simulator?.branchId, open);
+  const simulatorPaymentMethods = useMemo(() => paymentMethods.filter((item) => ["cash", "card", "balance", "mixed"].includes(item.value)), [paymentMethods]);
   const [method, setMethod] = useState("Karta");
-  const [cash, setCash] = useState("0");
-  const [card, setCard] = useState("0");
+  const [parts, setParts] = useState<PaymentParts>(emptyParts);
   const tariff = tariffs.find((item) => item.name === simulator?.tariff);
   const due = Math.max((tariff?.price ?? 50000) - (simulator?.paidAmount ?? 0), 0);
-  const mixedTotal = useMemo(() => Number(cash) + Number(card), [cash, card]);
+  const mixedTotal = useMemo(() => parts.cash_amount + parts.card_amount, [parts]);
   const amount = method === "Aralash" ? mixedTotal : due;
   const canSubmit = Boolean(simulator) && amount > 0 && Number.isFinite(amount);
 
   useEffect(() => {
     if (!open) return;
-    setMethod("Karta");
-    setCash("0");
-    setCard(String(due));
-  }, [due, open, simulator?.id]);
+    setMethod(simulatorPaymentMethods[0]?.label ?? "Karta");
+    setParts({ ...emptyParts, card_amount: due });
+  }, [due, open, simulator?.id, simulatorPaymentMethods]);
+
+  function setPart(key: keyof PaymentParts, value: string) {
+    setParts((current) => ({ ...current, [key]: numeric(value) }));
+  }
 
   function submit() {
     if (!simulator || !canSubmit) return;
-    pay(simulator.id, amount, method);
+    pay(simulator.id, amount, method, method === "Aralash" ? parts : undefined);
     onOpenChange(false);
   }
 
@@ -52,14 +67,14 @@ export function PaymentDialog({ open, onOpenChange, simulator }: { open: boolean
             <Label>To&apos;lov usuli</Label>
             <Select value={method} onValueChange={setMethod}>
               <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}</SelectContent>
+              <SelectContent>{simulatorPaymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}</SelectContent>
             </Select>
           </div>
         </div>
         {method === "Aralash" ? (
           <div className="grid gap-3 rounded-2xl border border-slate-800 p-3 sm:grid-cols-2">
-            <div className="space-y-2"><Label>Naqd</Label><Input inputMode="numeric" min={0} type="number" value={cash} onChange={(e) => setCash(e.target.value)} /></div>
-            <div className="space-y-2"><Label>Karta</Label><Input inputMode="numeric" min={0} type="number" value={card} onChange={(e) => setCard(e.target.value)} /></div>
+            <div className="space-y-2"><Label>Naqd</Label><Input inputMode="numeric" min={0} type="number" value={parts.cash_amount} onChange={(e) => setPart("cash_amount", e.target.value)} /></div>
+            <div className="space-y-2"><Label>Karta</Label><Input inputMode="numeric" min={0} type="number" value={parts.card_amount} onChange={(e) => setPart("card_amount", e.target.value)} /></div>
             <div className="text-sm text-slate-400 sm:col-span-2">Aralash jami: {money(mixedTotal)} {mixedTotal !== due ? <span className="text-amber-300">- to&apos;lov summasiga teng emas</span> : <span className="text-emerald-300">- to&apos;g&apos;ri</span>}</div>
           </div>
         ) : null}

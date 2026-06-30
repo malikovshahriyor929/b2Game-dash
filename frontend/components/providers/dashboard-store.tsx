@@ -23,7 +23,7 @@ import {
   unlockRig as unlockAdminRig,
 } from "@/lib/rig-admin-api";
 
-type StartPayload = { customerName: string; phone: string; tariff: string; tariffId?: string; customerId?: string; duration: number; amount: number; paymentStatus: "paid" | "unpaid"; paymentMethod?: string; bookingId?: string };
+type StartPayload = { customerName: string; phone: string; tariff: string; tariffId?: string; customerId?: string; duration: number; amount: number; paymentStatus: "paid" | "unpaid"; paymentMethod?: string; payment?: Partial<PaymentPayload>; bookingId?: string };
 type PeriodFilter = "today" | "yesterday" | "week" | "month" | "year" | "custom";
 type RepairPayload = { title: string; description: string; errorType: RepairErrorType; priority: RepairPriority; note?: string };
 type RevenueEvent = { id: string; time: string; date?: string; amount: number; source: string; branchId?: string; operator?: string };
@@ -78,8 +78,8 @@ type DashboardStore = {
   customEndDate: string;
   setCustomEndDate: (date: string) => void;
   startSession: (id: string, payload: StartPayload) => void;
-  addTime: (id: string, minutes: number, amount: number, method: string) => void;
-  pay: (id: string, amount: number, method: string) => void;
+  addTime: (id: string, minutes: number, amount: number, method: string, payment?: Partial<PaymentPayload>) => void;
+  pay: (id: string, amount: number, method: string, payment?: Partial<PaymentPayload>) => void;
   stopSession: (id: string, override?: boolean) => void;
   toggleLock: (id: string) => void;
   openMaintenance: (id: string, payload: RepairPayload) => void;
@@ -186,12 +186,22 @@ function toApiPaymentMethod(method?: string): PaymentMethod {
   return "card";
 }
 
-function splitPayment(amount: number, method: PaymentMethod): PaymentPayload {
-  return {
+function splitPayment(amount: number, method: PaymentMethod, payment?: Partial<PaymentPayload>): PaymentPayload {
+  const base = {
     cash_amount: method === "cash" ? amount : 0,
-    card_amount: method === "card" || method === "mixed" ? amount : 0,
+    card_amount: method === "card" || (method === "mixed" && !payment) ? amount : 0,
     qr_amount: method === "qr" ? amount : 0,
     balance_amount: method === "balance" ? amount : 0,
+  };
+  return {
+    ...base,
+    ...payment,
+    cash_amount: Number(payment?.cash_amount ?? base.cash_amount),
+    card_amount: Number(payment?.card_amount ?? base.card_amount),
+    qr_amount: Number(payment?.qr_amount ?? base.qr_amount),
+    balance_amount: Number(payment?.balance_amount ?? base.balance_amount),
+    received_amount: payment?.received_amount,
+    change_amount: payment?.change_amount,
   };
 }
 
@@ -953,6 +963,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         duration_minutes: payload.duration,
         paid_amount: isPaid ? payload.amount : 0,
         method,
+        ...(isPaid ? splitPayment(payload.amount, method, payload.payment) : {}),
         booking_id: payload.bookingId ?? null,
       }).then(refreshAfterAction).catch((error) => revertWithError(error, "Sessiyani boshlab bo'lmadi"));
       patchSimulator(id, {
@@ -969,7 +980,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       if (isPaid) recordRevenue(payload.amount, `session started ${simulator.name}`, simulator.branchId);
       appendLog(`started session on ${simulator.name}`, simulator.name);
     },
-    addTime(id, minutes, amount, method) {
+    addTime(id, minutes, amount, method, payment) {
       if (!requireActiveShiftOwner()) return;
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator) return;
@@ -994,6 +1005,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
           minutes,
           amount,
           method: apiMethod,
+          ...splitPayment(amount, apiMethod, payment),
         })
           .then(() => {
             applyLocal();
@@ -1016,7 +1028,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
 
       applyLocal();
     },
-    pay(id, amount, method) {
+    pay(id, amount, method, payment) {
       if (!requireActiveShiftOwner()) return;
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator) return;
@@ -1025,7 +1037,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         branch_id: simulator.branchId,
         session_id: simulator.currentSessionId ?? undefined,
         method: apiMethod,
-        ...splitPayment(amount, apiMethod),
+        ...splitPayment(amount, apiMethod, payment),
       }).then(refreshAfterAction).catch((error) => revertWithError(error, "To'lovni amalga oshirib bo'lmadi"));
       patchSimulator(id, { paidAmount: simulator.paidAmount + amount, paymentStatus: "paid", status: simulator.status === "unpaid" ? "busy" : simulator.status });
       recordRevenue(amount, `session payment ${simulator.name}`, simulator.branchId);

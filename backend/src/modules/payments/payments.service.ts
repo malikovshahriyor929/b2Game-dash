@@ -20,8 +20,17 @@ export async function create(req: Request) {
   const shiftId = await requireOpenShiftOwner(branchId, req);
   // "balance" qismi bo'lsa — to'lov yozishdan oldin mijoz balansidan ayiramiz (mablag' yetmasa to'xtaydi).
   const balanceAmount = Number(req.body.balance_amount ?? 0);
-  if (balanceAmount > 0) await debitCustomerBalance(req.body.customer_id ?? null, branchId, balanceAmount);
-  const rows = await prisma.$queryRawUnsafe<any[]>("insert into payments(branch_id,shift_id,session_id,sale_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,received_amount,change_amount,paid_by_admin_id,source_type,source_note) values($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5::uuid,$6,$7,$8,$9,$10,$11,$12,$13,$14::uuid,$15,$16) returning *", branchId, shiftId, req.body.session_id ?? null, req.body.sale_id ?? null, req.body.customer_id ?? null, total, req.body.method, req.body.cash_amount, req.body.card_amount, req.body.qr_amount, req.body.balance_amount, receivedAmount, changeAmount, req.user!.user_id, req.body.source_type ?? "payment", req.body.source_note ?? null);
+  let customerId = req.body.customer_id ?? null;
+  if (balanceAmount > 0 && !customerId && req.body.session_id) {
+    const rows = await prisma.$queryRawUnsafe<Array<{ customer_id: string | null }>>(
+      "select customer_id from sessions where id=$1::uuid and branch_id=$2::uuid limit 1",
+      req.body.session_id,
+      branchId,
+    );
+    customerId = rows[0]?.customer_id ?? null;
+  }
+  if (balanceAmount > 0) await debitCustomerBalance(customerId, branchId, balanceAmount);
+  const rows = await prisma.$queryRawUnsafe<any[]>("insert into payments(branch_id,shift_id,session_id,sale_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,received_amount,change_amount,paid_by_admin_id,source_type,source_note) values($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5::uuid,$6,$7,$8,$9,$10,$11,$12,$13,$14::uuid,$15,$16) returning *", branchId, shiftId, req.body.session_id ?? null, req.body.sale_id ?? null, customerId, total, req.body.method, req.body.cash_amount, req.body.card_amount, req.body.qr_amount, req.body.balance_amount, receivedAmount, changeAmount, req.user!.user_id, req.body.source_type ?? "payment", req.body.source_note ?? null);
   if (req.body.session_id) await prisma.$executeRawUnsafe("update sessions set paid_amount=paid_amount+$1, debt_amount=greatest(total_amount-paid_amount-$1,0), status=case when greatest(total_amount-paid_amount-$1,0)=0 and status='unpaid' then 'stopped' else status end where id=$2::uuid", total, req.body.session_id);
   await auditLog({ actor: req.user, branch_id: branchId, action_type: "payment_created", entity_type: "payment", entity_id: rows[0].id, session_id: req.body.session_id ?? null, amount: total, details: { method: req.body.method, cash_amount: Number(req.body.cash_amount ?? 0), card_amount: Number(req.body.card_amount ?? 0), balance_amount: Number(req.body.balance_amount ?? 0), received_amount: receivedAmount, change_amount: changeAmount } });
   broadcastDashboard("payment_created", rows[0], branchId);

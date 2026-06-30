@@ -49,12 +49,25 @@ function formatGap(minutes: number) {
   return `${mins} daqiqa`;
 }
 
+type PaymentParts = {
+  cash_amount: number;
+  card_amount: number;
+};
+
+const emptyParts: PaymentParts = { cash_amount: 0, card_amount: 0 };
+
+function numeric(value: string) {
+  const next = Number(value);
+  return Number.isFinite(next) ? next : 0;
+}
+
 export function StartSessionDialog({ open, onOpenChange, simulator, prefill, fulfillBookingId }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator; prefill?: { customerName?: string; phone?: string; tariffName?: string; prepayment?: number }; fulfillBookingId?: string }) {
   const { startSession, selectedBranchId, bookings } = useDashboardStore();
   const confirm = useConfirm();
   const tariffBranchId = simulator?.branchId ?? (selectedBranchId === "all" ? undefined : selectedBranchId);
   const tariffs = useBackendTariffs(tariffBranchId, open);
   const paymentMethods = usePaymentMethods(tariffBranchId, open);
+  const simulatorPaymentMethods = useMemo(() => paymentMethods.filter((item) => ["cash", "card", "balance", "mixed"].includes(item.value)), [paymentMethods]);
   const startOptions = useStartSessionOptions(tariffBranchId, open);
   // Show every active tariff in create session, regardless of the simulator's zone
   // (VIP/Logitech all selectable). VIP tariffs bill as open hourly sessions.
@@ -72,13 +85,23 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
   const [duration, setDuration] = useState("60");
   const [paymentStatus, setPaymentStatus] = useState<"paid" | "unpaid">("paid");
   const [paymentMethod, setPaymentMethod] = useState("Karta");
+  const [paymentParts, setPaymentParts] = useState<PaymentParts>(emptyParts);
   const selectedTariff = zoneTariffs.find((item) => item.id === tariffId) ?? zoneTariffs[0];
   // VIP tariffs (type='vip') open as hourly sessions: no fixed duration, billed at stop.
   const isOpenTariff = (selectedTariff?.type ?? "").toLowerCase() === "vip";
   const hourlyRate = selectedTariff && isOpenTariff ? Math.round((selectedTariff.price * 60) / (selectedTariff.durationMinutes || 60)) : 0;
   const selectedCustomer = picked;
-  const canSubmit = Boolean(simulator) && customerName.trim().length > 0 && (isOpenTariff || Number(duration) > 0) && Boolean(selectedTariff) && (customerType === "Guest" || Boolean(selectedCustomer));
   const totalAmount = isOpenTariff || paymentStatus === "unpaid" ? 0 : selectedTariff?.price ?? 0;
+  const isMixedPayment = paymentMethod === "Aralash" && totalAmount > 0;
+  const isBalancePayment = paymentMethod === "Balans" && totalAmount > 0;
+  const mixedTotal = paymentParts.cash_amount + paymentParts.card_amount;
+  const canSubmit = Boolean(simulator)
+    && customerName.trim().length > 0
+    && (isOpenTariff || Number(duration) > 0)
+    && Boolean(selectedTariff)
+    && (customerType === "Guest" || Boolean(selectedCustomer))
+    && (!isBalancePayment || Boolean(selectedCustomer))
+    && (!isMixedPayment || mixedTotal === totalAmount);
 
   const summary = useMemo(() => {
     if (isOpenTariff) return `Soatlik: ${money(hourlyRate)}/soat - to'xtatishda hisoblanadi`;
@@ -98,8 +121,14 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
     setTariffId(first?.id ?? "");
     setDuration(String(first?.durationMinutes || 60));
     setPaymentStatus(startOptions.paymentModes[0]?.value ?? "paid");
-    setPaymentMethod(paymentMethods[0]?.label ?? "Karta");
-  }, [open, paymentMethods, simulator?.id, startOptions.paymentModes, zoneTariffs, prefill?.customerName, prefill?.phone, prefill?.tariffName]);
+    setPaymentMethod(simulatorPaymentMethods[0]?.label ?? "Karta");
+    setPaymentParts({ ...emptyParts, card_amount: first?.price ?? 0 });
+  }, [open, simulatorPaymentMethods, simulator?.id, startOptions.paymentModes, zoneTariffs, prefill?.customerName, prefill?.phone, prefill?.tariffName]);
+
+  useEffect(() => {
+    if (!open || isMixedPayment) return;
+    setPaymentParts({ ...emptyParts, card_amount: totalAmount > 0 ? totalAmount : 0 });
+  }, [isMixedPayment, open, totalAmount]);
 
   // Band PC ogohlantirishi (bloklamaydi — admin xohlasa almashtiradi).
   const simulatorBusy = Boolean(simulator && ["busy", "unpaid"].includes(simulator.status));
@@ -161,6 +190,10 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
     if (item) setTariffId(item.id);
   }
 
+  function setPaymentPart(key: keyof PaymentParts, value: string) {
+    setPaymentParts((current) => ({ ...current, [key]: numeric(value) }));
+  }
+
   async function submit() {
     if (!canSubmit || !simulator) return;
     const amountLine = isOpenTariff
@@ -183,6 +216,7 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
       amount: totalAmount,
       paymentStatus,
       paymentMethod,
+      payment: isMixedPayment ? paymentParts : undefined,
       bookingId: fulfillBookingId,
     });
     onOpenChange(false);
@@ -313,10 +347,24 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
             <Select value={paymentMethod} onValueChange={setPaymentMethod}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}
+                {simulatorPaymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
+
+          {isMixedPayment ? (
+            <div className="grid gap-3 rounded-xl border border-slate-800 p-3 md:col-span-2 sm:grid-cols-2">
+              <div className="space-y-2"><Label>Naqd</Label><Input inputMode="numeric" min={0} type="number" value={paymentParts.cash_amount} onChange={(e) => setPaymentPart("cash_amount", e.target.value)} /></div>
+              <div className="space-y-2"><Label>Karta</Label><Input inputMode="numeric" min={0} type="number" value={paymentParts.card_amount} onChange={(e) => setPaymentPart("card_amount", e.target.value)} /></div>
+              <div className="text-sm text-slate-400 sm:col-span-2">Aralash jami: {money(mixedTotal)} {mixedTotal !== totalAmount ? <span className="text-amber-300">- to&apos;lov summasiga teng emas</span> : <span className="text-emerald-300">- to&apos;g&apos;ri</span>}</div>
+            </div>
+          ) : null}
+
+          {isBalancePayment && !selectedCustomer ? (
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm font-semibold text-amber-200 md:col-span-2">
+              Balansdan to'lash uchun ro'yxatdan o'tgan mijozni tanlang.
+            </div>
+          ) : null}
 
           <div className="rounded-xl bg-slate-950/80 p-4">
             <Label>Umumiy summa</Label>
