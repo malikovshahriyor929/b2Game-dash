@@ -16,7 +16,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { money } from "@/lib/format";
 import { isSuperAdmin } from "@/lib/permissions";
-import { BackendTariff, mapTariffRow } from "@/lib/use-backend-tariffs";
+import { BackendTariff, mapTariffRow, tariffPricePeriodLabel } from "@/lib/use-backend-tariffs";
 import { backendDelete, backendGet, backendPatch, backendPost } from "@/server/api";
 import type { Product } from "@/types/product";
 
@@ -45,6 +45,7 @@ const typeLabels: Record<string, string> = {
 // backend (sessions.service.ts) bilan bir xil aliaslar.
 const BONUS_ALIASES: Array<{ test: RegExp; like: string }> = [
   { test: /energet|energy/i, like: "energy" },
+  { test: /red\s*bull|redbull/i, like: "redbull" },
   { test: /chips|chipsy/i, like: "chips" },
   { test: /snickers/i, like: "snickers" },
   { test: /coca|cola/i, like: "cola" },
@@ -150,9 +151,6 @@ function BonusPicker({ label, products, items, onChange }: { label: string; prod
 }
 
 function TariffCard({ item, canManage, onEdit, onDelete }: { item: BackendTariff; canManage: boolean; onEdit: () => void; onDelete: () => void }) {
-  const weekdayPrice = item.weekdayPrice ?? item.price;
-  const weekendPrice = item.weekendPrice ?? item.price;
-
   return (
     <Card className="p-4 w-full min-w-[220px]">
       <div className="flex items-start justify-between gap-2">
@@ -170,21 +168,17 @@ function TariffCard({ item, canManage, onEdit, onDelete }: { item: BackendTariff
         ) : null}
       </div>
       <div className="mt-4 text-lg font-bold">{item.name}</div>
-      <div className="mt-1 text-xs font-semibold text-slate-500">{formatDuration(item.durationMinutes)}</div>
+      <div className="mt-1 text-xs font-semibold text-slate-500">{formatDuration(item.durationMinutes)} · {tariffPricePeriodLabel(item)}</div>
       <div className="mt-3 space-y-1 text-sm font-semibold text-slate-300">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-slate-500">Dushanba–Juma</span>
-          <span>{money(weekdayPrice)}</span>
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-slate-500">Shanba–Yakshanba</span>
-          <span className="text-sky-200">{money(weekendPrice)}</span>
+          <span className="text-slate-500">Narx</span>
+          <span className="text-sky-200">{money(item.price)}</span>
         </div>
       </div>
       {(item.weekdayBonus || item.weekendBonus) ? (
         <div className="mt-3 space-y-1 text-xs font-semibold text-emerald-300">
-          {item.weekdayBonus ? <div>Dushanba–Juma bonus: {item.weekdayBonus}</div> : null}
-          {item.weekendBonus ? <div>Shanba–Yakshanba bonus: {item.weekendBonus}</div> : null}
+          {item.weekdayBonus ? <div>Bonus: {item.weekdayBonus}</div> : null}
+          {!item.weekdayBonus && item.weekendBonus ? <div>Bonus: {item.weekendBonus}</div> : null}
         </div>
       ) : null}
     </Card>
@@ -237,7 +231,7 @@ export default function TariffsPage() {
   async function refreshTariffs() {
     setLoading(true);
     try {
-      const query = `branch_id=${encodeURIComponent(selectedBranchId)}`;
+      const query = `branch_id=${encodeURIComponent(selectedBranchId)}&availability=all`;
       const rows = await backendGet<Array<Record<string, unknown>>>(`/tariffs?${query}`);
       setTariffs(rows.map(mapTariffRow));
     } catch {
@@ -326,7 +320,7 @@ export default function TariffsPage() {
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <PageHeader
           title="Tariflar"
-          description={`${branchLabel} uchun narxlar. Dushanba–Juma va Shanba–Yakshanba alohida.`}
+          description={`${branchLabel} uchun narxlar. Kun va vaqt oralig'iga qarab alohida ishlaydi.`}
         />
         {canManage ? <Button onClick={openCreate} disabled={!createBranchId}><FiPlus /> Tarif qo'shish</Button> : null}
       </div>
@@ -408,7 +402,7 @@ export default function TariffsPage() {
               <Input inputMode="numeric" value={form.duration} onChange={(event) => setForm((item) => ({ ...item, duration: event.target.value.replace(/\D/g, "") }))} placeholder="60" />
             </div>
             <div className="space-y-2">
-              <Label>Dushanba–Juma narxi</Label>
+              <Label>Asosiy narx</Label>
               <div className="relative">
                 <Input
                   className="pr-16"
@@ -421,14 +415,14 @@ export default function TariffsPage() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Shanba–Yakshanba narxi</Label>
+              <Label>Zaxira narx</Label>
               <div className="relative">
                 <Input className="pr-16" inputMode="numeric" value={formatNumber(form.weekendPrice)} onChange={(event) => setForm((item) => ({ ...item, weekendPrice: event.target.value.replace(/\D/g, "") }))} placeholder="50 000" />
                 <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">so'm</span>
               </div>
             </div>
-            <BonusPicker label="Dushanba–Juma bonus (skladdan)" products={products} items={weekdayBonus} onChange={setWeekdayBonus} />
-            <BonusPicker label="Shanba–Yakshanba bonus (skladdan)" products={products} items={weekendBonus} onChange={setWeekendBonus} />
+            <BonusPicker label="Bonus (skladdan)" products={products} items={weekdayBonus} onChange={setWeekdayBonus} />
+            <BonusPicker label="Zaxira bonus (skladdan)" products={products} items={weekendBonus} onChange={setWeekendBonus} />
             <Button className="sm:col-span-2" type="submit" disabled={!form.name.trim() || !form.weekdayPrice.trim() || !createBranchId}>
               {editingId ? <><FiEdit2 /> Saqlash</> : <><FiPlus /> Yaratish</>}
             </Button>

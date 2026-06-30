@@ -8,6 +8,7 @@ import { getRigMvpRig, lockRigMvp, sendRigMvpCommand, unlockRigMvp } from "../..
 import { isUuid } from "../../utils/ids";
 import { requireOpenShiftOwner } from "../shifts/shift.guard";
 import { debitCustomerBalance } from "../customers/customers.service";
+import { tariffsService } from "../tariffs/tariffs.service";
 
 async function getSessionScoped(req: Request) {
   const rows = await prisma.$queryRawUnsafe<any[]>("select * from sessions where id=$1::uuid and ($2::uuid is null or branch_id=$2::uuid)", req.params.id, baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : null);
@@ -45,22 +46,20 @@ async function unlockRigMvpIfSupported(rigId: string, minutes?: number) {
 // VIP tariffs (type='vip') bill as open/hourly sessions: the timer counts up and the
 // final amount is elapsed time * hourly rate (no package discount), calculated at stop.
 // hourlyRate is normalized to a per-hour price, so a 60-min/100k VIP tariff = 100k/hour.
-async function resolveTariffBilling(tariffId: unknown): Promise<{ open: boolean; hourlyRate: number }> {
-  if (!isUuid(tariffId)) return { open: false, hourlyRate: 0 };
-  const rows = await prisma.$queryRawUnsafe<Array<{ type: string; price: unknown; duration_minutes: number }>>(
-    "select type, price, duration_minutes from tariffs where id=$1::uuid limit 1",
-    tariffId,
-  );
-  const tariff = rows[0];
-  if (!tariff) return { open: false, hourlyRate: 0 };
+async function resolveTariffBilling(tariffId: unknown): Promise<{ open: boolean; hourlyRate: number; price: number }> {
+  if (!isUuid(tariffId)) return { open: false, hourlyRate: 0, price: 0 };
+  const tariff = await tariffsService.getAvailableById(String(tariffId)) as { type: string; price: unknown; duration_minutes: number } | null;
+  if (!tariff) throw new ApiError(409, "Bu tarif hozir ishlamaydi. Joriy vaqtga mos tarifni tanlang.");
   const open = String(tariff.type).toLowerCase() === "vip";
   const duration = Number(tariff.duration_minutes) || 60;
-  const hourlyRate = open ? Math.round((Number(tariff.price) * 60) / duration) : 0;
-  return { open, hourlyRate };
+  const price = Number(tariff.price) || 0;
+  const hourlyRate = open ? Math.round((price * 60) / duration) : 0;
+  return { open, hourlyRate, price };
 }
 
 const BONUS_PRODUCT_PATTERNS: Array<{ test: RegExp; like: string }> = [
   { test: /energet|energy/i, like: "%energy%" },
+  { test: /red\s*bull|redbull/i, like: "%redbull%" },
   { test: /chips|chipsy/i, like: "%chips%" },
   { test: /snickers/i, like: "%snickers%" },
   { test: /coca|cola/i, like: "%cola%" },
@@ -89,10 +88,7 @@ function parseBonusItems(bonus: string): Array<{ like: string; text: string; lab
 async function applyTariffBonusStock(branchId: string, tariffId: string | null | undefined, createdBy: string) {
   if (!tariffId || !isUuid(tariffId)) return;
   const tariffRows = await prisma.$queryRawUnsafe<Array<{ bonus: string | null }>>(
-    `select case
-        when extract(isodow from now() at time zone 'Asia/Tashkent')::int in (6,7)
-        then weekend_bonus else weekday_bonus end as bonus
-      from tariffs where id=$1::uuid`,
+    "select coalesce(weekday_bonus, weekend_bonus) as bonus from tariffs where id=$1::uuid",
     tariffId,
   );
   const bonus = tariffRows[0]?.bonus;
@@ -172,7 +168,8 @@ export async function start(req: Request) {
   if (baseRole(req.user?.role) === "admin" && sim.branch_id !== (req.user?.branch_id ?? null)) throw new ApiError(403, "Branch scope violation");
   if (!["ready_to_play","reserved"].includes(sim.status)) throw new ApiError(409, `Simulator is ${sim.status}`);
   const billing = await resolveTariffBilling(req.body.tariff_id);
-  const amount = Number(req.body.paid_amount ?? 0);
+  const normalizedPaymentMode = paymentMode(req.body.payment_mode);
+  const amount = billing.open || normalizedPaymentMode === "postpaid" ? 0 : (billing.price || Number(req.body.paid_amount ?? 0));
   // Open (VIP) sessions have no fixed duration — they count up and are billed at stop.
   const durationMinutes = billing.open ? 0 : Number(req.body.duration_minutes ?? 0);
   const remainingSeconds = billing.open ? 0 : durationMinutes * 60;
@@ -202,7 +199,7 @@ export async function start(req: Request) {
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `insert into sessions(branch_id,simulator_id,customer_id,customer_name,phone,tariff_id,status,payment_mode,billing_mode,hourly_rate,duration_minutes,remaining_seconds,session_amount,total_amount,paid_amount,debt_amount,created_by)
      values($1::uuid,$2::uuid,$3::uuid,$4,$5,$6::uuid,'active',$7,$8,$9,$10,$11,$12,$12,$13,greatest($12-$13,0),$14::uuid) returning *`,
-    sim.branch_id, sim.id, req.body.customer_id ?? null, req.body.customer_name ?? null, req.body.phone ?? null, req.body.tariff_id ?? null, paymentMode(req.body.payment_mode), billing.open ? "open" : "fixed", billing.hourlyRate, durationMinutes, remainingSeconds, sessionAmount, amount, req.user!.user_id,
+    sim.branch_id, sim.id, req.body.customer_id ?? null, req.body.customer_name ?? null, req.body.phone ?? null, req.body.tariff_id ?? null, normalizedPaymentMode, billing.open ? "open" : "fixed", billing.hourlyRate, durationMinutes, remainingSeconds, sessionAmount, amount, req.user!.user_id,
   );
   const session = rows[0];
   await prisma.$executeRawUnsafe("update simulators set status='busy', current_session_id=$1::uuid where id=$2::uuid", session.id, sim.id);

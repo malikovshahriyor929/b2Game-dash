@@ -273,11 +273,6 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
                 <p className="text-xs font-semibold text-amber-300">
                   Soatlik (VIP): {money(hourlyRate)}/soat — vaqt bo'yicha, to'xtatishda hisoblanadi
                 </p>
-              ) : selectedTariff.isHappyHour ? (
-                <p className="text-xs font-semibold text-emerald-300">
-                  Bugun to'lov: <span className="line-through text-slate-500">{money(selectedTariff.weekdayPrice ?? selectedTariff.price)}</span>{" "}
-                  {money(selectedTariff.price)} <span className="text-emerald-400">({tariffPricePeriodLabel(selectedTariff)})</span>
-                </p>
               ) : (
                 <p className="text-xs font-semibold text-slate-500">
                   Bugun to'lov: {money(selectedTariff.price)}
