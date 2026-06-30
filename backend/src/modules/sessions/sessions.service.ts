@@ -25,6 +25,27 @@ function paymentMode(value: unknown) {
   return "postpaid";
 }
 
+function paymentBreakdown(body: any, amount: number) {
+  const method = String(body.method ?? "cash");
+  const raw = {
+    cash: Number(body.cash_amount ?? 0),
+    card: Number(body.card_amount ?? 0),
+    qr: Number(body.qr_amount ?? 0),
+    balance: Number(body.balance_amount ?? 0),
+  };
+  const explicitTotal = raw.cash + raw.card + raw.qr + raw.balance;
+  const hasExplicitParts = explicitTotal > 0;
+  const parts = hasExplicitParts ? raw : {
+    cash: method === "cash" ? amount : 0,
+    card: method === "card" ? amount : 0,
+    qr: method === "qr" ? amount : 0,
+    balance: method === "balance" ? amount : 0,
+  };
+  const total = parts.cash + parts.card + parts.qr + parts.balance;
+  if (Math.abs(total - amount) > 0.01) throw new ApiError(400, "Payment parts total must equal amount");
+  return parts;
+}
+
 async function sendRigMvpCommandIfSupported(rigId: string, payload: Record<string, unknown>) {
   try {
     await sendRigMvpCommand(rigId, payload);
@@ -170,6 +191,7 @@ export async function start(req: Request) {
   const billing = await resolveTariffBilling(req.body.tariff_id);
   const normalizedPaymentMode = paymentMode(req.body.payment_mode);
   const amount = billing.open || normalizedPaymentMode === "postpaid" ? 0 : (billing.price || Number(req.body.paid_amount ?? 0));
+  const payment = paymentBreakdown(req.body, amount);
   // Open (VIP) sessions have no fixed duration — they count up and are billed at stop.
   const durationMinutes = billing.open ? 0 : Number(req.body.duration_minutes ?? 0);
   const remainingSeconds = billing.open ? 0 : durationMinutes * 60;
@@ -195,7 +217,7 @@ export async function start(req: Request) {
   // To'lov bo'ladigan bo'lsa, ochiq smena shart — sessiya yaratishdan oldin tekshiramiz (orphan bo'lmasligi uchun).
   const shiftId = await requireOpenShiftOwner(sim.branch_id, req);
   // "balance" usulida — sessiya yaratishdan OLDIN balansdan ayiramiz (mablag' yetmasa bu yerda to'xtaydi).
-  if (req.body.method === "balance" && amount > 0) await debitCustomerBalance(req.body.customer_id ?? null, sim.branch_id, amount);
+  if (payment.balance > 0) await debitCustomerBalance(req.body.customer_id ?? null, sim.branch_id, payment.balance);
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `insert into sessions(branch_id,simulator_id,customer_id,customer_name,phone,tariff_id,status,payment_mode,billing_mode,hourly_rate,duration_minutes,remaining_seconds,session_amount,total_amount,paid_amount,debt_amount,created_by)
      values($1::uuid,$2::uuid,$3::uuid,$4,$5,$6::uuid,'active',$7,$8,$9,$10,$11,$12,$12,$13,greatest($12-$13,0),$14::uuid) returning *`,
@@ -209,7 +231,7 @@ export async function start(req: Request) {
   } catch (error) {
     console.error("applyTariffBonusStock failed", error);
   }
-  if (amount > 0) await prisma.$executeRawUnsafe("insert into payments(branch_id,shift_id,session_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,paid_by_admin_id) values($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6,$7,$8,$9,$10,$11::uuid)", sim.branch_id, shiftId, session.id, req.body.customer_id ?? null, amount, req.body.method, req.body.method === "cash" ? amount : 0, req.body.method === "card" ? amount : 0, req.body.method === "qr" ? amount : 0, req.body.method === "balance" ? amount : 0, req.user!.user_id);
+  if (amount > 0) await prisma.$executeRawUnsafe("insert into payments(branch_id,shift_id,session_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,paid_by_admin_id) values($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6,$7,$8,$9,$10,$11::uuid)", sim.branch_id, shiftId, session.id, req.body.customer_id ?? null, amount, req.body.method, payment.cash, payment.card, payment.qr, payment.balance, req.user!.user_id);
   if (sim.ws_rig_id) {
     // Open sessions unlock the rig indefinitely (no duration cap); fixed sessions cap to duration.
     await unlockRigMvpIfSupported(sim.ws_rig_id, billing.open ? undefined : durationMinutes);
@@ -343,10 +365,11 @@ export async function addTime(req: Request) {
   const minutes = Number(req.body.minutes);
   const amount = Number(req.body.amount ?? 0);
   if (!Number.isFinite(minutes) || minutes <= 0) throw new ApiError(400, "minutes must be positive");
+  const payment = paymentBreakdown(req.body, amount);
   // To'lov bo'ladigan bo'lsa, ochiq smena shart — sessiyani o'zgartirishdan oldin tekshiramiz.
   const shiftId = await requireOpenShiftOwner(s.branch_id, req);
   // "balance" usulida — o'zgartirishdan oldin balansdan ayiramiz (mablag' yetmasa to'xtaydi).
-  if (req.body.method === "balance" && amount > 0) await debitCustomerBalance(s.customer_id ?? null, s.branch_id, amount);
+  if (payment.balance > 0) await debitCustomerBalance(s.customer_id ?? null, s.branch_id, payment.balance);
 
   await prisma.$executeRawUnsafe(
     `update sessions
@@ -381,10 +404,10 @@ export async function addTime(req: Request) {
       updated.customer_id ?? null,
       amount,
       req.body.method ?? "cash",
-      req.body.method === "cash" ? amount : 0,
-      req.body.method === "card" ? amount : 0,
-      req.body.method === "qr" ? amount : 0,
-      req.body.method === "balance" ? amount : 0,
+      payment.cash,
+      payment.card,
+      payment.qr,
+      payment.balance,
       req.user!.user_id,
     );
   }

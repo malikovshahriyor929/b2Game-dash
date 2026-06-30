@@ -156,6 +156,13 @@ export async function close(req: Request) {
   assertBranchAccess(req, shift.branch_id);
   assertShiftOwner(req, shift);
   if (shift.status === "closed") throw new ApiError(409, "Shift already closed");
+  const pendingWithdrawals = await prisma.$queryRawUnsafe<Array<{ count: string }>>(
+    "select count(*)::int as count from cash_withdrawal_requests where shift_id=$1::uuid and status='pending'",
+    shift.id,
+  );
+  if (Number(pendingWithdrawals[0]?.count ?? 0) > 0) {
+    throw new ApiError(409, "Smenani yopishdan oldin pending выemka so'rovlarini tasdiqlang yoki rad eting");
+  }
 
   const branch = shift.branch_id;
   const money = await computeShiftMoney(shift.id);
@@ -342,6 +349,7 @@ export async function confirmWithdrawalRequest(req: Request) {
 
   // Tasdiqlash paytida ham summa kassadagi naqddan oshmasligini tekshiramiz.
   const shift = row.shift_id ? (await prisma.$queryRawUnsafe<any[]>("select * from shifts where id=$1::uuid", row.shift_id))[0] : null;
+  if (shift && shift.status !== "open") throw new ApiError(409, "Shift is already closed");
   if (shift && shift.status === "open") {
     const money = await computeShiftMoney(shift.id);
     const expenses = await computeShiftExpenses(shift.id);
@@ -357,6 +365,18 @@ export async function confirmWithdrawalRequest(req: Request) {
       req.params.id,
     )
   )[0];
+  if (row.shift_id) {
+    await prisma.$executeRawUnsafe(
+      `insert into shift_withdrawals(shift_id,branch_id,source,amount,recipient,note,withdrawn_by)
+       values($1::uuid,$2::uuid,'cash',$3,$4,$5,$6::uuid)`,
+      row.shift_id,
+      row.branch_id,
+      Number(row.amount),
+      WITHDRAW_RECIPIENT,
+      row.note ?? "mid-shift cash withdrawal",
+      req.user!.user_id,
+    );
+  }
   await auditLog({ actor: req.user, branch_id: row.branch_id, action_type: "withdrawal_confirmed", entity_type: "cash_withdrawal", entity_id: row.id, amount: Number(row.amount) });
   broadcastDashboard("withdrawal_resolved", updated, row.branch_id);
   return updated;

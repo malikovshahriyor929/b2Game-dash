@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { canUseAction } from "@/lib/permissions";
 import { money } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { backendGet } from "@/server/api";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { CreateBranchDialog } from "@/components/layout/create-branch-dialog";
 import { ChangePasswordDialog } from "@/components/shared/change-password-dialog";
@@ -62,6 +63,7 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
   const [actualCash, setActualCash] = useState("");
   const [cashWithdrawn, setCashWithdrawn] = useState("");
   const [closeNotes, setCloseNotes] = useState("");
+  const [previousRemaining, setPreviousRemaining] = useState(0);
 
   const role = data?.user?.role;
   const isSuperRole = role === "super_admin" || role === "dev_super_admin";
@@ -79,13 +81,30 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
   const balanceSales = activeShift?.balanceSales ?? 0;
   const totalRevenue = activeShift?.totalRevenue ?? cashSales + cardTotal + bankTotal;
   const startingCashVal = activeShift?.startingCash ?? 0;
+  const midShiftWithdrawn = activeShift?.cashWithdrawn ?? 0;
   const expectedCashVal = activeShift?.expectedCash ?? startingCashVal + cashSales; // kassada bo'lishi kerak bo'lgan naqd
   const cashWithdrawnNum = Number(cashWithdrawn || 0);
   const remainingAfterWithdraw = expectedCashVal - cashWithdrawnNum; // keyingi smenaga qoladigan naqd
   const actualCashNum = actualCash === "" ? null : Number(actualCash);
   const cashDifference = actualCashNum === null ? 0 : actualCashNum - expectedCashVal;
   // Oldingi smena qoldirgan naqd (yangi smena boshlanishi uchun)
-  const previousRemaining = shifts.find((s) => s.status === "closed")?.remainingCash ?? 0;
+  const fallbackPreviousRemaining = shifts.find((s) => s.status === "closed")?.remainingCash ?? 0;
+  const openInfoBranchId = selectedBranchId === "all" ? branches[0]?.id : selectedBranchId;
+
+  useEffect(() => {
+    if (!shiftModalOpen || activeShift || !openInfoBranchId) return;
+    let cancelled = false;
+    backendGet<{ previous_remaining_cash?: number | string | null }>(`/shifts/open-info?branch_id=${encodeURIComponent(openInfoBranchId)}`)
+      .then((info) => {
+        if (!cancelled) setPreviousRemaining(Number(info.previous_remaining_cash ?? 0));
+      })
+      .catch(() => {
+        if (!cancelled) setPreviousRemaining(fallbackPreviousRemaining);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [shiftModalOpen, activeShift, openInfoBranchId, fallbackPreviousRemaining]);
 
   // Yangi smena ochilayotganda boshlang'ich naqdni oldingi qoldiq bilan to'ldiramiz
   useEffect(() => {
@@ -270,7 +289,13 @@ export function Topbar({ onAction, onOpenSidebar }: { onAction: (action: "start"
                 <div className="border-t border-slate-800 pt-2.5 space-y-2">
                   <div className="flex justify-between text-xs"><span className="text-slate-500">Boshlang'ich naqd (oldingi smenadan):</span><span className="text-slate-300">{money(startingCashVal)}</span></div>
                   <div className="flex justify-between text-xs"><span className="text-slate-500">Smenadagi naqd savdo:</span><span className="text-slate-300">+{money(cashSales)}</span></div>
+                  {midShiftWithdrawn > 0 ? (
+                    <div className="flex justify-between text-xs"><span className="text-slate-500">Oldin tasdiqlangan выemka:</span><span className="text-amber-300">-{money(midShiftWithdrawn)}</span></div>
+                  ) : null}
                   <div className="flex justify-between"><span className="text-slate-400">Kassadagi naqd (kutilgan):</span><span className="font-semibold text-sky-300">{money(expectedCashVal)}</span></div>
+                  {midShiftWithdrawn > 0 ? (
+                    <p className="text-xs font-semibold text-amber-300">Bu выemka kutilgan naqd summadan allaqachon ayrilgan. Quyida faqat smena yopishda qo'shimcha olinadigan naqdni yozing.</p>
+                  ) : null}
                   <div className="space-y-1.5 pt-1">
                     <Label htmlFor="cashWithdrawn" className="text-sm font-semibold text-slate-300">Naqddan qancha yechamiz?</Label>
                     <Input

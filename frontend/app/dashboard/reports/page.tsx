@@ -29,7 +29,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
 import { money } from "@/lib/format";
-import { localDate } from "@/lib/datetime";
+import { backendDate, backendTime, localDate } from "@/lib/datetime";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 
 function isoDate(date: Date) {
@@ -57,6 +57,7 @@ export default function ReportsPage() {
     barSales,
     cashTransactions,
     shifts,
+    withdrawalRequests,
   } = useDashboardStore();
 
   const [dateFilter, setDateFilter] = useState<string>("today");
@@ -109,6 +110,11 @@ export default function ReportsPage() {
     && (tx.type === "expense" || ["manual_income", "penalty"].includes(tx.sourceType ?? "")),
   );
   const filteredShifts = shifts.filter((s) => isDateInRange(s.date) && matchesOperator(s.operator));
+  const filteredWithdrawals = withdrawalRequests.filter((item) => {
+    const eventDate = backendDate(item.resolvedAt ?? item.createdAt);
+    return isDateInRange(eventDate) && matchesOperator(item.adminName);
+  });
+  const confirmedWithdrawals = filteredWithdrawals.filter((item) => item.status === "confirmed");
 
   // Calculations
   const totalRevenue = filteredRevenueEvents.reduce((sum, item) => sum + item.amount, 0);
@@ -116,6 +122,7 @@ export default function ReportsPage() {
   // Incomes (Prixod) vs Expenses (Rasxod)
   const totalIncomes = filteredCashTx.filter(t => t.type === "income" && ["manual_income", "penalty"].includes(t.sourceType ?? "")).reduce((sum, t) => sum + t.amount, 0);
   const totalExpenses = filteredCashTx.filter(t => t.type === "expense").reduce((sum, t) => sum + t.amount, 0);
+  const totalWithdrawals = confirmedWithdrawals.reduce((sum, item) => sum + item.amount, 0);
 
   // Bar sales sum
   const barSalesSum = filteredBarSales.reduce((sum, s) => sum + s.totalAmount, 0);
@@ -208,6 +215,7 @@ export default function ReportsPage() {
         <ReportCard label="Bar (Do'kon)" value={barSalesSum} icon={FiShoppingBag} tone="emerald" />
         <ReportCard label="Kirim (Prixod)" value={totalIncomes} icon={FiArrowUpRight} tone="emerald" />
         <ReportCard label="Chiqim (Rasxod)" value={totalExpenses} icon={FiArrowDownRight} tone="red" />
+        <ReportCard label="Выемка" value={totalWithdrawals} icon={FiTrendingDown} tone="amber" />
         <ReportCard label="Kassa Farqi" value={totalDiscrepancy} icon={FiActivity} tone={totalDiscrepancy < 0 ? "red" : "amber"} />
         <ReportCard label="Sof Foyda" value={totalRevenue - totalExpenses} icon={FiTrendingUp} tone="fuchsia" />
       </div>
@@ -467,6 +475,7 @@ export default function ReportsPage() {
                       <TableHead>Yopilgan vaqti</TableHead>
                       <TableHead>Kassa Boshlang'ich</TableHead>
                       <TableHead>Kutilgan Naqd</TableHead>
+                      <TableHead>Выемка</TableHead>
                       <TableHead>Haqiqiy Naqd</TableHead>
                       <TableHead>Farq (Discrepancy)</TableHead>
                       <TableHead>Smena holati</TableHead>
@@ -475,7 +484,7 @@ export default function ReportsPage() {
                   <TableBody>
                     {filteredShifts.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={9} className="text-center py-8 text-slate-500 font-semibold">
+                        <TableCell colSpan={10} className="text-center py-8 text-slate-500 font-semibold">
                           Ushbu muddat uchun smenalar tarixi topilmadi
                         </TableCell>
                       </TableRow>
@@ -490,6 +499,7 @@ export default function ReportsPage() {
                           </TableCell>
                           <TableCell className="text-slate-300 font-medium">{money(s.startingCash)}</TableCell>
                           <TableCell className="text-sky-300 font-bold">{s.expectedCash ? money(s.expectedCash) : "-"}</TableCell>
+                          <TableCell className="text-amber-300 font-bold">{s.cashWithdrawn ? money(s.cashWithdrawn) : "-"}</TableCell>
                           <TableCell className="text-white font-bold">{s.actualCash ? money(s.actualCash) : "-"}</TableCell>
                           <TableCell className={`font-black ${s.discrepancy && s.discrepancy < 0 ? "text-rose-400" : s.discrepancy && s.discrepancy > 0 ? "text-emerald-400" : "text-slate-400"}`}>
                             {s.discrepancy !== undefined ? (s.discrepancy > 0 ? `+${money(s.discrepancy)}` : money(s.discrepancy)) : "0 UZS"}
@@ -511,6 +521,66 @@ export default function ReportsPage() {
                   </TableBody>
                 </Table>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Confirmed cash withdrawals */}
+          <Card className="border-slate-800 bg-[#172036]/40">
+            <CardHeader className="flex-row items-center justify-between">
+              <CardTitle className="text-base font-bold text-white flex items-center gap-2">
+                <FiTrendingDown className="text-amber-400" /> Kassadan Olingan Naqd (Выемка)
+              </CardTitle>
+              <Badge variant="warning" className="px-2.5 py-1 text-xs">Tasdiqlangan: {money(totalWithdrawals)}</Badge>
+            </CardHeader>
+            <CardContent>
+              <div className="max-h-[400px] overflow-x-auto overflow-y-auto">
+                <Table className="min-w-max">
+                  <TableHeader className="bg-slate-950/40 sticky top-0">
+                    <TableRow className="whitespace-nowrap">
+                      <TableHead>Sana & Vaqt</TableHead>
+                      <TableHead>Smena Admini</TableHead>
+                      <TableHead>So'rov yuborgan</TableHead>
+                      <TableHead>Tasdiqlagan</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Izoh</TableHead>
+                      <TableHead className="text-right">Summa</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredWithdrawals.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-8 text-slate-500 font-semibold">
+                          Ushbu muddat uchun выemka yozuvlari mavjud emas
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredWithdrawals.map((item) => {
+                        const eventAt = item.resolvedAt ?? item.createdAt;
+                        return (
+                          <TableRow key={item.id} className="hover:bg-slate-900/30">
+                            <TableCell className="text-slate-400 text-xs">{backendDate(eventAt)} {backendTime(eventAt)}</TableCell>
+                            <TableCell className="font-bold text-slate-200">{item.adminName || "-"}</TableCell>
+                            <TableCell className="text-slate-300 text-sm">{item.initiatedByName || "-"}</TableCell>
+                            <TableCell className="text-slate-300 text-sm">{item.confirmedByName || "-"}</TableCell>
+                            <TableCell>
+                              <Badge variant={item.status === "confirmed" ? "success" : item.status === "rejected" ? "destructive" : "warning"}>
+                                {item.status === "confirmed" ? "Tasdiqlandi" : item.status === "rejected" ? "Rad etildi" : "Kutilmoqda"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="max-w-[240px] truncate text-sm text-slate-400">{item.note ?? "-"}</TableCell>
+                            <TableCell className={`text-right font-black ${item.status === "confirmed" ? "text-amber-300" : "text-slate-400"}`}>
+                              {item.status === "confirmed" ? "-" : ""}{money(item.amount)}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              <p className="mt-3 text-xs font-semibold text-slate-500">
+                Выемка kirim yoki rasxod emas: bu kassadagi naqd pulning ichki ko'chishi. U faqat tasdiqlangandan keyin smenaning kutilgan naqdidan ayriladi.
+              </p>
             </CardContent>
           </Card>
 
