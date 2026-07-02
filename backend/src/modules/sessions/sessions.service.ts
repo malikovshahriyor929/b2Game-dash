@@ -9,6 +9,7 @@ import { isUuid } from "../../utils/ids";
 import { requireOpenShiftOwner } from "../shifts/shift.guard";
 import { debitCustomerBalance } from "../customers/customers.service";
 import { assertTariffAvailableNow } from "../tariffs/tariffs.service";
+import { tariffsService } from "../tariffs/tariffs.service";
 
 async function getSessionScoped(req: Request) {
   const rows = await prisma.$queryRawUnsafe<any[]>("select * from sessions where id=$1::uuid and ($2::uuid is null or branch_id=$2::uuid)", req.params.id, baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : null);
@@ -23,6 +24,27 @@ function paymentMode(value: unknown) {
   if (value === "balance") return "balance";
   if (value === "paid" || value === "prepaid") return "prepaid";
   return "postpaid";
+}
+
+function paymentBreakdown(body: any, amount: number) {
+  const method = String(body.method ?? "cash");
+  const raw = {
+    cash: Number(body.cash_amount ?? 0),
+    card: Number(body.card_amount ?? 0),
+    qr: Number(body.qr_amount ?? 0),
+    balance: Number(body.balance_amount ?? 0),
+  };
+  const explicitTotal = raw.cash + raw.card + raw.qr + raw.balance;
+  const hasExplicitParts = explicitTotal > 0;
+  const parts = hasExplicitParts ? raw : {
+    cash: method === "cash" ? amount : 0,
+    card: method === "card" ? amount : 0,
+    qr: method === "qr" ? amount : 0,
+    balance: method === "balance" ? amount : 0,
+  };
+  const total = parts.cash + parts.card + parts.qr + parts.balance;
+  if (Math.abs(total - amount) > 0.01) throw new ApiError(400, "Payment parts total must equal amount");
+  return parts;
 }
 
 async function sendRigMvpCommandIfSupported(rigId: string, payload: Record<string, unknown>) {
@@ -46,32 +68,30 @@ async function unlockRigMvpIfSupported(rigId: string, minutes?: number) {
 // VIP tariffs (type='vip') bill as open/hourly sessions: the timer counts up and the
 // final amount is elapsed time * hourly rate (no package discount), calculated at stop.
 // hourlyRate is normalized to a per-hour price, so a 60-min/100k VIP tariff = 100k/hour.
-async function resolveTariffBilling(tariffId: unknown): Promise<{ open: boolean; hourlyRate: number }> {
-  if (!isUuid(tariffId)) return { open: false, hourlyRate: 0 };
-  const rows = await prisma.$queryRawUnsafe<Array<{ type: string; price: unknown; duration_minutes: number }>>(
-    "select type, price, duration_minutes from tariffs where id=$1::uuid limit 1",
-    tariffId,
-  );
-  const tariff = rows[0];
-  if (!tariff) return { open: false, hourlyRate: 0 };
+async function resolveTariffBilling(tariffId: unknown): Promise<{ open: boolean; hourlyRate: number; price: number }> {
+  if (!isUuid(tariffId)) return { open: false, hourlyRate: 0, price: 0 };
+  const tariff = await tariffsService.getAvailableById(String(tariffId)) as { type: string; price: unknown; duration_minutes: number } | null;
+  if (!tariff) throw new ApiError(409, "Bu tarif hozir ishlamaydi. Joriy vaqtga mos tarifni tanlang.");
   const open = String(tariff.type).toLowerCase() === "vip";
   const duration = Number(tariff.duration_minutes) || 60;
-  const hourlyRate = open ? Math.round((Number(tariff.price) * 60) / duration) : 0;
-  return { open, hourlyRate };
+  const price = Number(tariff.price) || 0;
+  const hourlyRate = open ? Math.round((price * 60) / duration) : 0;
+  return { open, hourlyRate, price };
 }
 
 const BONUS_PRODUCT_PATTERNS: Array<{ test: RegExp; like: string }> = [
   { test: /energet|energy/i, like: "%energy%" },
+  { test: /red\s*bull|redbull/i, like: "%redbull%" },
   { test: /chips|chipsy/i, like: "%chips%" },
   { test: /snickers/i, like: "%snickers%" },
-  { test: /coca|cola/i, like: "%cola%" },
+  { test: /coca|cola|kola|coal/i, like: "%cola%" },
   { test: /suv|water/i, like: "%water%" },
   { test: /burger/i, like: "%burger%" },
 ];
 
 function parseBonusItems(bonus: string): Array<{ like: string; text: string; label: string; quantity: number }> {
   return bonus
-    .split(/[+,/]/)
+    .split(/\s*(?:\+|\/|\bva\b|,(?=\s*[^\d\s]))\s*/i)
     .map((part) => part.trim())
     .filter(Boolean)
     .map((part) => {
@@ -88,23 +108,40 @@ function parseBonusItems(bonus: string): Array<{ like: string; text: string; lab
 // Tarif bonusini (kun turiga qarab weekday/weekend) skladdan best-effort ayiradi.
 // Mahsulot topilmasa yoki stok yetmasa — o'tkazib yuboradi, sessiyani bloklamaydi.
 async function applyTariffBonusStock(branchId: string, tariffId: string | null | undefined, createdBy: string) {
-  if (!tariffId || !isUuid(tariffId)) return;
-  const tariffRows = await prisma.$queryRawUnsafe<Array<{ bonus: string | null }>>(
-    `select case
-        when extract(isodow from now() at time zone 'Asia/Tashkent')::int in (6,7)
-        then weekend_bonus else weekday_bonus end as bonus
-      from tariffs where id=$1::uuid`,
+  if (!tariffId || !isUuid(tariffId)) return [];
+  const tariffRows = await prisma.$queryRawUnsafe<Array<{ name: string; bonus: string | null; bonus_period: string }>>(
+    `with clock as (
+       select extract(isodow from now() at time zone 'Asia/Tashkent')::int as dow
+     )
+     select
+       t.name,
+       case
+         when c.dow in (6,7) then coalesce(t.weekend_bonus, t.weekday_bonus)
+         else coalesce(t.weekday_bonus, t.weekend_bonus)
+       end as bonus,
+       case when c.dow in (6,7) then 'weekend' else 'weekday' end as bonus_period
+     from tariffs t cross join clock c
+     where t.id=$1::uuid`,
     tariffId,
   );
-  const bonus = tariffRows[0]?.bonus;
-  if (!bonus || !bonus.trim()) return;
+  const tariff = tariffRows[0];
+  const bonus = tariff?.bonus;
+  if (!bonus || !bonus.trim()) return [];
 
   let changed = false;
+  const applied: Array<{ product_id: string; label: string; quantity: number; before_quantity: number; after_quantity: number }> = [];
   for (const item of parseBonusItems(bonus)) {
     const rows = await prisma.$queryRawUnsafe<Array<{ inv_id: string; product_id: string; stock_quantity: number }>>(
       `select i.id as inv_id, p.id as product_id, i.stock_quantity
          from products p join inventory i on i.product_id=p.id
-        where i.branch_id=$1::uuid and p.is_active=true and (lower(p.name)=lower($3) or p.name ilike $2 or p.category ilike $2)
+        where i.branch_id=$1::uuid
+          and p.is_active=true
+          and (
+            lower(p.name)=lower($3)
+            or p.name ilike $2
+            or p.category ilike $2
+            or regexp_replace(lower(p.name), '[^a-z0-9]+', '', 'g') like regexp_replace(lower($3), '[^a-z0-9]+', '', 'g') || '%'
+          )
         order by (lower(p.name)=lower($3)) desc, i.stock_quantity desc limit 1`,
       branchId,
       item.like,
@@ -113,11 +150,13 @@ async function applyTariffBonusStock(branchId: string, tariffId: string | null |
     const inv = rows[0];
     if (!inv) continue; // mos mahsulot topilmadi
     if (inv.stock_quantity < item.quantity) continue; // stok yetmaydi -> ayirmaymiz
-    await prisma.$executeRawUnsafe(
-      "update inventory set stock_quantity=stock_quantity-$1, updated_at=now() where id=$2::uuid",
+    const updated = await prisma.$queryRawUnsafe<Array<{ stock_quantity: number }>>(
+      "update inventory set stock_quantity=stock_quantity-$1, updated_at=now() where id=$2::uuid and stock_quantity >= $1 returning stock_quantity",
       item.quantity,
       inv.inv_id,
     );
+    const afterQuantity = updated[0]?.stock_quantity;
+    if (afterQuantity === undefined) continue;
     await prisma.$executeRawUnsafe(
       `insert into inventory_movements(branch_id,product_id,type,quantity,before_quantity,after_quantity,reason,created_by)
        values($1::uuid,$2::uuid,'sale',$3,$4,$5,$6,$7::uuid)`,
@@ -125,13 +164,21 @@ async function applyTariffBonusStock(branchId: string, tariffId: string | null |
       inv.product_id,
       item.quantity,
       inv.stock_quantity,
-      inv.stock_quantity - item.quantity,
-      `tariff bonus: ${item.label}`,
+      afterQuantity,
+      `tariff bonus: ${item.label} (0 so'm)`,
       createdBy,
     );
+    applied.push({
+      product_id: inv.product_id,
+      label: item.label,
+      quantity: item.quantity,
+      before_quantity: inv.stock_quantity,
+      after_quantity: afterQuantity,
+    });
     changed = true;
   }
   if (changed) broadcastDashboard("inventory_updated", { branch_id: branchId, reason: "tariff_bonus" }, branchId);
+  return applied.map((item) => ({ ...item, tariff_name: tariff?.name ?? null, bonus_period: tariff?.bonus_period ?? null }));
 }
 
 export async function start(req: Request) {
@@ -174,7 +221,9 @@ export async function start(req: Request) {
   if (!["ready_to_play","reserved"].includes(sim.status)) throw new ApiError(409, `Simulator is ${sim.status}`);
   if (isUuid(req.body.tariff_id)) await assertTariffAvailableNow(req.body.tariff_id);
   const billing = await resolveTariffBilling(req.body.tariff_id);
-  const amount = Number(req.body.paid_amount ?? 0);
+  const normalizedPaymentMode = paymentMode(req.body.payment_mode);
+  const amount = billing.open || normalizedPaymentMode === "postpaid" ? 0 : (billing.price || Number(req.body.paid_amount ?? 0));
+  const payment = paymentBreakdown(req.body, amount);
   // Open (VIP) sessions have no fixed duration — they count up and are billed at stop.
   const durationMinutes = billing.open ? 0 : Number(req.body.duration_minutes ?? 0);
   const remainingSeconds = billing.open ? 0 : durationMinutes * 60;
@@ -200,21 +249,43 @@ export async function start(req: Request) {
   // To'lov bo'ladigan bo'lsa, ochiq smena shart — sessiya yaratishdan oldin tekshiramiz (orphan bo'lmasligi uchun).
   const shiftId = await requireOpenShiftOwner(sim.branch_id, req);
   // "balance" usulida — sessiya yaratishdan OLDIN balansdan ayiramiz (mablag' yetmasa bu yerda to'xtaydi).
-  if (req.body.method === "balance" && amount > 0) await debitCustomerBalance(req.body.customer_id ?? null, sim.branch_id, amount);
+  if (payment.balance > 0) await debitCustomerBalance(req.body.customer_id ?? null, sim.branch_id, payment.balance);
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `insert into sessions(branch_id,simulator_id,customer_id,customer_name,phone,tariff_id,status,payment_mode,billing_mode,hourly_rate,duration_minutes,remaining_seconds,session_amount,total_amount,paid_amount,debt_amount,created_by)
      values($1::uuid,$2::uuid,$3::uuid,$4,$5,$6::uuid,'active',$7,$8,$9,$10,$11,$12,$12,$13,greatest($12-$13,0),$14::uuid) returning *`,
-    sim.branch_id, sim.id, req.body.customer_id ?? null, req.body.customer_name ?? null, req.body.phone ?? null, req.body.tariff_id ?? null, paymentMode(req.body.payment_mode), billing.open ? "open" : "fixed", billing.hourlyRate, durationMinutes, remainingSeconds, sessionAmount, amount, req.user!.user_id,
+    sim.branch_id, sim.id, req.body.customer_id ?? null, req.body.customer_name ?? null, req.body.phone ?? null, req.body.tariff_id ?? null, normalizedPaymentMode, billing.open ? "open" : "fixed", billing.hourlyRate, durationMinutes, remainingSeconds, sessionAmount, amount, req.user!.user_id,
   );
   const session = rows[0];
   await prisma.$executeRawUnsafe("update simulators set status='busy', current_session_id=$1::uuid where id=$2::uuid", session.id, sim.id);
   // Tarif bonusini (energetik, chips ...) skladdan ayirish. Best-effort: xato sessiyani to'xtatmaydi.
   try {
-    await applyTariffBonusStock(sim.branch_id, req.body.tariff_id ?? null, req.user!.user_id);
+    const bonuses = await applyTariffBonusStock(sim.branch_id, req.body.tariff_id ?? null, req.user!.user_id);
+    for (const bonus of bonuses) {
+      await auditLog({
+        actor: req.user,
+        branch_id: sim.branch_id,
+        action_type: "tariff_bonus",
+        entity_type: "inventory",
+        entity_id: bonus.product_id,
+        simulator_id: sim.id,
+        session_id: session.id,
+        amount: 0,
+        details: {
+          tariff_id: req.body.tariff_id ?? null,
+          tariff_name: bonus.tariff_name,
+          bonus_period: bonus.bonus_period,
+          bonus: bonus.label,
+          quantity: bonus.quantity,
+          before_quantity: bonus.before_quantity,
+          after_quantity: bonus.after_quantity,
+          reason: "0 so'm tarif bonusi",
+        },
+      });
+    }
   } catch (error) {
     console.error("applyTariffBonusStock failed", error);
   }
-  if (amount > 0) await prisma.$executeRawUnsafe("insert into payments(branch_id,shift_id,session_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,paid_by_admin_id) values($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6,$7,$8,$9,$10,$11::uuid)", sim.branch_id, shiftId, session.id, req.body.customer_id ?? null, amount, req.body.method, req.body.method === "cash" ? amount : 0, req.body.method === "card" ? amount : 0, req.body.method === "qr" ? amount : 0, req.body.method === "balance" ? amount : 0, req.user!.user_id);
+  if (amount > 0) await prisma.$executeRawUnsafe("insert into payments(branch_id,shift_id,session_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,paid_by_admin_id) values($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6,$7,$8,$9,$10,$11::uuid)", sim.branch_id, shiftId, session.id, req.body.customer_id ?? null, amount, req.body.method, payment.cash, payment.card, payment.qr, payment.balance, req.user!.user_id);
   if (sim.ws_rig_id) {
     // Open sessions unlock the rig indefinitely (no duration cap); fixed sessions cap to duration.
     await unlockRigMvpIfSupported(sim.ws_rig_id, billing.open ? undefined : durationMinutes);
@@ -348,10 +419,11 @@ export async function addTime(req: Request) {
   const minutes = Number(req.body.minutes);
   const amount = Number(req.body.amount ?? 0);
   if (!Number.isFinite(minutes) || minutes <= 0) throw new ApiError(400, "minutes must be positive");
+  const payment = paymentBreakdown(req.body, amount);
   // To'lov bo'ladigan bo'lsa, ochiq smena shart — sessiyani o'zgartirishdan oldin tekshiramiz.
   const shiftId = await requireOpenShiftOwner(s.branch_id, req);
   // "balance" usulida — o'zgartirishdan oldin balansdan ayiramiz (mablag' yetmasa to'xtaydi).
-  if (req.body.method === "balance" && amount > 0) await debitCustomerBalance(s.customer_id ?? null, s.branch_id, amount);
+  if (payment.balance > 0) await debitCustomerBalance(s.customer_id ?? null, s.branch_id, payment.balance);
 
   await prisma.$executeRawUnsafe(
     `update sessions
@@ -386,10 +458,10 @@ export async function addTime(req: Request) {
       updated.customer_id ?? null,
       amount,
       req.body.method ?? "cash",
-      req.body.method === "cash" ? amount : 0,
-      req.body.method === "card" ? amount : 0,
-      req.body.method === "qr" ? amount : 0,
-      req.body.method === "balance" ? amount : 0,
+      payment.cash,
+      payment.card,
+      payment.qr,
+      payment.balance,
       req.user!.user_id,
     );
   }

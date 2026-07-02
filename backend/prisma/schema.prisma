@@ -77,6 +77,10 @@ model Tariff {
   weekendPrice    Decimal? @map("weekend_price") @db.Decimal(14, 2)
   weekdayBonus    String?  @map("weekday_bonus")
   weekendBonus    String?  @map("weekend_bonus")
+  availableDays   Int[]    @map("available_days")
+  availableFrom   DateTime? @map("available_from") @db.Time(0)
+  availableUntil  DateTime? @map("available_until") @db.Time(0)
+  availabilityLabel String? @map("availability_label")
   type            String
   isActive        Boolean  @default(true) @map("is_active")
   createdAt       DateTime @default(now()) @map("created_at")

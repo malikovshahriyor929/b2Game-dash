@@ -13,6 +13,10 @@ export const startSessionSchema = z.object({
     payment_mode: z.enum(["prepaid", "postpaid", "balance"]).default("prepaid"),
     paid_amount: amount.default(0),
     method: z.enum(["cash", "card", "qr", "balance", "mixed"]).default("cash"),
+    cash_amount: amount.default(0),
+    card_amount: amount.default(0),
+    qr_amount: amount.default(0),
+    balance_amount: amount.default(0),
   }),
 });
 
@@ -22,6 +26,10 @@ export const addTimeSchema = z.object({
     minutes: z.coerce.number().int().positive(),
     amount: amount.default(0),
     method: z.enum(["cash", "card", "qr", "balance", "mixed"]).default("cash"),
+    cash_amount: amount.default(0),
+    card_amount: amount.default(0),
+    qr_amount: amount.default(0),
+    balance_amount: amount.default(0),
   }),
 });
 

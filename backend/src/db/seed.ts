@@ -1,7 +1,6 @@
 import bcrypt from "bcrypt";
 import { PoolClient } from "pg";
 import { pool, tx } from "./pool";
-import { auditLog } from "../services/auditLog.service";
 
 const branches = [
   ["B2 Main Arena", "MAIN", "Main Arena"],
@@ -14,24 +13,32 @@ const products = [
   ["Energy Drink", "Drinks", "4780001000042", 15000, 10000, 25],
   ["Chips", "Snacks", "4780001000059", 12000, 8000, 35],
   ["Snickers", "Snacks", "4780001000066", 10000, 6500, 44],
+  ["Redbull", "Drinks", "4780001000073", 22000, 15500, 24],
 ] as const;
 
-// type='vip' tariffs bill as open/hourly sessions (count up, no discount); the rest are
-// fixed packages. "2 soat" = 1 soat + 1 soat (no bulk discount). Both Logitech and Moza
-// share the same structure: 1/2/3/5 soat + tungi zaezd + VIP.
+// B2 Game tariffs:
+// - Soatlik tariflar vaqt oynasiga qarab chiqadi.
+// - Paketlar skidka paytida ishlamaydi; 17:00 dan keyin ko'rinadi.
+// available_days uses ISO weekdays (1=Dushanba ... 7=Yakshanba).
 const tariffs = [
-  ["Logitech 1 soat", "main", 60, 40000, 50000, null, null, "time"],
-  ["Logitech 2 soat", "main", 120, 80000, 100000, null, null, "package"],
-  ["Logitech 3 soat", "main", 180, 100000, 130000, null, null, "package"],
-  ["Logitech 5 soat", "main", 300, 150000, 200000, null, "energetik", "package"],
-  ["Logitech tungi zaezd", "main", 480, 250000, 350000, null, "energetik", "night"],
-  ["Logitech VIP", "main", 60, 50000, 60000, null, null, "vip"],
-  ["Moza 1 soat", "vip", 60, 80000, 100000, null, null, "time"],
-  ["Moza 2 soat", "vip", 120, 160000, 200000, null, null, "package"],
-  ["Moza 3 soat", "vip", 180, 200000, 250000, null, "energetik", "package"],
-  ["Moza 5 soat", "vip", 300, 300000, 300000, null, "energetik + chips", "package"],
-  ["Moza tungi zaezd", "vip", 480, 500000, 500000, "energetik", "energetik", "night"],
-  ["Moza VIP", "vip", 60, 100000, 120000, null, null, "vip"],
+  ["Logitech 1 soat", "main", 60, 25000, null, "time", [1, 2, 3, 4], "10:00", "17:00", "Dushanba-Payshanba 10:00-17:00"],
+  ["Logitech 1 soat", "main", 60, 40000, null, "time", [1, 2, 3, 4], "17:00", "03:00", "Dushanba-Payshanba 17:00-03:00"],
+  ["Logitech 1 soat", "main", 60, 50000, null, "time", [5, 6, 7], "10:00", "03:00", "Juma-Yakshanba"],
+  ["Logitech 3 soat paket", "main", 180, 100000, null, "package", [1, 2, 3, 4], "17:00", "03:00", "Dushanba-Payshanba 17:00-03:00"],
+  ["Logitech 5 soat paket", "main", 300, 150000, null, "package", [1, 2, 3, 4], "17:00", "03:00", "Dushanba-Payshanba 17:00-03:00"],
+  ["Logitech tungi paket (8 soat)", "main", 480, 250000, null, "night", [1, 2, 3, 4], "17:00", "03:00", "Dushanba-Payshanba 17:00-03:00"],
+  ["Logitech 3 soat paket", "main", 180, 130000, null, "package", [5, 6, 7], "17:00", "03:00", "Juma-Yakshanba 17:00-03:00"],
+  ["Logitech 5 soat paket", "main", 300, 200000, "Energetik", "package", [5, 6, 7], "17:00", "03:00", "Juma-Yakshanba 17:00-03:00"],
+  ["Logitech tungi paket (8 soat)", "main", 480, 350000, "Redbull", "night", [5, 6, 7], "17:00", "03:00", "Juma-Yakshanba 17:00-03:00"],
+  ["Moza 1 soat", "vip", 60, 60000, null, "time", [1, 2, 3, 4], "10:00", "17:00", "Dushanba-Payshanba 10:00-17:00"],
+  ["Moza 1 soat", "vip", 60, 80000, null, "time", [1, 2, 3, 4], "17:00", "03:00", "Dushanba-Payshanba 17:00-03:00"],
+  ["Moza 1 soat", "vip", 60, 100000, null, "time", [5, 6, 7], "10:00", "03:00", "Juma-Yakshanba"],
+  ["Moza 3 soat paket", "vip", 180, 200000, null, "package", [1, 2, 3, 4], "17:00", "03:00", "Dushanba-Payshanba 17:00-03:00"],
+  ["Moza 5 soat paket", "vip", 300, 300000, null, "package", [1, 2, 3, 4], "17:00", "03:00", "Dushanba-Payshanba 17:00-03:00"],
+  ["Moza tungi paket (8 soat)", "vip", 480, 500000, "Energetik", "night", [1, 2, 3, 4], "17:00", "03:00", "Dushanba-Payshanba 17:00-03:00"],
+  ["Moza 3 soat paket", "vip", 180, 250000, "Energetik", "package", [5, 6, 7], "17:00", "03:00", "Juma-Yakshanba 17:00-03:00"],
+  ["Moza 5 soat paket", "vip", 300, 300000, "Energetik + Chips", "package", [5, 6, 7], "17:00", "03:00", "Juma-Yakshanba 17:00-03:00"],
+  ["Moza tungi paket (8 soat)", "vip", 480, 500000, "Redbull + Chips", "night", [5, 6, 7], "17:00", "03:00", "Juma-Yakshanba 17:00-03:00"],
 ] as const;
 
 const removedBranchAdminEmails = [
@@ -105,30 +112,11 @@ async function run() {
     const mainBranchId = branchRows.MAIN;
 
     await client.query("update tariffs set is_active=false where branch_id=$1", [mainBranchId]);
-    for (const [name, zone, duration, weekdayPrice, weekendPrice, weekdayBonus, weekendBonus, type] of tariffs) {
+    for (const [name, zone, duration, price, bonus, type, availableDays, availableFrom, availableUntil, availabilityLabel] of tariffs) {
       await client.query(
-        `insert into tariffs(branch_id,name,simulator_zone,duration_minutes,price,weekday_price,weekend_price,weekday_bonus,weekend_bonus,type,is_active)
-         values($1,$2,$3,$4,$5,$5,$6,$7,$8,$9,true)`,
-        [mainBranchId, name, zone, duration, weekdayPrice, weekendPrice, weekdayBonus, weekendBonus, type],
-      );
-    }
-
-    for (let i = 1; i <= 16; i++) {
-      const n = String(i).padStart(2, "0");
-      await client.query(
-        `insert into simulators(branch_id,name,code,zone,simulator_type,status,device_id,ip_address)
-         values($1,$2,$2,'main','main','ready_to_play',$3,$4)
-         on conflict(branch_id, code) do update set name=excluded.name, device_id=excluded.device_id`,
-        [mainBranchId, `MAIN-${n}`, `MAIN-MAIN-${n}`, `192.168.${i}.10`],
-      );
-    }
-    for (let i = 1; i <= 4; i++) {
-      const n = String(i).padStart(2, "0");
-      await client.query(
-        `insert into simulators(branch_id,name,code,zone,simulator_type,status,device_id,ip_address)
-         values($1,$2,$2,'vip','vip','ready_to_play',$3,$4)
-         on conflict(branch_id, code) do update set name=excluded.name, device_id=excluded.device_id`,
-        [mainBranchId, `VIP-${n}`, `MAIN-VIP-${n}`, `192.168.${i}.80`],
+        `insert into tariffs(branch_id,name,simulator_zone,duration_minutes,price,weekday_price,weekend_price,weekday_bonus,weekend_bonus,type,available_days,available_from,available_until,availability_label,is_active)
+         values($1,$2,$3,$4,$5,$5,$5,$6,$6,$7,$8::int[],$9::time,$10::time,$11,true)`,
+        [mainBranchId, name, zone, duration, price, bonus, type, availableDays, availableFrom, availableUntil, availabilityLabel],
       );
     }
 
@@ -152,68 +140,6 @@ async function run() {
         [mainBranchId, productIds[i], products[i][5]],
       );
     }
-
-    const admin = (await client.query("select * from users where email='admin.main@b2game.uz'")).rows[0];
-    const sim = (await client.query("select * from simulators where branch_id=$1 and code='MAIN-01'", [mainBranchId])).rows[0];
-    const tariff = (await client.query("select * from tariffs where branch_id=$1 and name='Logitech 1 soat'", [mainBranchId])).rows[0];
-    const customer = (await client.query(
-      `insert into customers(branch_id,name,phone,total_spent,sessions_count,status,last_visit_at)
-       values($1,'Aziz','998901112233',50000,1,'active',now())
-       on conflict do nothing returning *`,
-      [mainBranchId],
-    )).rows[0] ?? (await client.query("select * from customers where branch_id=$1 limit 1", [mainBranchId])).rows[0];
-
-    const session = (await client.query(
-      `insert into sessions(branch_id, simulator_id, customer_id, customer_name, phone, tariff_id, status, payment_mode, duration_minutes, remaining_seconds, session_amount, total_amount, paid_amount, debt_amount, created_by)
-       values($1,$2,$3,$4,$5,$6,'active','prepaid',60,3600,40000,40000,40000,0,$7)
-       returning *`,
-      [mainBranchId, sim.id, customer.id, customer.name, customer.phone, tariff.id, admin.id],
-    )).rows[0];
-    await client.query("update simulators set status='busy', current_session_id=$1 where id=$2", [session.id, sim.id]);
-    await client.query(
-      `insert into payments(branch_id, session_id, customer_id, amount, method, card_amount, paid_by_admin_id)
-       values($1,$2,$3,40000,'card',40000,$4)`,
-      [mainBranchId, session.id, customer.id, admin.id],
-    );
-
-    const product = (await client.query("select * from products where barcode='4780001000011'")).rows[0];
-    const sale = (await client.query(
-      `insert into sales(branch_id, session_id, customer_id, sold_by, subtotal, discount, total, total_cost, profit, payment_status, payment_method, paid_at)
-       values($1,$2,$3,$4,18000,0,18000,12000,6000,'paid','cash',now()) returning *`,
-      [mainBranchId, session.id, customer.id, admin.id],
-    )).rows[0];
-    await client.query(
-      `insert into sale_items(sale_id,product_id,product_name,barcode,quantity,unit_price,unit_cost,total_price,total_cost,profit)
-       values($1,$2,$3,$4,2,9000,6000,18000,12000,6000)`,
-      [sale.id, product.id, product.name, product.barcode],
-    );
-    await client.query(
-      `insert into payments(branch_id, sale_id, customer_id, amount, method, cash_amount, paid_by_admin_id)
-       values($1,$2,$3,18000,'cash',18000,$4)`,
-      [mainBranchId, sale.id, customer.id, admin.id],
-    );
-
-    const sim2 = (await client.query("select * from simulators where branch_id=$1 and code='MAIN-05'", [mainBranchId])).rows[0];
-    const repair = (await client.query(
-      `insert into repair_requests(branch_id,simulator_id,requested_by,title,description,error_type,priority,status,revenue_impact)
-       values($1,$2,$3,'Wheel calibration error','Wheel calibration fails on launch','device_error','high','requested',50000)
-       returning *`,
-      [mainBranchId, sim2.id, admin.id],
-    )).rows[0];
-    await client.query("update simulators set status='repair_requested' where id=$1", [sim2.id]);
-    await client.query(
-      `insert into bookings(branch_id,simulator_id,booking_type,customer_name,phone,start_time,end_time,status,note,created_by)
-       values($1,$2,'customer_booking','Bekzod','998901234567',now() + interval '2 hours',now() + interval '3 hours','confirmed','Two players',$3)`,
-      [mainBranchId, sim2.id, admin.id],
-    );
-    await client.query(
-      `insert into shifts(branch_id, opened_by, status, starting_cash, expected_cash, card_total, product_sales, session_sales, opened_at)
-       values($1,$2,'open',200000,218000,50000,18000,50000,now()) on conflict do nothing`,
-      [mainBranchId, admin.id],
-    );
-
-    await auditLog({ branch_id: mainBranchId, actor: { user_id: admin.id, role: admin.role, branch_id: admin.branch_id, email: admin.email, name: admin.name }, action_type: "start_session", entity_type: "session", entity_id: session.id, simulator_id: sim.id, session_id: session.id, amount: 50000, details: { seeded: true } }, client);
-    await auditLog({ branch_id: mainBranchId, actor: { user_id: admin.id, role: admin.role, branch_id: admin.branch_id, email: admin.email, name: admin.name }, action_type: "repair_requested", entity_type: "repair_request", entity_id: repair.id, simulator_id: sim2.id, details: { seeded: true } }, client);
   });
 
   const flight = await pool.query("select count(*)::int as count from simulators where code ilike '%flight%' or name ilike '%flight%'");

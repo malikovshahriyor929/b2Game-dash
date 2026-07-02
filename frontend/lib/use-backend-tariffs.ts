@@ -20,6 +20,11 @@ export type BackendTariff = {
   isWeekend?: boolean;
   isEvening?: boolean;
   isHappyHour?: boolean;
+  isAvailable?: boolean;
+  availableDays?: number[];
+  availableFrom?: string;
+  availableUntil?: string;
+  availabilityLabel?: string;
   pricePeriod?: "weekday" | "evening" | "weekend" | "happy_hour";
 };
 
@@ -42,6 +47,11 @@ export function mapTariffRow(row: Record<string, unknown>): BackendTariff {
     isWeekend: Boolean(row.is_weekend),
     isEvening: Boolean(row.is_evening),
     isHappyHour: Boolean(row.is_happy_hour),
+    isAvailable: row.is_available == null ? undefined : Boolean(row.is_available),
+    availableDays: Array.isArray(row.available_days) ? row.available_days.map(Number) : undefined,
+    availableFrom: row.available_from == null ? undefined : String(row.available_from),
+    availableUntil: row.available_until == null ? undefined : String(row.available_until),
+    availabilityLabel: row.availability_label == null ? undefined : String(row.availability_label),
     pricePeriod: row.price_period == null ? undefined : String(row.price_period) as BackendTariff["pricePeriod"],
   };
 }
@@ -49,7 +59,8 @@ export function mapTariffRow(row: Record<string, unknown>): BackendTariff {
 export function dedupeTariffs(tariffs: BackendTariff[]) {
   const seen = new Set<string>();
   return tariffs.filter((item) => {
-    const key = `${item.simulatorZone}:${item.type}:${item.name.trim().toLowerCase()}:${item.durationMinutes}`;
+    const dayKey = item.availableDays?.join(",") ?? "";
+    const key = `${item.simulatorZone}:${item.type}:${item.name.trim().toLowerCase()}:${item.durationMinutes}:${dayKey}:${item.availableFrom ?? ""}:${item.availableUntil ?? ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -57,9 +68,11 @@ export function dedupeTariffs(tariffs: BackendTariff[]) {
 }
 
 export function tariffPricePeriodLabel(item: BackendTariff) {
-  if (item.isHappyHour || item.pricePeriod === "happy_hour") return "Skidka · Dush–Pay 10:00–18:00";
-  if (item.pricePeriod === "weekend" || item.isWeekend) return "Shanba-Yakshanba";
-  return "Dushanba-Juma";
+  if (item.availabilityLabel) return item.availabilityLabel;
+  if (item.isHappyHour || item.pricePeriod === "happy_hour") return "Skidka · Dush–Pay 10:00–17:00";
+  if (item.pricePeriod === "evening" || item.isEvening) return "17:00–03:00";
+  if (item.pricePeriod === "weekend" || item.isWeekend) return "Juma–Yakshanba";
+  return "Dushanba–Payshanba";
 }
 
 export function formatTariffOptionLabel(item: BackendTariff) {
@@ -70,10 +83,7 @@ export function formatTariffOptionLabel(item: BackendTariff) {
   if (item.isHappyHour) {
     return `${item.name} — ${money(item.price)}${suffix} (skidka)${bonus}`;
   }
-  if (item.weekdayPrice != null && item.weekendPrice != null && item.weekdayPrice !== item.weekendPrice) {
-    return `${item.name} — ${money(item.weekdayPrice)}${suffix} / ${money(item.weekendPrice)}${suffix}${bonus}`;
-  }
-  return `${item.name} — ${money(item.price)}${suffix}${bonus}`;
+  return `${item.name} — ${money(item.price)}${suffix}${bonus} (${tariffPricePeriodLabel(item)})`;
 }
 
 export function useBackendTariffs(branchId?: string, enabled = true) {

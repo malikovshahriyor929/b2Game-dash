@@ -9,7 +9,6 @@ import { sendRigMvpCommand, unlockRigMvp } from "../../services/rigMvp.service";
 
 const MAX_MAINTENANCE_CHARGE_MINUTES = 24 * 60;
 
-// Older Rig-MVP agents do not implement /command. The dashboard session remains
 // authoritative, so an optional device command must not fail a maintenance resume.
 async function sendRigCommandIfSupported(rigId: string, payload: Record<string, unknown>) {
   try {
@@ -87,10 +86,8 @@ export async function get(id: string) {
 }
 
 // Time-aware lost revenue for the maintenance window. We integrate the simulator zone's
-// hourly tariff rate minute-by-minute over [openedAt, closedAt] in Asia/Tashkent, applying
-// the same happy-hour / weekend / weekday rules as tariffs.service.ts. The representative
-// hourly rate is the active `time` tariff for the simulator's branch + zone, normalized to
-// a per-hour price. Returns the chargeable amount (so'm) and the charged duration in minutes.
+// active hourly tariff minute-by-minute over [openedAt, closedAt] in Asia/Tashkent, applying
+// the same availability windows as tariffs.service.ts.
 // Safety cap: if maintenance is accidentally left open for days, don't create multi-million
 // penalties from a stale open request.
 export async function computeMaintenanceCost(simulatorId: string, openedAt: Date | string, closedAt: Date | string) {
@@ -98,12 +95,10 @@ export async function computeMaintenanceCost(simulatorId: string, openedAt: Date
     `with sim as (
        select id, branch_id, zone from simulators where id = $1::uuid
      ),
-     rate_tariff as (
-       select t.name, t.type, t.duration_minutes, t.price, t.weekday_price, t.weekend_price
+     rate_tariffs as (
+       select t.name, t.type, t.duration_minutes, t.price, t.available_days, t.available_from, t.available_until
          from tariffs t join sim on t.branch_id = sim.branch_id and t.simulator_zone = sim.zone
         where t.is_active = true and lower(t.type) = 'time'
-        order by abs(t.duration_minutes - 60), t.duration_minutes
-        limit 1
      ),
      bounds as (
        select
@@ -114,27 +109,34 @@ export async function computeMaintenanceCost(simulatorId: string, openedAt: Date
          ) as closed_local
      ),
      mins as (
-       select generate_series(
+       select
+         gs as local_ts,
+         extract(isodow from gs)::int as dow,
+         case when extract(isodow from gs)::int = 1 then 7 else extract(isodow from gs)::int - 1 end as prev_dow,
+         gs::time as local_time
+       from bounds b
+       cross join generate_series(
          b.opened_local,
          b.closed_local - interval '1 minute',
          interval '1 minute'
-       ) as local_ts
-       from bounds b
+       ) gs
      ),
      priced as (
-       select
-         (case
-            when extract(isodow from m.local_ts)::int between 1 and 4
-                 and rt.name ilike 'Logitech%'
-                 and m.local_ts::time >= time '10:00' and m.local_ts::time < time '18:00'
-              then 25000::numeric
-            when extract(isodow from m.local_ts)::int in (6, 7)
-              then coalesce(rt.weekend_price::numeric, rt.price::numeric)
-            else coalesce(rt.weekday_price::numeric, rt.price::numeric)
-          end) * 60.0 / nullif(rt.duration_minutes, 0) as hourly_rate
-       from mins m cross join rate_tariff rt
+       select rt.price::numeric / nullif(rt.duration_minutes, 0) as minute_rate
+       from mins m
+       join rate_tariffs rt on case
+         when rt.available_from is null or rt.available_until is null then
+           cardinality(rt.available_days) = 0 or m.dow = any(rt.available_days)
+         when rt.available_from <= rt.available_until then
+           (cardinality(rt.available_days) = 0 or m.dow = any(rt.available_days))
+           and m.local_time >= rt.available_from
+           and m.local_time < rt.available_until
+         else
+           ((cardinality(rt.available_days) = 0 or m.dow = any(rt.available_days)) and m.local_time >= rt.available_from)
+           or ((cardinality(rt.available_days) = 0 or m.prev_dow = any(rt.available_days)) and m.local_time < rt.available_until)
+       end
      )
-     select coalesce(round(sum(hourly_rate) / 60.0), 0) as charge_amount,
+     select coalesce(round(sum(minute_rate)), 0) as charge_amount,
             (select count(*)::int from mins) as duration_minutes
        from priced`,
     simulatorId,
