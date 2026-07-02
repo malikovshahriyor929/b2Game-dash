@@ -199,7 +199,6 @@ export function OrderPanel() {
           <SelectContent>
             <SelectItem value="general">Umumiy savdo</SelectItem>
             {active.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} sessiyasi</SelectItem>)}
-            <SelectItem value="user">Ro&apos;yxatdan o&apos;tgan mijoz</SelectItem>
           </SelectContent>
         </Select>
         <Select value={paymentMethod} onValueChange={setPaymentMethod}>
@@ -207,7 +206,11 @@ export function OrderPanel() {
           <SelectContent>{paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}</SelectContent>
         </Select>
         {paymentFields()}
-        <div className="grid gap-2 sm:grid-cols-2"><Button onClick={() => setPayOpen(true)} disabled={!order.length || paymentInvalid}>To&apos;lash</Button><Button variant="destructive" onClick={clearOrder} disabled={!order.length}>Tozalash</Button></div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {/* Saqlash flow is hidden until pending orders can be reopened from the UI. */}
+          <Button onClick={() => setPayOpen(true)} disabled={!order.length || paymentInvalid}>To&apos;lash</Button>
+          <Button variant="destructive" onClick={clearOrder} disabled={!order.length}>Tozalash</Button>
+        </div>
       </CardContent>
       <Dialog open={payOpen} onOpenChange={(open) => {
         setPayOpen(open);
