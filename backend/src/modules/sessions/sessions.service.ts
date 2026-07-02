@@ -8,7 +8,7 @@ import { getRigMvpRig, lockRigMvp, sendRigMvpCommand, unlockRigMvp } from "../..
 import { isUuid } from "../../utils/ids";
 import { requireOpenShiftOwner } from "../shifts/shift.guard";
 import { debitCustomerBalance } from "../customers/customers.service";
-import { tariffsService } from "../tariffs/tariffs.service";
+import { assertTariffAvailableNow, tariffsService } from "../tariffs/tariffs.service";
 
 async function getSessionScoped(req: Request) {
   const rows = await prisma.$queryRawUnsafe<any[]>("select * from sessions where id=$1::uuid and ($2::uuid is null or branch_id=$2::uuid)", req.params.id, baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : null);
@@ -67,10 +67,28 @@ async function unlockRigMvpIfSupported(rigId: string, minutes?: number) {
 // VIP tariffs (type='vip') bill as open/hourly sessions: the timer counts up and the
 // final amount is elapsed time * hourly rate (no package discount), calculated at stop.
 // hourlyRate is normalized to a per-hour price, so a 60-min/100k VIP tariff = 100k/hour.
-async function resolveTariffBilling(tariffId: unknown): Promise<{ open: boolean; hourlyRate: number; price: number }> {
+function simulatorTariffZone(sim: { zone?: unknown; simulator_type?: unknown; name?: unknown }) {
+  const text = `${sim.zone ?? ""} ${sim.simulator_type ?? ""} ${sim.name ?? ""}`.toLowerCase();
+  return text.includes("vip") || text.includes("moza") ? "vip" : "main";
+}
+
+async function resolveTariffBilling(
+  tariffId: unknown,
+  sim?: { branch_id?: unknown; zone?: unknown; simulator_type?: unknown; name?: unknown },
+): Promise<{ open: boolean; hourlyRate: number; price: number }> {
   if (!isUuid(tariffId)) return { open: false, hourlyRate: 0, price: 0 };
-  const tariff = await tariffsService.getAvailableById(String(tariffId)) as { type: string; price: unknown; duration_minutes: number } | null;
+  const tariff = await tariffsService.getAvailableById(String(tariffId)) as { branch_id: string | null; simulator_zone: string; type: string; price: unknown; duration_minutes: number } | null;
   if (!tariff) throw new ApiError(409, "Bu tarif hozir ishlamaydi. Joriy vaqtga mos tarifni tanlang.");
+  if (sim) {
+    if (tariff.branch_id && String(tariff.branch_id) !== String(sim.branch_id)) {
+      throw new ApiError(409, "Bu tarif boshqa filialga tegishli.");
+    }
+    const tariffZone = String(tariff.simulator_zone ?? "all").toLowerCase();
+    const simZone = simulatorTariffZone(sim);
+    if (tariffZone !== "all" && tariffZone !== simZone) {
+      throw new ApiError(409, simZone === "vip" ? "VIP/Moza simulator uchun Moza tarifini tanlang." : "Oddiy Logitech simulator uchun Logitech tarifini tanlang.");
+    }
+  }
   const open = String(tariff.type).toLowerCase() === "vip";
   const duration = Number(tariff.duration_minutes) || 60;
   const price = Number(tariff.price) || 0;
@@ -188,7 +206,8 @@ export async function start(req: Request) {
   if (!sim) throw new ApiError(404, "Simulator not found");
   if (baseRole(req.user?.role) === "admin" && sim.branch_id !== (req.user?.branch_id ?? null)) throw new ApiError(403, "Branch scope violation");
   if (!["ready_to_play","reserved"].includes(sim.status)) throw new ApiError(409, `Simulator is ${sim.status}`);
-  const billing = await resolveTariffBilling(req.body.tariff_id);
+  if (isUuid(req.body.tariff_id)) await assertTariffAvailableNow(req.body.tariff_id);
+  const billing = await resolveTariffBilling(req.body.tariff_id, sim);
   const normalizedPaymentMode = paymentMode(req.body.payment_mode);
   const amount = billing.open || normalizedPaymentMode === "postpaid" ? 0 : (billing.price || Number(req.body.paid_amount ?? 0));
   const payment = paymentBreakdown(req.body, amount);
