@@ -1,0 +1,81 @@
+export const productImages = [
+  { key: "/product-images/18plus.png", label: "18 Plus" },
+  { key: "/product-images/aic-tea.png", label: "AIC Tea" },
+  { key: "/product-images/cola.png", label: "Cola" },
+  { key: "/product-images/ermak.png", label: "Ermak" },
+  { key: "/product-images/fanta.png", label: "Fanta" },
+  { key: "/product-images/flash.png", label: "Flash" },
+  { key: "/product-images/flint-kabob.png", label: "Flint Kabob" },
+  { key: "/product-images/flint-salami.jpg", label: "Flint Salami" },
+  { key: "/product-images/fuse-tea.png", label: "Fuse Tea" },
+  { key: "/product-images/ixlos-keshu.png", label: "Ixlos Keshu" },
+  { key: "/product-images/ixlos-mindal.png", label: "Ixlos Mindal" },
+  { key: "/product-images/ixlos-pista.png", label: "Ixlos Pista" },
+  { key: "/product-images/ixlos-qurt.png", label: "Ixlos Qurt" },
+  { key: "/product-images/ixlos-shordonak.png", label: "Ixlos Shordonak" },
+  { key: "/product-images/lays-crab.jpg", label: "Lays Crab" },
+  { key: "/product-images/lays-sir.png", label: "Lays Sir" },
+  { key: "/product-images/lipton.png", label: "Lipton" },
+  { key: "/product-images/mandm.png", label: "M&M" },
+  { key: "/product-images/mega-chips.png", label: "Mega Chips" },
+  { key: "/product-images/moxito.png", label: "Moxito" },
+  { key: "/product-images/redbull.png", label: "Red Bull" },
+  { key: "/product-images/seven-fres.png", label: "Seven Fres" },
+  { key: "/product-images/snickers.png", label: "Snickers" },
+  { key: "/product-images/sprite.png", label: "Sprite" },
+  { key: "/product-images/twix.png", label: "Twix" },
+  { key: "/product-images/water.png", label: "Water" },
+] as const;
+
+const productImageRules = [
+  { imageUrl: "/product-images/18plus.png", matches: ["18"] },
+  { imageUrl: "/product-images/aic-tea.png", matches: ["aic", "tea"] },
+  { imageUrl: "/product-images/cola.png", matches: ["cola"] },
+  { imageUrl: "/product-images/cola.png", matches: ["coca"] },
+  { imageUrl: "/product-images/ermak.png", matches: ["ermak"] },
+  { imageUrl: "/product-images/fanta.png", matches: ["fanta"] },
+  { imageUrl: "/product-images/flash.png", matches: ["flash"] },
+  { imageUrl: "/product-images/flint-kabob.png", matches: ["flint", "kabob"] },
+  { imageUrl: "/product-images/flint-kabob.png", matches: ["flint", "kebab"] },
+  { imageUrl: "/product-images/flint-salami.jpg", matches: ["flint", "salami"] },
+  { imageUrl: "/product-images/flint-salami.jpg", matches: ["flint", "салями"] },
+  { imageUrl: "/product-images/fuse-tea.png", matches: ["fuse", "tea"] },
+  { imageUrl: "/product-images/ixlos-keshu.png", matches: ["ixlos", "keshu"] },
+  { imageUrl: "/product-images/ixlos-keshu.png", matches: ["ixlos", "keshyu"] },
+  { imageUrl: "/product-images/ixlos-mindal.png", matches: ["ixlos", "mindal"] },
+  { imageUrl: "/product-images/ixlos-pista.png", matches: ["ixlos", "pista"] },
+  { imageUrl: "/product-images/ixlos-qurt.png", matches: ["ixlos", "qurt"] },
+  { imageUrl: "/product-images/ixlos-shordonak.png", matches: ["ixlos", "shordonak"] },
+  { imageUrl: "/product-images/lays-crab.jpg", matches: ["lays", "crab"] },
+  { imageUrl: "/product-images/lays-crab.jpg", matches: ["lays", "krab"] },
+  { imageUrl: "/product-images/lays-crab.jpg", matches: ["lay", "crab"] },
+  { imageUrl: "/product-images/lays-sir.png", matches: ["lays", "sir"] },
+  { imageUrl: "/product-images/lays-sir.png", matches: ["lays", "cheese"] },
+  { imageUrl: "/product-images/lipton.png", matches: ["lipton"] },
+  { imageUrl: "/product-images/mandm.png", matches: ["m&m"] },
+  { imageUrl: "/product-images/mandm.png", matches: ["mandm"] },
+  { imageUrl: "/product-images/mega-chips.png", matches: ["mega", "chips"] },
+  { imageUrl: "/product-images/moxito.png", matches: ["moxito"] },
+  { imageUrl: "/product-images/moxito.png", matches: ["mojito"] },
+  { imageUrl: "/product-images/redbull.png", matches: ["redbull"] },
+  { imageUrl: "/product-images/redbull.png", matches: ["red", "bull"] },
+  { imageUrl: "/product-images/seven-fres.png", matches: ["seven", "fres"] },
+  { imageUrl: "/product-images/seven-fres.png", matches: ["7", "fres"] },
+  { imageUrl: "/product-images/snickers.png", matches: ["snickers"] },
+  { imageUrl: "/product-images/sprite.png", matches: ["sprite"] },
+  { imageUrl: "/product-images/twix.png", matches: ["twix"] },
+  { imageUrl: "/product-images/water.png", matches: ["water"] },
+  { imageUrl: "/product-images/water.png", matches: ["suv"] },
+  { imageUrl: "/product-images/flash.png", matches: ["energy"] },
+  { imageUrl: "/product-images/mega-chips.png", matches: ["chips"] },
+] as const;
+
+export function getProductImageByName(name: string) {
+  const normalized = name.toLowerCase();
+
+  return productImageRules.find((rule) => rule.matches.every((word) => normalized.includes(word)))?.imageUrl;
+}
+
+export function getProductImageByKey(key?: string) {
+  return productImages.find((image) => image.key === key)?.key;
+}

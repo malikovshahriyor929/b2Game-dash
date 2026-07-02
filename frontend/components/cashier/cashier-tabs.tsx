@@ -17,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { money } from "@/lib/format";
-import { ProductIcon, productIcons } from "@/lib/product-icons";
+import { getProductImageByKey, getProductImageByName, productImages } from "@/lib/product-images";
 import { usePaymentMethods } from "@/lib/use-payment-methods";
 import { Product } from "@/types/product";
 
@@ -67,6 +67,7 @@ export function CashierTabs() {
   const changeAmount = Math.max(Number(returnForm.receivedAmount || 0) - Number(returnForm.saleAmount || 0), 0);
   const role = data?.user?.role;
   const canOperateShift = Boolean(activeShift && (role === "super_admin" || role === "dev_super_admin" || activeShift.openedBy === data?.user?.id));
+  const selectedProductImageUrl = newProduct.imageUrl.trim() || getProductImageByKey(newProduct.icon) || getProductImageByName(newProduct.name);
 
   function focusScannerInput() {
     window.setTimeout(() => {
@@ -100,7 +101,7 @@ export function CashierTabs() {
     setScanMessage(`QR topilmadi: ${normalizedCode}. Mahsulot ma'lumotlarini kiriting va saqlang.`);
     setScanCode(normalizedCode);
     setEditingProductId(null);
-    setNewProduct((item) => ({ ...item, qrCode: normalizedCode, name: "", price: "", cost: "", stock: "", icon: "snack" }));
+    setNewProduct((item) => ({ ...item, qrCode: normalizedCode, name: "", price: "", cost: "", stock: "", icon: "snack", imageUrl: "" }));
     setProductModalOpen(true);
   }, [addProductByQr, products, scanCode]);
 
@@ -197,7 +198,7 @@ export function CashierTabs() {
       return;
     }
     setEditingProductId(null);
-    setNewProduct((item) => ({ ...item, qrCode: normalizedCode, name: "", price: "", cost: "", stock: "", icon: "snack" }));
+    setNewProduct((item) => ({ ...item, qrCode: normalizedCode, name: "", price: "", cost: "", stock: "", icon: "snack", imageUrl: "" }));
     setScanMessage(`Yangi mahsulot QR: ${normalizedCode}. Formani to'ldirib saqlang.`);
   }
 
@@ -401,8 +402,12 @@ export function CashierTabs() {
               </div>
               <form onSubmit={submitProduct} className="grid gap-4 lg:grid-cols-[220px,1fr]">
                 <div className="space-y-3">
-                  <div className="flex aspect-square items-center justify-center rounded-2xl border border-slate-800 bg-slate-950 text-6xl text-sky-200">
-                    <ProductIcon iconKey={newProduct.icon} />
+                  <div className="flex aspect-square items-center justify-center overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 text-sky-200">
+                    {selectedProductImageUrl ? (
+                      <img src={selectedProductImageUrl} alt={newProduct.name || "Mahsulot rasmi"} className="h-full w-full object-cover" />
+                    ) : (
+                      <FiImage className="text-6xl" />
+                    )}
                   </div>
                   <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-sm text-slate-400">
                     {editingProductId ? "Mavjud mahsulot yangilanadi: stock, olingan narx va sotuv narxi saqlanadi." : "Yangi mahsulot yaratiladi va QR kodi bilan saqlanadi."}
@@ -416,17 +421,17 @@ export function CashierTabs() {
                   <div className="space-y-2"><Label>Qanchaga sotilmoqda</Label><Input inputMode="numeric" value={formatNumber(newProduct.price)} onChange={(event) => setNewProduct((item) => ({ ...item, price: event.target.value.replace(/\D/g, "") }))} placeholder="9 000" /></div>
                   <div className="space-y-2"><Label>Qoldiq</Label><Input inputMode="numeric" value={newProduct.stock} onChange={(event) => setNewProduct((item) => ({ ...item, stock: event.target.value.replace(/\D/g, "") }))} placeholder="72" /></div>
                   <div className="space-y-2 sm:col-span-2">
-                    <Label>Ikona</Label>
-                    <div className="grid grid-cols-5 gap-2 sm:grid-cols-10">
-                      {productIcons.map(({ key, label }) => (
+                    <Label>Rasm</Label>
+                    <div className="grid grid-cols-4 gap-2 sm:grid-cols-8 lg:grid-cols-10">
+                      {productImages.map(({ key, label }) => (
                         <button
                           key={key}
                           type="button"
                           title={label}
-                          className={`flex h-11 items-center justify-center rounded-xl border text-xl transition ${newProduct.icon === key ? "border-sky-400 bg-sky-500/20 text-sky-100" : "border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-600"}`}
-                          onClick={() => setNewProduct((item) => ({ ...item, icon: key }))}
+                          className={`h-14 overflow-hidden rounded-xl border bg-slate-950 transition ${newProduct.icon === key || newProduct.imageUrl === key ? "border-sky-400 ring-2 ring-sky-500/30" : "border-slate-800 hover:border-slate-600"}`}
+                          onClick={() => setNewProduct((item) => ({ ...item, icon: key, imageUrl: key }))}
                         >
-                          <ProductIcon iconKey={key} />
+                          <img src={key} alt={label} className="h-full w-full object-cover" />
                         </button>
                       ))}
                     </div>
@@ -577,8 +582,8 @@ export function CashierTabs() {
             <div className="space-y-3">
               <Label>Rasm ko'rinishi</Label>
               <div className="relative aspect-[4/3] overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
-                {newProduct.imageUrl.trim() ? (
-                  <img src={newProduct.imageUrl} alt={newProduct.name || "Mahsulot ko'rinishi"} className="h-full w-full object-cover" />
+                {selectedProductImageUrl ? (
+                  <img src={selectedProductImageUrl} alt={newProduct.name || "Mahsulot ko'rinishi"} className="h-full w-full object-cover" />
                 ) : (
                   <div className="flex h-full flex-col items-center justify-center gap-2 text-sky-200">
                     <FiImage className="text-5xl" />
@@ -595,7 +600,7 @@ export function CashierTabs() {
               />
               <div className="grid grid-cols-2 gap-2">
                 <Button type="button" variant="secondary" onClick={() => imageInputRef.current?.click()}><FiUpload /> Yuklash</Button>
-                <Button type="button" variant="outline" disabled={!newProduct.imageUrl} onClick={() => setNewProduct((item) => ({ ...item, imageUrl: "" }))}><FiX /> O'chirish</Button>
+                <Button type="button" variant="outline" disabled={!selectedProductImageUrl} onClick={() => setNewProduct((item) => ({ ...item, icon: "snack", imageUrl: "" }))}><FiX /> O'chirish</Button>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-sm text-slate-400">
                 Rasm product kartasida chiqadi. File upload yoki URL orqali qo'shish mumkin.
@@ -609,17 +614,17 @@ export function CashierTabs() {
               <div className="space-y-2"><Label>Qanchaga sotilmoqda</Label><Input inputMode="numeric" value={formatNumber(newProduct.price)} onChange={(event) => setNewProduct((item) => ({ ...item, price: event.target.value.replace(/\D/g, "") }))} placeholder="9 000" /></div>
               <div className="space-y-2"><Label>Qoldiq</Label><Input inputMode="numeric" value={newProduct.stock} onChange={(event) => setNewProduct((item) => ({ ...item, stock: event.target.value.replace(/\D/g, "") }))} placeholder="72" /></div>
               <div className="space-y-2 sm:col-span-2">
-                <Label>Ikona</Label>
-                <div className="grid grid-cols-5 gap-2 sm:grid-cols-10">
-                  {productIcons.map(({ key, label }) => (
+                <Label>Rasm</Label>
+                <div className="grid grid-cols-4 gap-2 sm:grid-cols-8 lg:grid-cols-10">
+                  {productImages.map(({ key, label }) => (
                     <button
                       key={key}
                       type="button"
                       title={label}
-                      className={`flex h-11 items-center justify-center rounded-xl border text-xl transition ${newProduct.icon === key ? "border-sky-400 bg-sky-500/20 text-sky-100" : "border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-600"}`}
-                      onClick={() => setNewProduct((item) => ({ ...item, icon: key }))}
+                      className={`h-14 overflow-hidden rounded-xl border bg-slate-950 transition ${newProduct.icon === key || newProduct.imageUrl === key ? "border-sky-400 ring-2 ring-sky-500/30" : "border-slate-800 hover:border-slate-600"}`}
+                      onClick={() => setNewProduct((item) => ({ ...item, icon: key, imageUrl: key }))}
                     >
-                      <ProductIcon iconKey={key} />
+                      <img src={key} alt={label} className="h-full w-full object-cover" />
                     </button>
                   ))}
                 </div>
