@@ -110,8 +110,14 @@ export const tariffsService = {
          select
            sc.*,
            sc.price as base_price,
-           sc.price as current_price,
-           coalesce(sc.weekday_bonus, sc.weekend_bonus) as current_bonus,
+           case
+             when sc.is_weekend then coalesce(sc.weekend_price, sc.weekday_price, sc.price)
+             else coalesce(sc.weekday_price, sc.weekend_price, sc.price)
+           end as current_price,
+           case
+             when sc.is_weekend then coalesce(sc.weekend_bonus, sc.weekday_bonus)
+             else coalesce(sc.weekday_bonus, sc.weekend_bonus)
+           end as current_bonus,
            case
              when sc.is_happy_hour then 'happy_hour'
              when sc.is_evening then 'evening'

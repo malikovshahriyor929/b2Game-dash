@@ -207,7 +207,7 @@ export function OrderPanel() {
           <SelectContent>{paymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}</SelectContent>
         </Select>
         {paymentFields()}
-        <div className="grid gap-2 sm:grid-cols-3"><Button variant="secondary">Saqlash</Button><Button onClick={() => setPayOpen(true)} disabled={!order.length || paymentInvalid}>To&apos;lash</Button><Button variant="destructive" onClick={clearOrder} disabled={!order.length}>Tozalash</Button></div>
+        <div className="grid gap-2 sm:grid-cols-2"><Button onClick={() => setPayOpen(true)} disabled={!order.length || paymentInvalid}>To&apos;lash</Button><Button variant="destructive" onClick={clearOrder} disabled={!order.length}>Tozalash</Button></div>
       </CardContent>
       <Dialog open={payOpen} onOpenChange={(open) => {
         setPayOpen(open);

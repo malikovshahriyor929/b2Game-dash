@@ -101,14 +101,14 @@ const BONUS_PRODUCT_PATTERNS: Array<{ test: RegExp; like: string }> = [
   { test: /red\s*bull|redbull/i, like: "%redbull%" },
   { test: /chips|chipsy/i, like: "%chips%" },
   { test: /snickers/i, like: "%snickers%" },
-  { test: /coca|cola/i, like: "%cola%" },
+  { test: /coca|cola|kola|coal/i, like: "%cola%" },
   { test: /suv|water/i, like: "%water%" },
   { test: /burger/i, like: "%burger%" },
 ];
 
 function parseBonusItems(bonus: string): Array<{ like: string; text: string; label: string; quantity: number }> {
   return bonus
-    .split(/[+,/]/)
+    .split(/\s*(?:\+|\/|\bva\b|,(?=\s*[^\d\s]))\s*/i)
     .map((part) => part.trim())
     .filter(Boolean)
     .map((part) => {
@@ -125,20 +125,40 @@ function parseBonusItems(bonus: string): Array<{ like: string; text: string; lab
 // Tarif bonusini (kun turiga qarab weekday/weekend) skladdan best-effort ayiradi.
 // Mahsulot topilmasa yoki stok yetmasa — o'tkazib yuboradi, sessiyani bloklamaydi.
 async function applyTariffBonusStock(branchId: string, tariffId: string | null | undefined, createdBy: string) {
-  if (!tariffId || !isUuid(tariffId)) return;
-  const tariffRows = await prisma.$queryRawUnsafe<Array<{ bonus: string | null }>>(
-    "select coalesce(weekday_bonus, weekend_bonus) as bonus from tariffs where id=$1::uuid",
+  if (!tariffId || !isUuid(tariffId)) return [];
+  const tariffRows = await prisma.$queryRawUnsafe<Array<{ name: string; bonus: string | null; bonus_period: string }>>(
+    `with clock as (
+       select extract(isodow from now() at time zone 'Asia/Tashkent')::int as dow
+     )
+     select
+       t.name,
+       case
+         when c.dow in (6,7) then coalesce(t.weekend_bonus, t.weekday_bonus)
+         else coalesce(t.weekday_bonus, t.weekend_bonus)
+       end as bonus,
+       case when c.dow in (6,7) then 'weekend' else 'weekday' end as bonus_period
+     from tariffs t cross join clock c
+     where t.id=$1::uuid`,
     tariffId,
   );
-  const bonus = tariffRows[0]?.bonus;
-  if (!bonus || !bonus.trim()) return;
+  const tariff = tariffRows[0];
+  const bonus = tariff?.bonus;
+  if (!bonus || !bonus.trim()) return [];
 
   let changed = false;
+  const applied: Array<{ product_id: string; label: string; quantity: number; before_quantity: number; after_quantity: number }> = [];
   for (const item of parseBonusItems(bonus)) {
     const rows = await prisma.$queryRawUnsafe<Array<{ inv_id: string; product_id: string; stock_quantity: number }>>(
       `select i.id as inv_id, p.id as product_id, i.stock_quantity
          from products p join inventory i on i.product_id=p.id
-        where i.branch_id=$1::uuid and p.is_active=true and (lower(p.name)=lower($3) or p.name ilike $2 or p.category ilike $2)
+        where i.branch_id=$1::uuid
+          and p.is_active=true
+          and (
+            lower(p.name)=lower($3)
+            or p.name ilike $2
+            or p.category ilike $2
+            or regexp_replace(lower(p.name), '[^a-z0-9]+', '', 'g') like regexp_replace(lower($3), '[^a-z0-9]+', '', 'g') || '%'
+          )
         order by (lower(p.name)=lower($3)) desc, i.stock_quantity desc limit 1`,
       branchId,
       item.like,
@@ -147,11 +167,13 @@ async function applyTariffBonusStock(branchId: string, tariffId: string | null |
     const inv = rows[0];
     if (!inv) continue; // mos mahsulot topilmadi
     if (inv.stock_quantity < item.quantity) continue; // stok yetmaydi -> ayirmaymiz
-    await prisma.$executeRawUnsafe(
-      "update inventory set stock_quantity=stock_quantity-$1, updated_at=now() where id=$2::uuid",
+    const updated = await prisma.$queryRawUnsafe<Array<{ stock_quantity: number }>>(
+      "update inventory set stock_quantity=stock_quantity-$1, updated_at=now() where id=$2::uuid and stock_quantity >= $1 returning stock_quantity",
       item.quantity,
       inv.inv_id,
     );
+    const afterQuantity = updated[0]?.stock_quantity;
+    if (afterQuantity === undefined) continue;
     await prisma.$executeRawUnsafe(
       `insert into inventory_movements(branch_id,product_id,type,quantity,before_quantity,after_quantity,reason,created_by)
        values($1::uuid,$2::uuid,'sale',$3,$4,$5,$6,$7::uuid)`,
@@ -159,13 +181,21 @@ async function applyTariffBonusStock(branchId: string, tariffId: string | null |
       inv.product_id,
       item.quantity,
       inv.stock_quantity,
-      inv.stock_quantity - item.quantity,
-      `tariff bonus: ${item.label}`,
+      afterQuantity,
+      `tariff bonus: ${item.label} (0 so'm)`,
       createdBy,
     );
+    applied.push({
+      product_id: inv.product_id,
+      label: item.label,
+      quantity: item.quantity,
+      before_quantity: inv.stock_quantity,
+      after_quantity: afterQuantity,
+    });
     changed = true;
   }
   if (changed) broadcastDashboard("inventory_updated", { branch_id: branchId, reason: "tariff_bonus" }, branchId);
+  return applied.map((item) => ({ ...item, tariff_name: tariff?.name ?? null, bonus_period: tariff?.bonus_period ?? null }));
 }
 
 export async function start(req: Request) {
@@ -246,7 +276,29 @@ export async function start(req: Request) {
   await prisma.$executeRawUnsafe("update simulators set status='busy', current_session_id=$1::uuid where id=$2::uuid", session.id, sim.id);
   // Tarif bonusini (energetik, chips ...) skladdan ayirish. Best-effort: xato sessiyani to'xtatmaydi.
   try {
-    await applyTariffBonusStock(sim.branch_id, req.body.tariff_id ?? null, req.user!.user_id);
+    const bonuses = await applyTariffBonusStock(sim.branch_id, req.body.tariff_id ?? null, req.user!.user_id);
+    for (const bonus of bonuses) {
+      await auditLog({
+        actor: req.user,
+        branch_id: sim.branch_id,
+        action_type: "tariff_bonus",
+        entity_type: "inventory",
+        entity_id: bonus.product_id,
+        simulator_id: sim.id,
+        session_id: session.id,
+        amount: 0,
+        details: {
+          tariff_id: req.body.tariff_id ?? null,
+          tariff_name: bonus.tariff_name,
+          bonus_period: bonus.bonus_period,
+          bonus: bonus.label,
+          quantity: bonus.quantity,
+          before_quantity: bonus.before_quantity,
+          after_quantity: bonus.after_quantity,
+          reason: "0 so'm tarif bonusi",
+        },
+      });
+    }
   } catch (error) {
     console.error("applyTariffBonusStock failed", error);
   }
