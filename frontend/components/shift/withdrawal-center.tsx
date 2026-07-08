@@ -9,9 +9,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { money } from "@/lib/format";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
-import type { WithdrawalRequest } from "@/lib/withdrawals-api";
+import type { WithdrawalPurpose, WithdrawalRequest } from "@/lib/withdrawals-api";
 
 // Naqd выemka (inkassatsiya) markazi: so'rov yuborish + tasdiqlash/rad etish + habarlar.
 // Super admin "Kassadan pul so'rash" qiladi; admin "Berdim" deb tasdiqlaydi.
@@ -25,6 +26,7 @@ export function WithdrawalCenter() {
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [purpose, setPurpose] = useState<WithdrawalPurpose>("owner_withdrawal");
   const [busy, setBusy] = useState(false);
 
   const pending = withdrawalRequests.filter((w) => w.status === "pending");
@@ -42,10 +44,11 @@ export function WithdrawalCenter() {
     for (const w of actionable) {
       if (seen.current.has(w.id)) continue;
       seen.current.add(w.id);
+      const reason = w.purpose === "admin_debt" ? "o'zi uchun qarzga" : w.purpose === "expense" ? "rasxod uchun" : "kassadan";
       toast(
         isSuper
-          ? `${w.initiatedByName || "Admin"} kassadan ${money(w.amount)} berdi — oldingizmi?`
-          : `${w.initiatedByName || "Boshliq"} kassadan ${money(w.amount)} so'radi — berasizmi?`,
+          ? `${w.initiatedByName || "Admin"} ${reason} ${money(w.amount)} so'radi — tasdiqlaysizmi?`
+          : `${w.initiatedByName || "Boshliq"} ${reason} ${money(w.amount)} so'radi — berasizmi?`,
         { icon: "💸", duration: 8000 },
       );
     }
@@ -58,12 +61,14 @@ export function WithdrawalCenter() {
   async function submitCreate() {
     const value = Math.round(Number(amount));
     if (!(value > 0)) return toast.error("Summani kiriting");
+    if ((purpose === "expense" || purpose === "admin_debt") && !note.trim()) return toast.error("Sabab/izoh kiriting");
     setBusy(true);
     try {
-      await requestWithdrawal(value, note.trim() || undefined);
-      toast.success(isSuper ? "Pul so'rovi yuborildi" : "Pul berish so'rovi yuborildi");
+      await requestWithdrawal(value, note.trim() || undefined, purpose);
+      toast.success(purpose === "admin_debt" ? "Admin qarzi uchun so'rov yuborildi" : purpose === "expense" ? "Rasxod uchun pul so'rovi yuborildi" : isSuper ? "Pul so'rovi yuborildi" : "Pul berish so'rovi yuborildi");
       setAmount("");
       setNote("");
+      setPurpose("owner_withdrawal");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Yuborib bo'lmadi");
     } finally {
@@ -130,8 +135,19 @@ export function WithdrawalCenter() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-sm text-slate-300">Izoh (ixtiyoriy)</Label>
-              <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Izoh..." className="bg-slate-900 border-slate-800" />
+              <Label className="text-sm text-slate-300">Nima uchun?</Label>
+              <Select value={purpose} onValueChange={(value) => setPurpose(value as WithdrawalPurpose)}>
+                <SelectTrigger className="bg-slate-900 border-slate-800"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="owner_withdrawal">Boshliq / owner uchun viemka</SelectItem>
+                  <SelectItem value="admin_debt">Admin o'zi uchun oldi (qarz)</SelectItem>
+                  <SelectItem value="expense">Rasxod / tovar / boshqa ish uchun</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm text-slate-300">{purpose === "owner_withdrawal" ? "Izoh (ixtiyoriy)" : "Sabab / izoh"}</Label>
+              <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder={purpose === "expense" ? "Masalan: Redbull olib kelindi" : purpose === "admin_debt" ? "Masalan: Obed / taxi / avans" : "Izoh..."} className="bg-slate-900 border-slate-800" />
             </div>
             <Button className="w-full" disabled={busy || !canCreate || !amount} onClick={submitCreate}>
               {isSuper ? "Pul so'rash" : "Pul berish"}
@@ -143,7 +159,7 @@ export function WithdrawalCenter() {
             <div className="space-y-2">
               <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Tasdiqlash kerak</div>
               {actionable.map((w) => (
-                <WithdrawalRow key={w.id} w={w} subtitle={isSuper ? `${w.initiatedByName} kassadan berdi` : `${w.initiatedByName} so'radi`}>
+                  <WithdrawalRow key={w.id} w={w} subtitle={isSuper ? `${w.initiatedByName} · ${purposeLabel(w.purpose)}` : `${w.initiatedByName} so'radi · ${purposeLabel(w.purpose)}`}>
                   <Button size="sm" disabled={busy} onClick={() => act(w.id, "confirm")}>{confirmLabel}</Button>
                   <Button size="sm" variant="destructive" disabled={busy} onClick={() => act(w.id, "reject")}>Rad</Button>
                 </WithdrawalRow>
@@ -156,7 +172,7 @@ export function WithdrawalCenter() {
             <div className="space-y-2">
               <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Javob kutilmoqda</div>
               {mineWaiting.map((w) => (
-                <WithdrawalRow key={w.id} w={w} subtitle="Tasdiq kutilmoqda...">
+                <WithdrawalRow key={w.id} w={w} subtitle={`Tasdiq kutilmoqda · ${purposeLabel(w.purpose)}`}>
                   <Button size="sm" variant="secondary" disabled={busy} onClick={() => act(w.id, "reject")}>Bekor</Button>
                 </WithdrawalRow>
               ))}
@@ -189,6 +205,12 @@ export function WithdrawalCenter() {
       </Dialog>
     </>
   );
+}
+
+function purposeLabel(purpose: WithdrawalPurpose) {
+  if (purpose === "admin_debt") return "Admin qarzi";
+  if (purpose === "expense") return "Rasxod";
+  return "Viemka";
 }
 
 function WithdrawalRow({ w, subtitle, children, trailing }: { w: WithdrawalRequest; subtitle: string; children?: React.ReactNode; trailing?: React.ReactNode }) {

@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import type { Session } from "next-auth";
 import { SessionProvider as NextAuthSessionProvider, signOut } from "next-auth/react";
-import toast, { Toaster } from "react-hot-toast";
+import toast, { ToastBar, Toaster } from "react-hot-toast";
 import { isAxiosError } from "axios";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
@@ -46,7 +46,28 @@ export function SessionProvider({ children, session }: { children: React.ReactNo
           success: { iconTheme: { primary: "#22c55e", secondary: "#0f172a" } },
           error: { iconTheme: { primary: "#ef4444", secondary: "#0f172a" } },
         }}
-      />
+      >
+        {(t) => (
+          <ToastBar toast={t}>
+            {({ icon, message }) => (
+              <>
+                {icon}
+                <div className="min-w-0 flex-1">{message}</div>
+                {t.type !== "loading" ? (
+                  <button
+                    type="button"
+                    aria-label="Toastni yopish"
+                    className="ml-2 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+                    onClick={() => toast.dismiss(t.id)}
+                  >
+                    X
+                  </button>
+                ) : null}
+              </>
+            )}
+          </ToastBar>
+        )}
+      </Toaster>
       <TooltipProvider delayDuration={150}>
         <ConfirmProvider>{children}</ConfirmProvider>
       </TooltipProvider>

@@ -20,8 +20,11 @@ export function StopSessionDialog({ open, onOpenChange, simulator, onTakePayment
   const shop = shopItems.reduce((sum, name) => sum + (products.find((product) => product.name === name)?.price ?? 0), 0);
   // Open (VIP) sessions bill by elapsed time — the accrued amount grows live in the store.
   const isOpen = simulator?.billingMode === "open";
-  const sessionAmount = isOpen ? (simulator?.accruedAmount ?? 0) : (tariff?.price ?? 0);
-  const total = sessionAmount + shop;
+  const sessionAmount = isOpen ? (simulator?.accruedAmount ?? 0) : (simulator?.sessionAmount ?? tariff?.price ?? 0);
+  const addedTime = simulator?.addedTimeAmount ?? 0;
+  const total = isOpen
+    ? sessionAmount + addedTime + shop
+    : (simulator?.totalAmount ?? (sessionAmount + addedTime + shop));
   const paid = simulator?.paidAmount ?? 0;
   const debt = Math.max(total - paid, 0);
 
@@ -51,10 +54,11 @@ export function StopSessionDialog({ open, onOpenChange, simulator, onTakePayment
           {isOpen ? <Row label="O'tgan vaqt" value={seconds(simulator?.elapsedSeconds ?? simulator?.remainingSeconds ?? 0)} /> : null}
           {isOpen ? <Row label="Soatlik stavka" value={`${money(simulator?.hourlyRate ?? 0)}/soat`} /> : null}
           <Row label={isOpen ? "Vaqt to'lovi (VIP)" : "Tarif summasi"} value={money(sessionAmount)} />
+          {!isOpen && addedTime > 0 ? <Row label="Qo'shilgan vaqt" value={money(addedTime)} /> : null}
           <Row label="Do'kon xaridlari" value={money(shop)} />
           <Row label="Jami" value={money(total)} />
           <Row label="Avval to'langan" value={money(paid)} />
-          <Row label="Qolgan qarz" value={money(debt)} danger={debt > 0} />
+          <Row label="To'lanadi" value={money(debt)} danger={debt > 0} />
         </div>
         {debt > 0 ? <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">To'lanmagan summa bor. Yakuniy to'xtatishdan oldin to'lovni qabul qiling yoki admin huquqi bilan majburiy to'xtating.</div> : null}
         <DialogFooter>

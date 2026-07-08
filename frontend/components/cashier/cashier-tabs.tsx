@@ -17,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { money } from "@/lib/format";
-import { ProductIcon, productIcons } from "@/lib/product-icons";
+import { getProductImageByKey, getProductImageByName, productImages } from "@/lib/product-images";
 import { usePaymentMethods } from "@/lib/use-payment-methods";
 import { Product } from "@/types/product";
 
@@ -51,7 +51,7 @@ export function CashierTabs() {
   const [returnForm, setReturnForm] = useState({ saleAmount: "", receivedAmount: "", method: "Naqd" });
   const [postPayForm, setPostPayForm] = useState({ simulatorId: "", amount: "", method: "Karta" });
   const [sessionPayForm, setSessionPayForm] = useState({ simulatorId: "", amount: "", method: "Karta" });
-  const [txForm, setTxForm] = useState({ type: "income" as "income" | "expense", amount: "", source: "", method: "Naqd" });
+  const [txForm, setTxForm] = useState({ type: "income" as "income" | "expense", amount: "", source: "", method: "Naqd", deductFromSalary: false, deductionType: "salary_advance" });
   const [cashierMessage, setCashierMessage] = useState("");
   const qrInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -67,6 +67,7 @@ export function CashierTabs() {
   const changeAmount = Math.max(Number(returnForm.receivedAmount || 0) - Number(returnForm.saleAmount || 0), 0);
   const role = data?.user?.role;
   const canOperateShift = Boolean(activeShift && (role === "super_admin" || role === "dev_super_admin" || activeShift.openedBy === data?.user?.id));
+  const selectedProductImageUrl = newProduct.imageUrl.trim() || getProductImageByKey(newProduct.icon) || getProductImageByName(newProduct.name);
 
   function focusScannerInput() {
     window.setTimeout(() => {
@@ -100,7 +101,7 @@ export function CashierTabs() {
     setScanMessage(`QR topilmadi: ${normalizedCode}. Mahsulot ma'lumotlarini kiriting va saqlang.`);
     setScanCode(normalizedCode);
     setEditingProductId(null);
-    setNewProduct((item) => ({ ...item, qrCode: normalizedCode, name: "", price: "", cost: "", stock: "", icon: "snack" }));
+    setNewProduct((item) => ({ ...item, qrCode: normalizedCode, name: "", price: "", cost: "", stock: "", icon: "snack", imageUrl: "" }));
     setProductModalOpen(true);
   }, [addProductByQr, products, scanCode]);
 
@@ -197,7 +198,7 @@ export function CashierTabs() {
       return;
     }
     setEditingProductId(null);
-    setNewProduct((item) => ({ ...item, qrCode: normalizedCode, name: "", price: "", cost: "", stock: "", icon: "snack" }));
+    setNewProduct((item) => ({ ...item, qrCode: normalizedCode, name: "", price: "", cost: "", stock: "", icon: "snack", imageUrl: "" }));
     setScanMessage(`Yangi mahsulot QR: ${normalizedCode}. Formani to'ldirib saqlang.`);
   }
 
@@ -401,8 +402,12 @@ export function CashierTabs() {
               </div>
               <form onSubmit={submitProduct} className="grid gap-4 lg:grid-cols-[220px,1fr]">
                 <div className="space-y-3">
-                  <div className="flex aspect-square items-center justify-center rounded-2xl border border-slate-800 bg-slate-950 text-6xl text-sky-200">
-                    <ProductIcon iconKey={newProduct.icon} />
+                  <div className="flex aspect-square items-center justify-center overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 text-sky-200">
+                    {selectedProductImageUrl ? (
+                      <img src={selectedProductImageUrl} alt={newProduct.name || "Mahsulot rasmi"} className="h-full w-full object-cover" />
+                    ) : (
+                      <FiImage className="text-6xl" />
+                    )}
                   </div>
                   <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-sm text-slate-400">
                     {editingProductId ? "Mavjud mahsulot yangilanadi: stock, olingan narx va sotuv narxi saqlanadi." : "Yangi mahsulot yaratiladi va QR kodi bilan saqlanadi."}
@@ -416,17 +421,17 @@ export function CashierTabs() {
                   <div className="space-y-2"><Label>Qanchaga sotilmoqda</Label><Input inputMode="numeric" value={formatNumber(newProduct.price)} onChange={(event) => setNewProduct((item) => ({ ...item, price: event.target.value.replace(/\D/g, "") }))} placeholder="9 000" /></div>
                   <div className="space-y-2"><Label>Qoldiq</Label><Input inputMode="numeric" value={newProduct.stock} onChange={(event) => setNewProduct((item) => ({ ...item, stock: event.target.value.replace(/\D/g, "") }))} placeholder="72" /></div>
                   <div className="space-y-2 sm:col-span-2">
-                    <Label>Ikona</Label>
-                    <div className="grid grid-cols-5 gap-2 sm:grid-cols-10">
-                      {productIcons.map(({ key, label }) => (
+                    <Label>Rasm</Label>
+                    <div className="grid grid-cols-4 gap-2 sm:grid-cols-8 lg:grid-cols-10">
+                      {productImages.map(({ key, label }) => (
                         <button
                           key={key}
                           type="button"
                           title={label}
-                          className={`flex h-11 items-center justify-center rounded-xl border text-xl transition ${newProduct.icon === key ? "border-sky-400 bg-sky-500/20 text-sky-100" : "border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-600"}`}
-                          onClick={() => setNewProduct((item) => ({ ...item, icon: key }))}
+                          className={`h-14 overflow-hidden rounded-xl border bg-slate-950 transition ${newProduct.icon === key || newProduct.imageUrl === key ? "border-sky-400 ring-2 ring-sky-500/30" : "border-slate-800 hover:border-slate-600"}`}
+                          onClick={() => setNewProduct((item) => ({ ...item, icon: key, imageUrl: key }))}
                         >
-                          <ProductIcon iconKey={key} />
+                          <img src={key} alt={label} className="h-full w-full object-cover" />
                         </button>
                       ))}
                     </div>
@@ -534,9 +539,9 @@ export function CashierTabs() {
                 e.preventDefault();
                 const amount = Number(txForm.amount);
                 if (!txForm.source.trim() || !Number.isFinite(amount) || amount <= 0) return;
-                addCashTransaction(txForm.type, amount, txForm.source.trim(), txForm.method);
-                setCashierMessage(`${txForm.type === "income" ? "Kirim (Prixod)" : "Chiqim (Rasxod)"}: ${money(amount)} muvaffaqiyatli saqlandi.`);
-                setTxForm({ type: "income", amount: "", source: "", method: "Naqd" });
+                addCashTransaction(txForm.type, amount, txForm.source.trim(), txForm.method, txForm.type === "expense" && txForm.deductFromSalary ? txForm.deductionType : undefined);
+                setCashierMessage(`${txForm.type === "income" ? "Kirim (Prixod)" : txForm.deductFromSalary ? "Oylikdan qirqiladigan rasxod" : "Chiqim (Rasxod)"}: ${money(amount)} saqlandi.`);
+                setTxForm({ type: "income", amount: "", source: "", method: "Naqd", deductFromSalary: false, deductionType: "salary_advance" });
               }} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <div className="space-y-2">
                   <Label>Turi</Label>
@@ -558,6 +563,35 @@ export function CashierTabs() {
                   </Select>
                 </div>
                 <div className="space-y-2"><Label>Summa</Label><Input inputMode="numeric" value={formatNumber(txForm.amount)} onChange={(e) => setTxForm((item) => ({ ...item, amount: e.target.value.replace(/\D/g, "") }))} placeholder="50 000" /></div>
+                {txForm.type === "expense" ? (
+                  <>
+                    <label className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm font-semibold text-slate-200">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-sky-500"
+                        checked={txForm.deductFromSalary}
+                        onChange={(event) => setTxForm((item) => ({ ...item, deductFromSalary: event.target.checked }))}
+                      />
+                      Admin o'zi uchun oldi, oyligidan qirqilsin
+                    </label>
+                    {txForm.deductFromSalary ? (
+                      <div className="space-y-2">
+                        <Label>Ushlanma turi</Label>
+                        <Select value={txForm.deductionType} onValueChange={(deductionType) => setTxForm((item) => ({ ...item, deductionType }))}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="salary_advance">Avans / oylikdan</SelectItem>
+                            <SelectItem value="personal_cash">Shaxsiy xarajat</SelectItem>
+                            <SelectItem value="fine">Jarima</SelectItem>
+                            <SelectItem value="damage">Zarar</SelectItem>
+                            <SelectItem value="shortage">Kamomad</SelectItem>
+                            <SelectItem value="other">Boshqa</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
                 <div className="space-y-2 md:col-span-2 xl:col-span-4"><Label>Tavsif (Sabab)</Label><Input value={txForm.source} onChange={(e) => setTxForm((item) => ({ ...item, source: e.target.value }))} placeholder="Masalan: Kabel xaridi, turnir depoziti" /></div>
                 <Button className="md:col-span-2 xl:col-span-4" type="submit" disabled={!txForm.source.trim() || !txForm.amount}><FiPlusCircle /> Saqlash</Button>
               </form>
@@ -577,8 +611,8 @@ export function CashierTabs() {
             <div className="space-y-3">
               <Label>Rasm ko'rinishi</Label>
               <div className="relative aspect-[4/3] overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
-                {newProduct.imageUrl.trim() ? (
-                  <img src={newProduct.imageUrl} alt={newProduct.name || "Mahsulot ko'rinishi"} className="h-full w-full object-cover" />
+                {selectedProductImageUrl ? (
+                  <img src={selectedProductImageUrl} alt={newProduct.name || "Mahsulot ko'rinishi"} className="h-full w-full object-cover" />
                 ) : (
                   <div className="flex h-full flex-col items-center justify-center gap-2 text-sky-200">
                     <FiImage className="text-5xl" />
@@ -595,7 +629,7 @@ export function CashierTabs() {
               />
               <div className="grid grid-cols-2 gap-2">
                 <Button type="button" variant="secondary" onClick={() => imageInputRef.current?.click()}><FiUpload /> Yuklash</Button>
-                <Button type="button" variant="outline" disabled={!newProduct.imageUrl} onClick={() => setNewProduct((item) => ({ ...item, imageUrl: "" }))}><FiX /> O'chirish</Button>
+                <Button type="button" variant="outline" disabled={!selectedProductImageUrl} onClick={() => setNewProduct((item) => ({ ...item, icon: "snack", imageUrl: "" }))}><FiX /> O'chirish</Button>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-sm text-slate-400">
                 Rasm product kartasida chiqadi. File upload yoki URL orqali qo'shish mumkin.
@@ -609,17 +643,17 @@ export function CashierTabs() {
               <div className="space-y-2"><Label>Qanchaga sotilmoqda</Label><Input inputMode="numeric" value={formatNumber(newProduct.price)} onChange={(event) => setNewProduct((item) => ({ ...item, price: event.target.value.replace(/\D/g, "") }))} placeholder="9 000" /></div>
               <div className="space-y-2"><Label>Qoldiq</Label><Input inputMode="numeric" value={newProduct.stock} onChange={(event) => setNewProduct((item) => ({ ...item, stock: event.target.value.replace(/\D/g, "") }))} placeholder="72" /></div>
               <div className="space-y-2 sm:col-span-2">
-                <Label>Ikona</Label>
-                <div className="grid grid-cols-5 gap-2 sm:grid-cols-10">
-                  {productIcons.map(({ key, label }) => (
+                <Label>Rasm</Label>
+                <div className="grid grid-cols-4 gap-2 sm:grid-cols-8 lg:grid-cols-10">
+                  {productImages.map(({ key, label }) => (
                     <button
                       key={key}
                       type="button"
                       title={label}
-                      className={`flex h-11 items-center justify-center rounded-xl border text-xl transition ${newProduct.icon === key ? "border-sky-400 bg-sky-500/20 text-sky-100" : "border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-600"}`}
-                      onClick={() => setNewProduct((item) => ({ ...item, icon: key }))}
+                      className={`h-14 overflow-hidden rounded-xl border bg-slate-950 transition ${newProduct.icon === key || newProduct.imageUrl === key ? "border-sky-400 ring-2 ring-sky-500/30" : "border-slate-800 hover:border-slate-600"}`}
+                      onClick={() => setNewProduct((item) => ({ ...item, icon: key, imageUrl: key }))}
                     >
-                      <ProductIcon iconKey={key} />
+                      <img src={key} alt={label} className="h-full w-full object-cover" />
                     </button>
                   ))}
                 </div>

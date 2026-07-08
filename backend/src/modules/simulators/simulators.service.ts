@@ -289,6 +289,11 @@ const activeSessionSelect = `
     when sess.status = 'paused' then sess.remaining_seconds
     else greatest(((sess.duration_minutes + sess.added_minutes) * 60 - extract(epoch from (now() - sess.started_at)))::int, 0)
   end as active_remaining_seconds,
+  sess.session_amount as active_session_amount,
+  sess.added_time_amount as active_added_time_amount,
+  sess.shop_amount as active_shop_amount,
+  sess.total_amount as active_total_amount,
+  sess.debt_amount as active_debt_amount,
   sess.paid_amount as active_paid_amount,
   sess.payment_mode as active_payment_mode,
   sess.billing_mode as active_billing_mode,

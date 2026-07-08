@@ -12,6 +12,22 @@ export type AdminUser = {
   penaltyTotal: number;
 };
 
+export type AdminDeductionType = "salary_advance" | "personal_cash" | "fine" | "damage" | "shortage" | "other";
+
+export type AdminDeduction = {
+  id: string;
+  adminId: string;
+  adminName: string;
+  branchName: string;
+  type: AdminDeductionType;
+  amount: number;
+  status: string;
+  note: string;
+  source: string;
+  createdByName: string;
+  createdAt: string;
+};
+
 export type AssignableSimulator = {
   id: string;
   name: string;
@@ -51,6 +67,26 @@ function mapUser(row: Record<string, unknown>): AdminUser {
 export async function fetchAdmins() {
   const rows = await backendGet<Array<Record<string, unknown>>>("/users");
   return rows.map(mapUser);
+}
+
+export async function fetchAdminDeductions(params?: { branchId?: string; type?: AdminDeductionType | "all" }) {
+  const query = new URLSearchParams();
+  if (params?.branchId) query.set("branch_id", params.branchId);
+  if (params?.type && params.type !== "all") query.set("type", params.type);
+  const rows = await backendGet<Array<Record<string, unknown>>>(`/expenses/admin-deductions${query.size ? `?${query}` : ""}`);
+  return rows.map((row) => ({
+    id: String(row.id),
+    adminId: String(row.admin_id ?? ""),
+    adminName: String(row.admin_name ?? ""),
+    branchName: String(row.branch_name ?? ""),
+    type: (row.type === "personal_cash" || row.type === "fine" || row.type === "damage" || row.type === "shortage" || row.type === "other" ? row.type : "salary_advance") as AdminDeductionType,
+    amount: Number(row.amount ?? 0),
+    status: String(row.status ?? "open"),
+    note: String(row.note ?? ""),
+    source: String(row.expense_source ?? ""),
+    createdByName: String(row.created_by_name ?? ""),
+    createdAt: String(row.created_at ?? ""),
+  } satisfies AdminDeduction));
 }
 
 export async function fetchBranches() {

@@ -66,7 +66,11 @@ export async function payAdminPenalty(req: Request) {
     "select coalesce(sum(amount),0) as total from admin_penalty_payments where admin_id=$1::uuid",
     admin.id,
   );
-  const outstanding = Math.max(0, Number(chargedRows[0]?.total ?? 0) - Number(paidRows[0]?.total ?? 0));
+  const deductionRows = await prisma.$queryRawUnsafe<Array<{ total: unknown }>>(
+    "select coalesce(sum(amount),0) as total from admin_deductions where admin_id=$1::uuid and status='open'",
+    admin.id,
+  );
+  const outstanding = Math.max(0, Number(chargedRows[0]?.total ?? 0) + Number(deductionRows[0]?.total ?? 0) - Number(paidRows[0]?.total ?? 0));
   const { cash, card, qr, amount } = paymentParts(req.body);
   if (!(amount > 0)) throw new ApiError(400, "Payment amount must be positive");
   if (amount > outstanding) throw new ApiError(400, "Payment exceeds admin penalty debt");

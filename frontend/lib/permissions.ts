@@ -1,7 +1,7 @@
 import { Role } from "@/types/user";
 
 const adminAccess = ["dashboard", "simulators", "cashier", "bookings", "customers", "tariffs", "games", "logs", "reports", "support"];
-const superAdminAccess = ["dashboard", "simulators", "cashier", "bookings", "customers", "tariffs", "games", "logs", "promo", "reports", "analytics", "maintenance", "support", "settings"];
+const superAdminAccess = ["dashboard", "simulators", "cashier", "bookings", "customers", "salaries", "tariffs", "games", "logs", "promo", "reports", "analytics", "maintenance", "support", "settings"];
 
 // Developer roles share the access surface of the base role they mirror.
 export const roleAccess: Record<Role, string[]> = {

@@ -18,7 +18,7 @@ const products = [
 
 // B2 Game tariffs:
 // - Soatlik tariflar vaqt oynasiga qarab chiqadi.
-// - Paketlar skidka paytida ishlamaydi; 17:00 dan keyin ko'rinadi.
+// - Paketlar kun bo'yicha ishlaydi.
 // available_days uses ISO weekdays (1=Dushanba ... 7=Yakshanba).
 const tariffs = [
   ["Logitech 1 soat", "main", 60, 25000, null, "time", [1, 2, 3, 4], "10:00", "17:00", "Dushanba-Payshanba 10:00-17:00"],

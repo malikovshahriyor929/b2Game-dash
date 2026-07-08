@@ -67,6 +67,11 @@ export type Simulator = {
   hourlyRate?: number;
   elapsedSeconds?: number;
   accruedAmount?: number;
+  sessionAmount?: number;
+  addedTimeAmount?: number;
+  shopAmount?: number;
+  totalAmount?: number;
+  debtAmount?: number;
   paidAmount: number;
   paymentStatus: PaymentStatus;
   orderItems: string[];

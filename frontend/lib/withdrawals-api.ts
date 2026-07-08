@@ -3,6 +3,7 @@ import { backendGet, backendPost } from "@/server/api";
 // Naqd выemka (inkassatsiya) so'rovi — boshliq yoki admin yuboradi, qarama-qarshi tomon tasdiqlaydi.
 export type WithdrawalStatus = "pending" | "confirmed" | "rejected";
 export type WithdrawalInitiator = "admin" | "super_admin";
+export type WithdrawalPurpose = "owner_withdrawal" | "admin_debt" | "expense";
 
 export type WithdrawalRequest = {
   id: string;
@@ -14,6 +15,8 @@ export type WithdrawalRequest = {
   initiatedBy: string;
   initiatedByName: string;
   initiatorRole: WithdrawalInitiator;
+  purpose: WithdrawalPurpose;
+  deductionType?: string;
   status: WithdrawalStatus;
   note?: string;
   confirmedBy?: string;
@@ -38,6 +41,8 @@ function mapRow(row: Record<string, unknown>): WithdrawalRequest {
     initiatedBy: String(row.initiated_by ?? ""),
     initiatedByName: String(row.initiated_by_name ?? ""),
     initiatorRole: row.initiator_role === "super_admin" ? "super_admin" : "admin",
+    purpose: row.purpose === "admin_debt" ? "admin_debt" : row.purpose === "expense" ? "expense" : "owner_withdrawal",
+    deductionType: row.deduction_type ? String(row.deduction_type) : undefined,
     status: row.status === "confirmed" ? "confirmed" : row.status === "rejected" ? "rejected" : "pending",
     note: row.note ? String(row.note) : undefined,
     confirmedBy: row.confirmed_by ? String(row.confirmed_by) : undefined,
@@ -52,14 +57,17 @@ export async function fetchWithdrawalRequests(branchId: string): Promise<Withdra
   return rows.map(mapRow);
 }
 
-export function createWithdrawalRequest(payload: { branch_id?: string; amount: number; note?: string }) {
-  return backendPost<Record<string, unknown>>("/shifts/withdrawals/requests", payload);
+export async function createWithdrawalRequest(payload: { branch_id?: string; amount: number; note?: string; purpose?: WithdrawalPurpose }) {
+  const row = await backendPost<Record<string, unknown>>("/shifts/withdrawals/requests", payload);
+  return mapRow(row);
 }
 
-export function confirmWithdrawalRequest(id: string) {
-  return backendPost<Record<string, unknown>>(`/shifts/withdrawals/requests/${id}/confirm`);
+export async function confirmWithdrawalRequest(id: string) {
+  const row = await backendPost<Record<string, unknown>>(`/shifts/withdrawals/requests/${id}/confirm`);
+  return mapRow(row);
 }
 
-export function rejectWithdrawalRequest(id: string) {
-  return backendPost<Record<string, unknown>>(`/shifts/withdrawals/requests/${id}/reject`);
+export async function rejectWithdrawalRequest(id: string) {
+  const row = await backendPost<Record<string, unknown>>(`/shifts/withdrawals/requests/${id}/reject`);
+  return mapRow(row);
 }

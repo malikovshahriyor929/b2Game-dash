@@ -20,7 +20,7 @@ import { BackendTariff, mapTariffRow, tariffPricePeriodLabel } from "@/lib/use-b
 import { backendDelete, backendGet, backendPatch, backendPost } from "@/server/api";
 import type { Product } from "@/types/product";
 
-const tariffTypes = ["time", "package", "night", "promo", "group", "birthday", "weekend"];
+const tariffTypes = ["time", "happy_hour", "package", "night", "promo", "group", "birthday", "weekend"];
 const zones = [
   { label: "Logitech (Main)", value: "main" },
   { label: "Moza (Premium)", value: "vip" },
@@ -33,6 +33,7 @@ const zoneLabels: Record<string, string> = {
 
 const typeLabels: Record<string, string> = {
   time: "Soatlik",
+  happy_hour: "Dush-Pay 10:00-18:00",
   package: "Paket",
   night: "Tungi",
   promo: "Promo",

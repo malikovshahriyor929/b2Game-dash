@@ -45,10 +45,26 @@ async function computeShiftMoney(shiftId: string) {
 // Smena davomida tasdiqlangan naqd выemka (inkassatsiya) yig'indisi — kassadan olib chiqilgan.
 async function confirmedWithdrawnCash(shiftId: string) {
   const rows = await prisma.$queryRawUnsafe<Array<{ total: string }>>(
-    "select coalesce(sum(amount),0) as total from cash_withdrawal_requests where shift_id=$1::uuid and status='confirmed'",
+    "select coalesce(sum(amount),0) as total from cash_withdrawal_requests where shift_id=$1::uuid and status='confirmed' and coalesce(purpose,'owner_withdrawal') <> 'expense'",
     shiftId,
   );
   return Number(rows[0]?.total ?? 0);
+}
+
+async function withdrawalRequestById(id: string) {
+  return (await prisma.$queryRawUnsafe<any[]>(
+    `select w.*,
+       ib.name as initiated_by_name,
+       ad.name as admin_name,
+       cb.name as confirmed_by_name
+     from cash_withdrawal_requests w
+     left join users ib on ib.id = w.initiated_by
+     left join users ad on ad.id = w.admin_id
+     left join users cb on cb.id = w.confirmed_by
+     where w.id=$1::uuid
+     limit 1`,
+    id,
+  ))[0];
 }
 
 async function computeShiftExpenses(shiftId: string) {
@@ -320,23 +336,27 @@ export async function createWithdrawalRequest(req: Request) {
   if (amount > available) throw new ApiError(400, "Amount exceeds cash in register");
 
   const initiatorRole = baseRole(req.user?.role); // 'admin' | 'super_admin'
+  const purpose = ["admin_debt", "expense", "owner_withdrawal"].includes(String(req.body.purpose)) ? String(req.body.purpose) : "owner_withdrawal";
+  const deductionType = purpose === "admin_debt" ? "salary_advance" : null;
   const row = (
     await prisma.$queryRawUnsafe<any[]>(
-      `insert into cash_withdrawal_requests(branch_id,shift_id,admin_id,amount,initiated_by,initiator_role,status,note)
-       values($1::uuid,$2::uuid,$3::uuid,$4,$5::uuid,$6,'pending',$7) returning *`,
+      `insert into cash_withdrawal_requests(branch_id,shift_id,admin_id,amount,initiated_by,initiator_role,purpose,deduction_type,status,note)
+       values($1::uuid,$2::uuid,$3::uuid,$4,$5::uuid,$6,$7,$8,'pending',$9) returning *`,
       branch,
       shift.id,
       shift.opened_by, // выemka shu smenadagi admin kassasidan
       amount,
       req.user!.user_id,
       initiatorRole,
+      purpose,
+      deductionType,
       req.body.note ?? null,
     )
   )[0];
 
-  await auditLog({ actor: req.user, branch_id: branch, action_type: "withdrawal_requested", entity_type: "cash_withdrawal", entity_id: row.id, amount, details: { initiator_role: initiatorRole } });
+  await auditLog({ actor: req.user, branch_id: branch, action_type: "withdrawal_requested", entity_type: "cash_withdrawal", entity_id: row.id, amount, details: { initiator_role: initiatorRole, purpose, deduction_type: deductionType } });
   broadcastDashboard("withdrawal_requested", row, branch);
-  return row;
+  return withdrawalRequestById(row.id);
 }
 
 export async function confirmWithdrawalRequest(req: Request) {
@@ -365,6 +385,36 @@ export async function confirmWithdrawalRequest(req: Request) {
       req.params.id,
     )
   )[0];
+  let expenseId: string | null = null;
+  const purpose = String(row.purpose ?? "owner_withdrawal");
+  if (row.shift_id && purpose === "expense") {
+    const expense = (await prisma.$queryRawUnsafe<any[]>(
+      `insert into expenses(branch_id,shift_id,amount,method,source,note,spent_by)
+       values($1::uuid,$2::uuid,$3,'cash',$4,$5,$6::uuid)
+       returning *`,
+      row.branch_id,
+      row.shift_id,
+      Number(row.amount),
+      row.note ?? "Kassadan rasxod",
+      row.note ?? null,
+      row.initiated_by,
+    ))[0];
+    expenseId = expense.id;
+    await prisma.$executeRawUnsafe("update cash_withdrawal_requests set expense_id=$1::uuid where id=$2::uuid", expenseId, row.id);
+  }
+  if (row.shift_id && purpose === "admin_debt") {
+    await prisma.$executeRawUnsafe(
+      `insert into admin_deductions(branch_id,shift_id,admin_id,type,amount,note,created_by)
+       values($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7::uuid)`,
+      row.branch_id,
+      row.shift_id,
+      row.admin_id,
+      row.deduction_type ?? "salary_advance",
+      Number(row.amount),
+      row.note ?? "Kassadan admin o'zi uchun oldi",
+      row.initiated_by,
+    );
+  }
   if (row.shift_id) {
     await prisma.$executeRawUnsafe(
       `insert into shift_withdrawals(shift_id,branch_id,source,amount,recipient,note,withdrawn_by)
@@ -372,14 +422,14 @@ export async function confirmWithdrawalRequest(req: Request) {
       row.shift_id,
       row.branch_id,
       Number(row.amount),
-      WITHDRAW_RECIPIENT,
+      purpose === "admin_debt" ? "Admin qarzi" : purpose === "expense" ? "Rasxod" : WITHDRAW_RECIPIENT,
       row.note ?? "mid-shift cash withdrawal",
       req.user!.user_id,
     );
   }
-  await auditLog({ actor: req.user, branch_id: row.branch_id, action_type: "withdrawal_confirmed", entity_type: "cash_withdrawal", entity_id: row.id, amount: Number(row.amount) });
+  await auditLog({ actor: req.user, branch_id: row.branch_id, action_type: "withdrawal_confirmed", entity_type: "cash_withdrawal", entity_id: row.id, amount: Number(row.amount), details: { purpose, expense_id: expenseId } });
   broadcastDashboard("withdrawal_resolved", updated, row.branch_id);
-  return updated;
+  return withdrawalRequestById(updated.id);
 }
 
 export async function rejectWithdrawalRequest(req: Request) {
@@ -397,5 +447,5 @@ export async function rejectWithdrawalRequest(req: Request) {
   )[0];
   await auditLog({ actor: req.user, branch_id: row.branch_id, action_type: "withdrawal_rejected", entity_type: "cash_withdrawal", entity_id: row.id, amount: Number(row.amount) });
   broadcastDashboard("withdrawal_resolved", updated, row.branch_id);
-  return updated;
+  return withdrawalRequestById(updated.id);
 }

@@ -8,17 +8,19 @@ import { Badge } from "@/components/ui/badge";
 import { money } from "@/lib/format";
 import { Product } from "@/types/product";
 import { ProductIcon } from "@/lib/product-icons";
+import { getProductImageByKey, getProductImageByName } from "@/lib/product-images";
 
 export function ProductCard({ product, onAdd, onEdit, onDelete }: { product: Product; onAdd: () => void; onEdit?: () => void; onDelete?: () => void }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const showImage = Boolean(product.imageUrl && !imageFailed);
+  const imageUrl = getProductImageByKey(product.icon) || getProductImageByName(product.name) || product.imageUrl;
+  const showImage = Boolean(imageUrl && !imageFailed);
 
   return (
     <Card className="group overflow-hidden">
       <div className="relative h-32 overflow-hidden bg-slate-800/70 sm:h-36">
         {showImage ? (
           <img
-            src={product.imageUrl}
+            src={imageUrl}
             alt={product.name}
             className="h-full w-full object-cover"
             onError={() => setImageFailed(true)}

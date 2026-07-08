@@ -23,7 +23,7 @@ import {
   unlockRig as unlockAdminRig,
 } from "@/lib/rig-admin-api";
 
-type StartPayload = { customerName: string; phone: string; tariff: string; tariffId?: string; customerId?: string; duration: number; amount: number; paymentStatus: "paid" | "unpaid"; paymentMethod?: string; payment?: Partial<PaymentPayload>; bookingId?: string };
+type StartPayload = { customerName: string; phone: string; tariff: string; tariffId?: string; customerId?: string; duration: number; amount: number; paymentStatus: "paid" | "unpaid"; paymentMethod?: string; payment?: Partial<PaymentPayload>; bookingId?: string; sessionMode?: "regular" | "vip" };
 type PeriodFilter = "today" | "yesterday" | "week" | "month" | "year" | "custom";
 type RepairPayload = { title: string; description: string; errorType: RepairErrorType; priority: RepairPriority; note?: string };
 type RevenueEvent = { id: string; time: string; date?: string; amount: number; source: string; branchId?: string; operator?: string };
@@ -53,7 +53,7 @@ type DashboardStore = {
   expenses: number;
   shopSales: number;
   withdrawalRequests: WithdrawalRequest[];
-  requestWithdrawal: (amount: number, note?: string) => Promise<void>;
+  requestWithdrawal: (amount: number, note?: string, purpose?: "owner_withdrawal" | "admin_debt" | "expense") => Promise<void>;
   confirmWithdrawal: (id: string) => Promise<void>;
   rejectWithdrawal: (id: string) => Promise<void>;
   revenueEvents: RevenueEvent[];
@@ -103,7 +103,7 @@ type DashboardStore = {
   payOrder: (attachTo?: string, paymentMethod?: string, customerId?: string, payment?: Partial<PaymentPayload>) => void;
   openShift: (operator: string, shiftType: string, startingCash: number) => void;
   closeShift: (actualCash: number, cashWithdrawn: number, notes?: string) => void;
-  addCashTransaction: (type: "income" | "expense", amount: number, source: string, method: string) => void;
+  addCashTransaction: (type: "income" | "expense", amount: number, source: string, method: string, deductionType?: string) => void;
   refreshRigs: () => void;
   notifyRig: (id: string, message: string) => void;
   pushRigUpdate: (id: string) => void;
@@ -289,6 +289,11 @@ function rigsToSimulators(rigs: RigRecord[], branchList: Branch[]) {
       hourlyRate: numberValue(rig.active_hourly_rate),
       elapsedSeconds: isOpen ? elapsedSeconds : undefined,
       accruedAmount: isOpen ? numberValue(rig.active_accrued_amount) : undefined,
+      sessionAmount: numberValue(rig.active_session_amount),
+      addedTimeAmount: numberValue(rig.active_added_time_amount),
+      shopAmount: numberValue(rig.active_shop_amount),
+      totalAmount: numberValue(rig.active_total_amount),
+      debtAmount: numberValue(rig.active_debt_amount),
       paidAmount: numberValue(rig.active_paid_amount),
       paymentStatus: rig.active_payment_mode === "postpaid" ? "unpaid" : "paid",
       orderItems: [],
@@ -496,7 +501,7 @@ function mapExpense(row: Record<string, unknown>, operator: string): CashTransac
     paymentMethod: String(row.method ?? ""),
     branchId: String(row.branch_id ?? ""),
     shiftId: row.shift_id ? String(row.shift_id) : undefined,
-    sourceType: "expense",
+    sourceType: row.deduction_type ? `deduction:${String(row.deduction_type)}` : "expense",
   };
 }
 
@@ -754,6 +759,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       "session_stopped",
       "payment_created",
       "expense_created",
+      "admin_deduction_created",
       "admin_penalty_paid",
       "sale_created",
       "inventory_updated",
@@ -965,6 +971,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         method,
         ...(isPaid ? splitPayment(payload.amount, method, payload.payment) : {}),
         booking_id: payload.bookingId ?? null,
+        session_mode: payload.sessionMode ?? "regular",
       }).then(refreshAfterAction).catch((error) => revertWithError(error, "Sessiyani boshlab bo'lmadi"));
       patchSimulator(id, {
         status: "busy",
@@ -986,17 +993,16 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       if (!simulator) return;
       const currentSeconds = simulator.remainingSeconds ?? simulator.remainingMinutes * 60;
       const newRemainingSeconds = currentSeconds + minutes * 60;
-      const apiMethod = toApiPaymentMethod(method);
 
       const applyLocal = () => {
         patchSimulator(id, {
           remainingMinutes: Math.ceil(newRemainingSeconds / 60),
           remainingSeconds: newRemainingSeconds,
-          paidAmount: simulator.paidAmount + amount,
-          paymentStatus: "paid",
+          addedTimeAmount: (simulator.addedTimeAmount ?? 0) + amount,
+          totalAmount: (simulator.totalAmount ?? 0) + amount,
+          paymentStatus: "unpaid",
           status: "busy",
         });
-        recordRevenue(amount, `added time ${simulator.name}`, simulator.branchId);
         appendLog(`added ${minutes} min to ${simulator.name}`, simulator.name, method);
       };
 
@@ -1004,8 +1010,6 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         void backendPost<Record<string, unknown>>(`/sessions/${simulator.currentSessionId}/add-time`, {
           minutes,
           amount,
-          method: apiMethod,
-          ...splitPayment(amount, apiMethod, payment),
         })
           .then(() => {
             applyLocal();
@@ -1518,7 +1522,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       );
       appendLog(`closed shift: ${activeShift.shiftType}. Actual cash: ${actualCash.toLocaleString()}`);
     },
-    addCashTransaction(type, amount, source, method) {
+    addCashTransaction(type, amount, source, method, deductionType) {
       if (!requireActiveShiftOwner()) return;
       const d = new Date();
       const timeStr = d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
@@ -1550,6 +1554,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
           method: toApiPaymentMethod(method),
           amount,
           source,
+          ...(deductionType ? { deduction_type: deductionType, admin_id: myUserId, note: source } : {}),
         }).then(refreshBackendData).catch((error) => revertWithError(error, "Rasxodni saqlab bo'lmadi"));
       }
       setCashTransactions((prev) => [newTx, ...prev]);
@@ -1582,18 +1587,19 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
         appendLog(`expense recorded: ${source} - ${amount.toLocaleString()}`, undefined, method);
       }
     },
-    async requestWithdrawal(amount, note) {
+    async requestWithdrawal(amount, note, purpose) {
       const branchId = effectiveBranchId !== "all" && effectiveBranchId !== fallbackBranch.id ? effectiveBranchId : undefined;
-      await createWithdrawalRequest({ ...(branchId ? { branch_id: branchId } : {}), amount, ...(note ? { note } : {}) });
-      await refreshBackendData();
+      const row = await createWithdrawalRequest({ ...(branchId ? { branch_id: branchId } : {}), amount, ...(note ? { note } : {}), ...(purpose ? { purpose } : {}) });
+      setWithdrawalRequests((items) => [row, ...items.filter((item) => item.id !== row.id)]);
     },
     async confirmWithdrawal(id) {
-      await confirmWithdrawalRequest(id);
-      await refreshBackendData();
+      const row = await confirmWithdrawalRequest(id);
+      setWithdrawalRequests((items) => items.map((item) => (item.id === id ? row : item)));
+      window.setTimeout(() => void refreshBackendData(), 250);
     },
     async rejectWithdrawal(id) {
-      await rejectWithdrawalRequest(id);
-      await refreshBackendData();
+      const row = await rejectWithdrawalRequest(id);
+      setWithdrawalRequests((items) => items.map((item) => (item.id === id ? row : item)));
     },
     refreshRigs() {
       void refreshBackendData();

@@ -26,6 +26,11 @@ export type RigRecord = {
   active_phone?: string | null;
   active_started_at?: string | null;
   active_remaining_seconds?: number | string | null;
+  active_session_amount?: number | string | null;
+  active_added_time_amount?: number | string | null;
+  active_shop_amount?: number | string | null;
+  active_total_amount?: number | string | null;
+  active_debt_amount?: number | string | null;
   active_paid_amount?: number | string | null;
   active_payment_mode?: string | null;
   active_billing_mode?: string | null;
@@ -75,6 +80,11 @@ export function mapBackendSimulatorRows(rows: Array<Record<string, any>>): RigRe
     active_phone: item.active_phone ?? null,
     active_started_at: item.active_started_at ?? null,
     active_remaining_seconds: item.active_remaining_seconds ?? null,
+    active_session_amount: item.active_session_amount ?? null,
+    active_added_time_amount: item.active_added_time_amount ?? null,
+    active_shop_amount: item.active_shop_amount ?? null,
+    active_total_amount: item.active_total_amount ?? null,
+    active_debt_amount: item.active_debt_amount ?? null,
     active_paid_amount: item.active_paid_amount ?? null,
     active_payment_mode: item.active_payment_mode ?? null,
     active_billing_mode: item.active_billing_mode ?? null,

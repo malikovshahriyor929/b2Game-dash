@@ -8,7 +8,7 @@ import { getRigMvpRig, lockRigMvp, sendRigMvpCommand, unlockRigMvp } from "../..
 import { isUuid } from "../../utils/ids";
 import { requireOpenShiftOwner } from "../shifts/shift.guard";
 import { debitCustomerBalance } from "../customers/customers.service";
-import { tariffsService } from "../tariffs/tariffs.service";
+import { assertTariffAvailableNow, tariffsService } from "../tariffs/tariffs.service";
 
 async function getSessionScoped(req: Request) {
   const rows = await prisma.$queryRawUnsafe<any[]>("select * from sessions where id=$1::uuid and ($2::uuid is null or branch_id=$2::uuid)", req.params.id, baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : null);
@@ -64,18 +64,47 @@ async function unlockRigMvpIfSupported(rigId: string, minutes?: number) {
   }
 }
 
-// VIP tariffs (type='vip') bill as open/hourly sessions: the timer counts up and the
-// final amount is elapsed time * hourly rate (no package discount), calculated at stop.
-// hourlyRate is normalized to a per-hour price, so a 60-min/100k VIP tariff = 100k/hour.
-async function resolveTariffBilling(tariffId: unknown): Promise<{ open: boolean; hourlyRate: number; price: number }> {
+function simulatorTariffZone(sim: { zone?: unknown; simulator_type?: unknown; name?: unknown }) {
+  const text = `${sim.zone ?? ""} ${sim.simulator_type ?? ""} ${sim.name ?? ""}`.toLowerCase();
+  return text.includes("vip") || text.includes("moza") ? "vip" : "main";
+}
+
+function isVipOnlyTariff(tariff: { type?: unknown; name?: unknown; simulator_zone?: unknown }) {
+  const type = String(tariff.type ?? "").toLowerCase();
+  const name = String(tariff.name ?? "").toLowerCase();
+  const zone = String(tariff.simulator_zone ?? "").toLowerCase();
+  return zone === "vip" || type === "vip" || name.includes("moza") || name.includes("vip");
+}
+
+async function resolveTariffBilling(
+  tariffId: unknown,
+  sim?: { branch_id?: unknown; zone?: unknown; simulator_type?: unknown; name?: unknown },
+  options: { vipMode?: boolean } = {},
+): Promise<{ open: boolean; hourlyRate: number; price: number }> {
   if (!isUuid(tariffId)) return { open: false, hourlyRate: 0, price: 0 };
-  const tariff = await tariffsService.getAvailableById(String(tariffId)) as { type: string; price: unknown; duration_minutes: number } | null;
+  const tariff = await tariffsService.getAvailableById(String(tariffId)) as { branch_id: string | null; simulator_zone: string; type: string; name?: string; price: unknown; current_price?: unknown; duration_minutes: number } | null;
   if (!tariff) throw new ApiError(409, "Bu tarif hozir ishlamaydi. Joriy vaqtga mos tarifni tanlang.");
-  const open = String(tariff.type).toLowerCase() === "vip";
+  if (sim) {
+    if (tariff.branch_id && String(tariff.branch_id) !== String(sim.branch_id)) {
+      throw new ApiError(409, "Bu tarif boshqa filialga tegishli.");
+    }
+    const tariffZone = String(tariff.simulator_zone ?? "all").toLowerCase();
+    const simZone = simulatorTariffZone(sim);
+    if (tariffZone !== "all" && tariffZone !== simZone) {
+      throw new ApiError(409, simZone === "vip" ? "VIP/Moza simulator uchun Moza tarifini tanlang." : "Oddiy Logitech simulator uchun Logitech tarifini tanlang.");
+    }
+  }
+  const simZone = sim ? simulatorTariffZone(sim) : String(tariff.simulator_zone ?? "").toLowerCase();
+  if (simZone !== "vip" && isVipOnlyTariff(tariff)) {
+    throw new ApiError(409, "Bu tarif ushbu simulyatorga mos emas.");
+  }
+  const type = String(tariff.type ?? "").toLowerCase();
+  if (options.vipMode && (type === "package" || type === "night")) {
+    throw new ApiError(409, "VIP rejim uchun 1 soatlik tarif kerak.");
+  }
+  const price = Number(tariff.current_price ?? tariff.price) || 0;
   const duration = Number(tariff.duration_minutes) || 60;
-  const price = Number(tariff.price) || 0;
-  const hourlyRate = open ? Math.round((price * 60) / duration) : 0;
-  return { open, hourlyRate, price };
+  return { open: Boolean(options.vipMode), hourlyRate: options.vipMode ? Math.round((price * 60) / duration) : 0, price };
 }
 
 const BONUS_PRODUCT_PATTERNS: Array<{ test: RegExp; like: string }> = [
@@ -83,14 +112,14 @@ const BONUS_PRODUCT_PATTERNS: Array<{ test: RegExp; like: string }> = [
   { test: /red\s*bull|redbull/i, like: "%redbull%" },
   { test: /chips|chipsy/i, like: "%chips%" },
   { test: /snickers/i, like: "%snickers%" },
-  { test: /coca|cola/i, like: "%cola%" },
+  { test: /coca|cola|kola|coal/i, like: "%cola%" },
   { test: /suv|water/i, like: "%water%" },
   { test: /burger/i, like: "%burger%" },
 ];
 
 function parseBonusItems(bonus: string): Array<{ like: string; text: string; label: string; quantity: number }> {
   return bonus
-    .split(/[+,/]/)
+    .split(/\s*(?:\+|\/|\bva\b|,(?=\s*[^\d\s]))\s*/i)
     .map((part) => part.trim())
     .filter(Boolean)
     .map((part) => {
@@ -107,20 +136,40 @@ function parseBonusItems(bonus: string): Array<{ like: string; text: string; lab
 // Tarif bonusini (kun turiga qarab weekday/weekend) skladdan best-effort ayiradi.
 // Mahsulot topilmasa yoki stok yetmasa — o'tkazib yuboradi, sessiyani bloklamaydi.
 async function applyTariffBonusStock(branchId: string, tariffId: string | null | undefined, createdBy: string) {
-  if (!tariffId || !isUuid(tariffId)) return;
-  const tariffRows = await prisma.$queryRawUnsafe<Array<{ bonus: string | null }>>(
-    "select coalesce(weekday_bonus, weekend_bonus) as bonus from tariffs where id=$1::uuid",
+  if (!tariffId || !isUuid(tariffId)) return [];
+  const tariffRows = await prisma.$queryRawUnsafe<Array<{ name: string; bonus: string | null; bonus_period: string }>>(
+    `with clock as (
+       select extract(isodow from now() at time zone 'Asia/Tashkent')::int as dow
+     )
+     select
+       t.name,
+       case
+         when c.dow in (6,7) then coalesce(t.weekend_bonus, t.weekday_bonus)
+         else coalesce(t.weekday_bonus, t.weekend_bonus)
+       end as bonus,
+       case when c.dow in (6,7) then 'weekend' else 'weekday' end as bonus_period
+     from tariffs t cross join clock c
+     where t.id=$1::uuid`,
     tariffId,
   );
-  const bonus = tariffRows[0]?.bonus;
-  if (!bonus || !bonus.trim()) return;
+  const tariff = tariffRows[0];
+  const bonus = tariff?.bonus;
+  if (!bonus || !bonus.trim()) return [];
 
   let changed = false;
+  const applied: Array<{ product_id: string; label: string; quantity: number; before_quantity: number; after_quantity: number }> = [];
   for (const item of parseBonusItems(bonus)) {
     const rows = await prisma.$queryRawUnsafe<Array<{ inv_id: string; product_id: string; stock_quantity: number }>>(
       `select i.id as inv_id, p.id as product_id, i.stock_quantity
          from products p join inventory i on i.product_id=p.id
-        where i.branch_id=$1::uuid and p.is_active=true and (lower(p.name)=lower($3) or p.name ilike $2 or p.category ilike $2)
+        where i.branch_id=$1::uuid
+          and p.is_active=true
+          and (
+            lower(p.name)=lower($3)
+            or p.name ilike $2
+            or p.category ilike $2
+            or regexp_replace(lower(p.name), '[^a-z0-9]+', '', 'g') like regexp_replace(lower($3), '[^a-z0-9]+', '', 'g') || '%'
+          )
         order by (lower(p.name)=lower($3)) desc, i.stock_quantity desc limit 1`,
       branchId,
       item.like,
@@ -129,11 +178,13 @@ async function applyTariffBonusStock(branchId: string, tariffId: string | null |
     const inv = rows[0];
     if (!inv) continue; // mos mahsulot topilmadi
     if (inv.stock_quantity < item.quantity) continue; // stok yetmaydi -> ayirmaymiz
-    await prisma.$executeRawUnsafe(
-      "update inventory set stock_quantity=stock_quantity-$1, updated_at=now() where id=$2::uuid",
+    const updated = await prisma.$queryRawUnsafe<Array<{ stock_quantity: number }>>(
+      "update inventory set stock_quantity=stock_quantity-$1, updated_at=now() where id=$2::uuid and stock_quantity >= $1 returning stock_quantity",
       item.quantity,
       inv.inv_id,
     );
+    const afterQuantity = updated[0]?.stock_quantity;
+    if (afterQuantity === undefined) continue;
     await prisma.$executeRawUnsafe(
       `insert into inventory_movements(branch_id,product_id,type,quantity,before_quantity,after_quantity,reason,created_by)
        values($1::uuid,$2::uuid,'sale',$3,$4,$5,$6,$7::uuid)`,
@@ -141,13 +192,21 @@ async function applyTariffBonusStock(branchId: string, tariffId: string | null |
       inv.product_id,
       item.quantity,
       inv.stock_quantity,
-      inv.stock_quantity - item.quantity,
-      `tariff bonus: ${item.label}`,
+      afterQuantity,
+      `tariff bonus: ${item.label} (0 so'm)`,
       createdBy,
     );
+    applied.push({
+      product_id: inv.product_id,
+      label: item.label,
+      quantity: item.quantity,
+      before_quantity: inv.stock_quantity,
+      after_quantity: afterQuantity,
+    });
     changed = true;
   }
   if (changed) broadcastDashboard("inventory_updated", { branch_id: branchId, reason: "tariff_bonus" }, branchId);
+  return applied.map((item) => ({ ...item, tariff_name: tariff?.name ?? null, bonus_period: tariff?.bonus_period ?? null }));
 }
 
 export async function start(req: Request) {
@@ -188,14 +247,15 @@ export async function start(req: Request) {
   if (!sim) throw new ApiError(404, "Simulator not found");
   if (baseRole(req.user?.role) === "admin" && sim.branch_id !== (req.user?.branch_id ?? null)) throw new ApiError(403, "Branch scope violation");
   if (!["ready_to_play","reserved"].includes(sim.status)) throw new ApiError(409, `Simulator is ${sim.status}`);
-  const billing = await resolveTariffBilling(req.body.tariff_id);
+  if (isUuid(req.body.tariff_id)) await assertTariffAvailableNow(req.body.tariff_id);
+  const billing = await resolveTariffBilling(req.body.tariff_id, sim, { vipMode: req.body.session_mode === "vip" });
   const normalizedPaymentMode = paymentMode(req.body.payment_mode);
   const amount = billing.open || normalizedPaymentMode === "postpaid" ? 0 : (billing.price || Number(req.body.paid_amount ?? 0));
   const payment = paymentBreakdown(req.body, amount);
   // Open (VIP) sessions have no fixed duration — they count up and are billed at stop.
   const durationMinutes = billing.open ? 0 : Number(req.body.duration_minutes ?? 0);
   const remainingSeconds = billing.open ? 0 : durationMinutes * 60;
-  const sessionAmount = billing.open ? 0 : amount;
+  const sessionAmount = billing.open ? 0 : (billing.price || Number(req.body.paid_amount ?? 0));
   // Bron to'qnashuvi: bu PC sessiya vaqti oralig'ida bron qilingan bo'lsa rad etamiz.
   // Bajarilayotgan bronni (booking_id) hisobga olmaymiz. Ochiq (VIP) sessiya cheksiz — oralig'i 'infinity'.
   const upperExpr = billing.open ? "'infinity'::timestamptz" : "now() + make_interval(mins => $3::int)";
@@ -227,7 +287,29 @@ export async function start(req: Request) {
   await prisma.$executeRawUnsafe("update simulators set status='busy', current_session_id=$1::uuid where id=$2::uuid", session.id, sim.id);
   // Tarif bonusini (energetik, chips ...) skladdan ayirish. Best-effort: xato sessiyani to'xtatmaydi.
   try {
-    await applyTariffBonusStock(sim.branch_id, req.body.tariff_id ?? null, req.user!.user_id);
+    const bonuses = await applyTariffBonusStock(sim.branch_id, req.body.tariff_id ?? null, req.user!.user_id);
+    for (const bonus of bonuses) {
+      await auditLog({
+        actor: req.user,
+        branch_id: sim.branch_id,
+        action_type: "tariff_bonus",
+        entity_type: "inventory",
+        entity_id: bonus.product_id,
+        simulator_id: sim.id,
+        session_id: session.id,
+        amount: 0,
+        details: {
+          tariff_id: req.body.tariff_id ?? null,
+          tariff_name: bonus.tariff_name,
+          bonus_period: bonus.bonus_period,
+          bonus: bonus.label,
+          quantity: bonus.quantity,
+          before_quantity: bonus.before_quantity,
+          after_quantity: bonus.after_quantity,
+          reason: "0 so'm tarif bonusi",
+        },
+      });
+    }
   } catch (error) {
     console.error("applyTariffBonusStock failed", error);
   }
@@ -266,21 +348,26 @@ export async function finalizeSessionStop(
   session: { id: string; simulator_id: string; branch_id: string; debt_amount?: unknown; billing_mode?: unknown },
   options: { stoppedBy?: string | null; expired?: boolean } = {},
 ) {
-  let debtAmount = Number(session.debt_amount ?? 0);
   if (String(session.billing_mode) === "open") {
-    const billed = await prisma.$queryRawUnsafe<Array<{ debt_amount: unknown }>>(
+    await prisma.$executeRawUnsafe(
       `update sessions
        set duration_minutes = ceil(extract(epoch from (now() - started_at)) / 60.0)::int,
            session_amount = round(ceil(extract(epoch from (now() - started_at)) / 60.0) * hourly_rate / 60.0),
            total_amount = round(ceil(extract(epoch from (now() - started_at)) / 60.0) * hourly_rate / 60.0) + shop_amount + added_time_amount,
-           debt_amount = greatest(round(ceil(extract(epoch from (now() - started_at)) / 60.0) * hourly_rate / 60.0) + shop_amount + added_time_amount - paid_amount, 0),
            updated_at = now()
-       where id=$1::uuid
-       returning debt_amount`,
+       where id=$1::uuid`,
       session.id,
     );
-    debtAmount = Number(billed[0]?.debt_amount ?? 0);
   }
+  const billed = await prisma.$queryRawUnsafe<Array<{ debt_amount: unknown }>>(
+    `update sessions
+     set debt_amount = greatest(total_amount - paid_amount, 0),
+         updated_at = now()
+     where id=$1::uuid
+     returning debt_amount`,
+    session.id,
+  );
+  const debtAmount = Number(billed[0]?.debt_amount ?? 0);
   const nextStatus = debtAmount > 0 ? "unpaid" : "stopped";
   await prisma.$executeRawUnsafe(
     "update sessions set status=$1, ended_at=now(), stopped_by=$2::uuid where id=$3::uuid",
@@ -365,11 +452,7 @@ export async function addTime(req: Request) {
   const minutes = Number(req.body.minutes);
   const amount = Number(req.body.amount ?? 0);
   if (!Number.isFinite(minutes) || minutes <= 0) throw new ApiError(400, "minutes must be positive");
-  const payment = paymentBreakdown(req.body, amount);
-  // To'lov bo'ladigan bo'lsa, ochiq smena shart — sessiyani o'zgartirishdan oldin tekshiramiz.
-  const shiftId = await requireOpenShiftOwner(s.branch_id, req);
-  // "balance" usulida — o'zgartirishdan oldin balansdan ayiramiz (mablag' yetmasa to'xtaydi).
-  if (payment.balance > 0) await debitCustomerBalance(s.customer_id ?? null, s.branch_id, payment.balance);
+  await requireOpenShiftOwner(s.branch_id, req);
 
   await prisma.$executeRawUnsafe(
     `update sessions
@@ -382,7 +465,6 @@ export async function addTime(req: Request) {
          ) + $2,
          added_time_amount=added_time_amount+$3,
          total_amount=total_amount+$3,
-         paid_amount=paid_amount+$3,
          updated_at=now()
      where id=$4::uuid`,
     minutes,
@@ -394,23 +476,6 @@ export async function addTime(req: Request) {
   const updated = await getSessionScoped(req);
   const remainingSeconds = Number(updated.remaining_seconds ?? 0);
   await extendRigSessionTime(String(updated.simulator_id), minutes, remainingSeconds);
-
-  if (amount > 0) {
-    await prisma.$executeRawUnsafe(
-      "insert into payments(branch_id,shift_id,session_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,paid_by_admin_id) values($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6,$7,$8,$9,$10,$11::uuid)",
-      updated.branch_id,
-      shiftId,
-      updated.id,
-      updated.customer_id ?? null,
-      amount,
-      req.body.method ?? "cash",
-      payment.cash,
-      payment.card,
-      payment.qr,
-      payment.balance,
-      req.user!.user_id,
-    );
-  }
 
   await auditLog({
     actor: req.user,
