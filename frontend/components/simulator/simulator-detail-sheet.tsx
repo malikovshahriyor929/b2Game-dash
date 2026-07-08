@@ -59,7 +59,7 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
     ?? repairRequests.find((item) => item.simulatorId === simulator.id && item.reviewStatus === "open");
   const inMaintenance = simulator.status === "repair_requested" || repairRequest?.reviewStatus === "open";
   const canStartSession = canOperate && !inMaintenance && (ready || simulator.status === "reserved");
-  const canAddTime = canOperate && !inMaintenance && busy;
+  const canAddTime = canOperate && !inMaintenance && busy && simulator.billingMode !== "open";
   const canTakePayment = canOperate && !inMaintenance && ["busy", "unpaid", "reserved"].includes(simulator.status);
   const canStop = canOperate && !inMaintenance && busy;
   const canToggleLock = isSuperAdmin
@@ -90,7 +90,7 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
             {hasSessionDetails ? <Field label="Joriy foydalanuvchi" value={simulator.currentUser ?? "Sessiya yo'q"} /> : null}
             {hasSessionDetails ? <Field label="Tarif" value={simulator.tariff ?? "Tanlanmagan"} /> : null}
             {hasSessionDetails ? <Field label="Boshlangan" value={simulator.startedAt ?? "-"} /> : null}
-            {hasSessionDetails ? <Field label="Qolgan" value={seconds(simulator.remainingSeconds ?? simulator.remainingMinutes * 60)} /> : null}
+            {hasSessionDetails ? <Field label={simulator.billingMode === "open" ? "O'tgan vaqt" : "Qolgan"} value={seconds(simulator.billingMode === "open" ? (simulator.elapsedSeconds ?? simulator.remainingSeconds ?? 0) : (simulator.remainingSeconds ?? simulator.remainingMinutes * 60))} /> : null}
             {hasSessionDetails ? <Field label="To'langan" value={money(simulator.paidAmount)} /> : null}
             {hasSessionDetails ? <Field label="To'lov" value={simulator.paymentStatus} /> : null}
             {repairRequest ? <Field label="Ta'mir holati" value={MAINTENANCE_STATUS_LABELS[repairRequest.reviewStatus] ?? repairRequest.reviewStatus} /> : null}

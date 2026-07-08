@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { money } from "@/lib/format";
-import { useBackendTariffs } from "@/lib/use-backend-tariffs";
 import { usePaymentMethods } from "@/lib/use-payment-methods";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { Simulator } from "@/types/simulator";
@@ -26,13 +25,13 @@ function numeric(value: string) {
 
 export function PaymentDialog({ open, onOpenChange, simulator }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator }) {
   const { pay } = useDashboardStore();
-  const tariffs = useBackendTariffs(simulator?.branchId, open);
   const paymentMethods = usePaymentMethods(simulator?.branchId, open);
   const simulatorPaymentMethods = useMemo(() => paymentMethods.filter((item) => ["cash", "card", "balance", "mixed"].includes(item.value)), [paymentMethods]);
   const [method, setMethod] = useState("Karta");
   const [parts, setParts] = useState<PaymentParts>(emptyParts);
-  const tariff = tariffs.find((item) => item.name === simulator?.tariff);
-  const due = Math.max((tariff?.price ?? 50000) - (simulator?.paidAmount ?? 0), 0);
+  const openTotal = (simulator?.accruedAmount ?? 0) + (simulator?.addedTimeAmount ?? 0) + (simulator?.shopAmount ?? 0);
+  const fixedTotal = simulator?.totalAmount ?? simulator?.sessionAmount ?? 0;
+  const due = Math.max((simulator?.billingMode === "open" ? openTotal : fixedTotal) - (simulator?.paidAmount ?? 0), 0);
   const mixedTotal = useMemo(() => parts.cash_amount + parts.card_amount, [parts]);
   const amount = method === "Aralash" ? mixedTotal : due;
   const canSubmit = Boolean(simulator) && amount > 0 && Number.isFinite(amount);

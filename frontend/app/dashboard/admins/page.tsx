@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
-import { FiCreditCard, FiDollarSign, FiEdit2, FiKey, FiMonitor, FiPlus, FiTrash2 } from "react-icons/fi";
+import { FiCreditCard, FiDollarSign, FiEdit2, FiKey, FiList, FiMonitor, FiPlus, FiTrash2 } from "react-icons/fi";
 import toast from "react-hot-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,12 +19,15 @@ import { StatCardsSkeleton, TableSkeleton } from "@/components/ui/skeletons";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   AdminBranch,
+  AdminDeduction,
+  AdminDeductionType,
   AdminRole,
   AdminUser,
   AssignableSimulator,
   createAdmin,
   deleteAdmin,
   fetchAdmins,
+  fetchAdminDeductions,
   fetchAssignableSimulators,
   fetchBranches,
   payAdminPenalty,
@@ -48,6 +51,15 @@ const emptyForm: FormState = { name: "", email: "", password: "", role: "admin",
 const branchScopedRole = (role: AdminRole) => role === "admin" || role === "dev_admin";
 const roleLabel = (role: AdminRole) =>
   role === "dev_super_admin" ? "Dev super admin" : role === "dev_admin" ? "Dev admin" : role === "super_admin" ? "Super admin" : "Admin";
+const deductionLabel = (type: AdminDeductionType | "all") =>
+  type === "salary_advance" ? "Avans"
+  : type === "personal_cash" ? "Shaxsiy"
+  : type === "fine" ? "Jarima"
+  : type === "damage" ? "Zarar"
+  : type === "shortage" ? "Kamomad"
+  : type === "other" ? "Boshqa"
+  : "Hammasi";
+const deductionTypes: Array<AdminDeductionType | "all"> = ["all", "salary_advance", "personal_cash", "fine", "damage", "shortage", "other"];
 
 export default function AdminsPage() {
   const { data: session } = useSession();
@@ -70,6 +82,10 @@ export default function AdminsPage() {
   const [assignSelected, setAssignSelected] = useState<Set<string>>(new Set());
   const [penaltyAdmin, setPenaltyAdmin] = useState<AdminUser | null>(null);
   const [penaltyForm, setPenaltyForm] = useState({ amount: "", method: "cash" as "cash" | "card" | "qr", received: "", note: "" });
+  const [deductionAdmin, setDeductionAdmin] = useState<AdminUser | null>(null);
+  const [deductionType, setDeductionType] = useState<AdminDeductionType | "all">("all");
+  const [deductions, setDeductions] = useState<AdminDeduction[]>([]);
+  const [deductionsLoading, setDeductionsLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -194,6 +210,34 @@ export default function AdminsPage() {
     setPenaltyForm({ amount: String(Math.round(admin.penaltyTotal)), method: "cash", received: String(Math.round(admin.penaltyTotal)), note: "" });
   }
 
+  async function openDeductions(admin: AdminUser) {
+    setDeductionAdmin(admin);
+    setDeductionType("all");
+    setDeductionsLoading(true);
+    try {
+      const rows = await fetchAdminDeductions({ branchId: admin.branchId ?? undefined });
+      setDeductions(rows.filter((row) => row.adminId === admin.id));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Ushlanmalarni yuklab bo'lmadi");
+    } finally {
+      setDeductionsLoading(false);
+    }
+  }
+
+  async function changeDeductionType(type: AdminDeductionType | "all") {
+    if (!deductionAdmin) return;
+    setDeductionType(type);
+    setDeductionsLoading(true);
+    try {
+      const rows = await fetchAdminDeductions({ branchId: deductionAdmin.branchId ?? undefined, type });
+      setDeductions(rows.filter((row) => row.adminId === deductionAdmin.id));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Ushlanmalarni yuklab bo'lmadi");
+    } finally {
+      setDeductionsLoading(false);
+    }
+  }
+
   async function submitPenaltyPay() {
     if (!penaltyAdmin) return;
     const amount = Number(penaltyForm.amount || 0);
@@ -266,7 +310,8 @@ export default function AdminsPage() {
                 <TableCell><Badge variant={admin.isActive ? "success" : "destructive"}>{admin.isActive ? "Faol" : "Bloklangan"}</Badge></TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-2 whitespace-nowrap">
-                    {admin.penaltyTotal > 0 && branchScopedRole(admin.role) ? <IconButton tooltip="Jarima to'landi" variant="success" onClick={() => openPenaltyPay(admin)}><FiDollarSign /></IconButton> : null}
+                    {branchScopedRole(admin.role) ? <IconButton tooltip="Ushlanmalar ro'yxati" variant="secondary" onClick={() => openDeductions(admin)}><FiList /></IconButton> : null}
+                    {admin.penaltyTotal > 0 && branchScopedRole(admin.role) ? <IconButton tooltip="Qarz to'landi" variant="success" onClick={() => openPenaltyPay(admin)}><FiDollarSign /></IconButton> : null}
                     {branchScopedRole(admin.role) ? <IconButton tooltip="Simulyator biriktirish" variant="secondary" onClick={() => openAssign(admin)}><FiMonitor /></IconButton> : null}
                     <IconButton tooltip="Tahrirlash / parol" variant="secondary" onClick={() => openEdit(admin)}><FiEdit2 /></IconButton>
                     <IconButton tooltip="O'chirish" variant="destructive" disabled={admin.id === session?.user?.id} onClick={() => remove(admin)}><FiTrash2 /></IconButton>
@@ -412,6 +457,72 @@ export default function AdminsPage() {
           <DialogFooter>
             <Button variant="secondary" onClick={() => setPenaltyAdmin(null)}>Bekor</Button>
             <Button onClick={submitPenaltyPay}><FiCreditCard /> To'lovni saqlash</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Admin deduction list */}
+      <Dialog open={Boolean(deductionAdmin)} onOpenChange={(open) => !open && setDeductionAdmin(null)}>
+        <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Admin ushlanmalari</DialogTitle>
+            <DialogDescription>
+              {deductionAdmin?.name} bo'yicha oylikdan qirqiladigan rasxodlar, jarimalar va kamomadlar.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-wrap gap-2">
+            {deductionTypes.map((type) => (
+              <Button key={type} size="sm" variant={deductionType === type ? "default" : "secondary"} onClick={() => void changeDeductionType(type)}>
+                {deductionLabel(type)}
+              </Button>
+            ))}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Card className="p-3">
+              <div className="text-xs font-semibold uppercase text-slate-500">Jami</div>
+              <div className="mt-1 text-xl font-black text-white">{money(deductions.reduce((sum, item) => sum + item.amount, 0))}</div>
+            </Card>
+            <Card className="p-3">
+              <div className="text-xs font-semibold uppercase text-slate-500">Ochiq</div>
+              <div className="mt-1 text-xl font-black text-amber-200">{deductions.filter((item) => item.status === "open").length} ta</div>
+            </Card>
+            <Card className="p-3">
+              <div className="text-xs font-semibold uppercase text-slate-500">Type</div>
+              <div className="mt-1 text-xl font-black text-sky-200">{deductionLabel(deductionType)}</div>
+            </Card>
+          </div>
+          {deductionsLoading ? (
+            <TableSkeleton rows={4} cols={5} />
+          ) : (
+            <Table className="min-w-[760px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Sana</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Sabab</TableHead>
+                  <TableHead>Kim yozdi</TableHead>
+                  <TableHead className="text-right">Summa</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {deductions.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell className="text-slate-300">{item.createdAt ? new Date(item.createdAt).toLocaleDateString("uz-UZ") : "—"}</TableCell>
+                    <TableCell><Badge variant={item.type === "fine" || item.type === "shortage" ? "destructive" : "muted"}>{deductionLabel(item.type)}</Badge></TableCell>
+                    <TableCell>
+                      <div className="font-semibold text-white">{item.source || item.note || "Ushlanma"}</div>
+                      {item.note && item.note !== item.source ? <div className="text-xs text-slate-500">{item.note}</div> : null}
+                    </TableCell>
+                    <TableCell className="text-slate-300">{item.createdByName || "—"}</TableCell>
+                    <TableCell className="text-right font-semibold text-red-300">{money(item.amount)}</TableCell>
+                  </TableRow>
+                ))}
+                {deductions.length === 0 ? <TableRow><TableCell colSpan={5} className="py-8 text-center text-slate-500">Ushlanma yo'q</TableCell></TableRow> : null}
+              </TableBody>
+            </Table>
+          )}
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setDeductionAdmin(null)}>Yopish</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

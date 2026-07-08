@@ -23,6 +23,7 @@ export const withdrawalRequestSchema = z.object({
   body: z.object({
     branch_id: z.string().uuid().optional(),
     amount: amount,
+    purpose: z.enum(["owner_withdrawal", "admin_debt", "expense"]).optional(),
     note: z.string().optional(),
   }),
 });

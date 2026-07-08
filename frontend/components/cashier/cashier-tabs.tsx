@@ -51,7 +51,7 @@ export function CashierTabs() {
   const [returnForm, setReturnForm] = useState({ saleAmount: "", receivedAmount: "", method: "Naqd" });
   const [postPayForm, setPostPayForm] = useState({ simulatorId: "", amount: "", method: "Karta" });
   const [sessionPayForm, setSessionPayForm] = useState({ simulatorId: "", amount: "", method: "Karta" });
-  const [txForm, setTxForm] = useState({ type: "income" as "income" | "expense", amount: "", source: "", method: "Naqd" });
+  const [txForm, setTxForm] = useState({ type: "income" as "income" | "expense", amount: "", source: "", method: "Naqd", deductFromSalary: false, deductionType: "salary_advance" });
   const [cashierMessage, setCashierMessage] = useState("");
   const qrInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -539,9 +539,9 @@ export function CashierTabs() {
                 e.preventDefault();
                 const amount = Number(txForm.amount);
                 if (!txForm.source.trim() || !Number.isFinite(amount) || amount <= 0) return;
-                addCashTransaction(txForm.type, amount, txForm.source.trim(), txForm.method);
-                setCashierMessage(`${txForm.type === "income" ? "Kirim (Prixod)" : "Chiqim (Rasxod)"}: ${money(amount)} muvaffaqiyatli saqlandi.`);
-                setTxForm({ type: "income", amount: "", source: "", method: "Naqd" });
+                addCashTransaction(txForm.type, amount, txForm.source.trim(), txForm.method, txForm.type === "expense" && txForm.deductFromSalary ? txForm.deductionType : undefined);
+                setCashierMessage(`${txForm.type === "income" ? "Kirim (Prixod)" : txForm.deductFromSalary ? "Oylikdan qirqiladigan rasxod" : "Chiqim (Rasxod)"}: ${money(amount)} saqlandi.`);
+                setTxForm({ type: "income", amount: "", source: "", method: "Naqd", deductFromSalary: false, deductionType: "salary_advance" });
               }} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <div className="space-y-2">
                   <Label>Turi</Label>
@@ -563,6 +563,35 @@ export function CashierTabs() {
                   </Select>
                 </div>
                 <div className="space-y-2"><Label>Summa</Label><Input inputMode="numeric" value={formatNumber(txForm.amount)} onChange={(e) => setTxForm((item) => ({ ...item, amount: e.target.value.replace(/\D/g, "") }))} placeholder="50 000" /></div>
+                {txForm.type === "expense" ? (
+                  <>
+                    <label className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm font-semibold text-slate-200">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-sky-500"
+                        checked={txForm.deductFromSalary}
+                        onChange={(event) => setTxForm((item) => ({ ...item, deductFromSalary: event.target.checked }))}
+                      />
+                      Admin o'zi uchun oldi, oyligidan qirqilsin
+                    </label>
+                    {txForm.deductFromSalary ? (
+                      <div className="space-y-2">
+                        <Label>Ushlanma turi</Label>
+                        <Select value={txForm.deductionType} onValueChange={(deductionType) => setTxForm((item) => ({ ...item, deductionType }))}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="salary_advance">Avans / oylikdan</SelectItem>
+                            <SelectItem value="personal_cash">Shaxsiy xarajat</SelectItem>
+                            <SelectItem value="fine">Jarima</SelectItem>
+                            <SelectItem value="damage">Zarar</SelectItem>
+                            <SelectItem value="shortage">Kamomad</SelectItem>
+                            <SelectItem value="other">Boshqa</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
                 <div className="space-y-2 md:col-span-2 xl:col-span-4"><Label>Tavsif (Sabab)</Label><Input value={txForm.source} onChange={(e) => setTxForm((item) => ({ ...item, source: e.target.value }))} placeholder="Masalan: Kabel xaridi, turnir depoziti" /></div>
                 <Button className="md:col-span-2 xl:col-span-4" type="submit" disabled={!txForm.source.trim() || !txForm.amount}><FiPlusCircle /> Saqlash</Button>
               </form>

@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useState } from "react";
 import { IconType } from "react-icons";
-import { FiBarChart2, FiCalendar, FiChevronLeft, FiChevronRight, FiCpu, FiDatabase, FiGift, FiHome, FiLogOut, FiMessageCircle, FiMonitor, FiPieChart, FiPlus, FiSettings, FiShoppingCart, FiTag, FiTool, FiUserCheck, FiUsers, FiX } from "react-icons/fi";
+import { FiBarChart2, FiCalendar, FiChevronLeft, FiChevronRight, FiCreditCard, FiDatabase, FiGift, FiHome, FiLogOut, FiMessageCircle, FiMonitor, FiPieChart, FiPlus, FiSettings, FiShoppingCart, FiTag, FiTool, FiUsers, FiX } from "react-icons/fi";
 import { RiGamepadLine } from "react-icons/ri";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -17,10 +17,10 @@ import { CreateBranchDialog } from "@/components/layout/create-branch-dialog";
 const items: { key: string; label: string; href: string; icon: IconType }[] = [
   { key: "dashboard", label: "Boshqaruv paneli", href: "/dashboard", icon: FiHome },
   { key: "simulators", label: "Simulatorlar", href: "/dashboard/simulators", icon: FiMonitor },
-  { key: "cashier", label: "Kassa", href: "/dashboard/cashier", icon: FiShoppingCart },
+  { key: "cashier", label: "Bar", href: "/dashboard/cashier", icon: FiShoppingCart },
   { key: "bookings", label: "Bronlar", href: "/dashboard/bookings", icon: FiCalendar },
   { key: "customers", label: "Mijozlar", href: "/dashboard/customers", icon: FiUsers },
-  { key: "admins", label: "Adminlar", href: "/dashboard/admins", icon: FiUserCheck },
+  { key: "salaries", label: "Oylik va qarzlar", href: "/dashboard/salaries", icon: FiCreditCard },
   { key: "tariffs", label: "Tariflar", href: "/dashboard/tariffs", icon: FiTag },
   { key: "games", label: "O'yinlar", href: "/dashboard/games", icon: RiGamepadLine },
   { key: "logs", label: "Loglar", href: "/dashboard/logs", icon: FiDatabase },

@@ -68,6 +68,13 @@ export function dedupeTariffs(tariffs: BackendTariff[]) {
 }
 
 export function tariffPricePeriodLabel(item: BackendTariff) {
+  if (item.type === "package" || item.type === "night") {
+    const days = item.availableDays ?? [];
+    const key = days.join(",");
+    if (key === "1,2,3,4") return "Dushanba-Payshanba";
+    if (key === "5,6,7") return "Juma-Yakshanba";
+    if (key === "1,2,3,4,5,6,7" || days.length === 0) return "Har kuni";
+  }
   if (item.availabilityLabel) return item.availabilityLabel;
   if (item.isHappyHour || item.pricePeriod === "happy_hour") return "Skidka · Dush–Pay 10:00–17:00";
   if (item.pricePeriod === "evening" || item.isEvening) return "17:00–03:00";
@@ -77,29 +84,34 @@ export function tariffPricePeriodLabel(item: BackendTariff) {
 
 export function formatTariffOptionLabel(item: BackendTariff) {
   const bonus = item.bonus ? ` + ${item.bonus}` : "";
-  // VIP tariffs are open/hourly — show the rate per hour.
-  const suffix = item.type.toLowerCase() === "vip" ? "/soat" : "";
+  const availability = item.isAvailable === false ? " — hozir aktiv emas" : "";
+  // Moza/VIP time tariffs are open/hourly — show the rate per hour.
+  const type = item.type.toLowerCase();
+  const suffix = item.simulatorZone === "vip" && (type === "time" || type === "vip" || item.durationMinutes === 60) ? "/soat" : "";
+  if (item.type === "package" || item.type === "night") {
+    return `${item.name} — ${tariffPricePeriodLabel(item)} — ${money(item.price)}${bonus}${availability}`;
+  }
   // Happy hour: chegirma narxini ko'rsatamiz (eski narx ustidan).
   if (item.isHappyHour) {
-    return `${item.name} — ${money(item.price)}${suffix} (skidka)${bonus}`;
+    return `${item.name} — ${money(item.price)}${suffix} (skidka)${bonus}${availability}`;
   }
-  return `${item.name} — ${money(item.price)}${suffix}${bonus} (${tariffPricePeriodLabel(item)})`;
+  return `${item.name} — ${money(item.price)}${suffix}${bonus} (${tariffPricePeriodLabel(item)})${availability}`;
 }
 
-export function useBackendTariffs(branchId?: string, enabled = true) {
+export function useBackendTariffs(branchId?: string, enabled = true, availability: "current" | "all" = "current") {
   const queryBranchId = branchId && branchId !== "all" ? branchId : "all";
   const [tariffs, setTariffs] = useState<BackendTariff[]>([]);
 
   useEffect(() => {
     if (!enabled) return;
-    const query = `branch_id=${encodeURIComponent(queryBranchId)}`;
+    const query = `branch_id=${encodeURIComponent(queryBranchId)}${availability === "all" ? "&availability=all" : ""}`;
     void backendGet<Array<Record<string, unknown>>>(`/tariffs?${query}`)
       .then((rows) => {
         const mapped = rows.map(mapTariffRow);
         setTariffs(dedupeTariffs(mapped));
       })
       .catch(() => undefined);
-  }, [enabled, queryBranchId]);
+  }, [availability, enabled, queryBranchId]);
 
   return tariffs;
 }

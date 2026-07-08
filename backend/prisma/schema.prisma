@@ -201,6 +201,27 @@ model AdminPenaltyPayment {
   @@map("admin_penalty_payments")
 }
 
+model AdminDeduction {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+  shiftId   String?  @map("shift_id") @db.Uuid
+  adminId   String   @map("admin_id") @db.Uuid
+  expenseId String?  @map("expense_id") @db.Uuid
+  type      String   @default("salary_advance")
+  amount    Decimal  @db.Decimal(14, 2)
+  status    String   @default("open")
+  note      String?
+  createdBy String   @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([branchId])
+  @@index([shiftId])
+  @@index([adminId])
+  @@index([type])
+  @@index([expenseId])
+  @@map("admin_deductions")
+}
+
 model Product {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name      String
@@ -392,6 +413,9 @@ model CashWithdrawalRequest {
   amount        Decimal   @db.Decimal(14, 2)
   initiatedBy   String    @map("initiated_by") @db.Uuid
   initiatorRole String    @map("initiator_role")
+  purpose       String    @default("owner_withdrawal")
+  deductionType String?   @map("deduction_type")
+  expenseId     String?   @map("expense_id") @db.Uuid
   status        String    @default("pending")
   note          String?
   confirmedBy   String?   @map("confirmed_by") @db.Uuid
@@ -402,6 +426,8 @@ model CashWithdrawalRequest {
   @@index([shiftId])
   @@index([adminId])
   @@index([status])
+  @@index([purpose])
+  @@index([expenseId])
   @@map("cash_withdrawal_requests")
 }
 

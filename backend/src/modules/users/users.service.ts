@@ -54,6 +54,10 @@ export const usersService = {
                   )
                   from repair_requests rr
                   where rr.requested_by=u.id and rr.review_status='charged'
+                ),0) + coalesce((
+                  select sum(ad.amount)
+                  from admin_deductions ad
+                  where ad.admin_id=u.id and ad.status='open'
                 ),0) - coalesce((
                   select sum(app.amount)
                   from admin_penalty_payments app

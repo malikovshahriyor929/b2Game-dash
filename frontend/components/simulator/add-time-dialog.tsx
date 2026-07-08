@@ -5,21 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { money, seconds } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { usePaymentMethods } from "@/lib/use-payment-methods";
 import { useBackendTariffs } from "@/lib/use-backend-tariffs";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
 import { Simulator } from "@/types/simulator";
-
-type PaymentParts = {
-  cash_amount: number;
-  card_amount: number;
-};
-
-const emptyParts: PaymentParts = { cash_amount: 0, card_amount: 0 };
 
 function numeric(value: string) {
   const next = Number(value);
@@ -29,8 +20,6 @@ function numeric(value: string) {
 export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator }) {
   const { addTime } = useDashboardStore();
   const confirm = useConfirm();
-  const paymentMethods = usePaymentMethods(simulator?.branchId, open);
-  const simulatorPaymentMethods = useMemo(() => paymentMethods.filter((item) => ["cash", "card", "balance", "mixed"].includes(item.value)), [paymentMethods]);
   const tariffs = useBackendTariffs(simulator?.branchId, open);
   const presets = useMemo(() => {
     const zone = simulator?.zone === "VIP" ? "vip" : "main";
@@ -64,8 +53,6 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
   const [selectedPreset, setSelectedPreset] = useState(fallbackPreset);
   const [customMin, setCustomMin] = useState("");
   const [customPrice, setCustomPrice] = useState("");
-  const [method, setMethod] = useState("Karta");
-  const [parts, setParts] = useState<PaymentParts>(emptyParts);
 
   const customMinutes = Number(customMin);
   const customAmount = Number(customPrice);
@@ -73,14 +60,11 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
   const selectedMinutes = isCustom ? customMinutes : selectedPreset.min;
   const selectedAmount = isCustom ? customAmount : selectedPreset.price;
   const minuteRate = selectedPreset.min > 0 ? selectedPreset.price / selectedPreset.min : 0;
-  const isMixed = method === "Aralash";
-  const mixedTotal = parts.cash_amount + parts.card_amount;
   const canSubmit = Boolean(simulator)
     && Number.isFinite(selectedMinutes)
     && Number.isFinite(selectedAmount)
     && selectedMinutes > 0
-    && selectedAmount > 0
-    && (!isMixed || mixedTotal === selectedAmount);
+    && selectedAmount > 0;
 
   const summary = useMemo(() => {
     if (!canSubmit) return "Vaqt va narxni kiriting";
@@ -92,14 +76,7 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
     setSelectedPreset(fallbackPreset);
     setCustomMin("");
     setCustomPrice("");
-    setMethod(simulatorPaymentMethods[0]?.label ?? "Karta");
-    setParts({ ...emptyParts, card_amount: fallbackPreset.price });
-  }, [fallbackPreset, open, simulator?.id, simulatorPaymentMethods]);
-
-  useEffect(() => {
-    if (!open || isMixed) return;
-    setParts({ ...emptyParts, card_amount: selectedAmount > 0 ? selectedAmount : 0 });
-  }, [isMixed, open, selectedAmount]);
+  }, [fallbackPreset, open, simulator?.id]);
 
   function handleCustomMinutes(value: string) {
     setCustomMin(value);
@@ -113,10 +90,6 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
     setCustomMin(price > 0 && minuteRate > 0 ? String(Math.max(1, Math.round(price / minuteRate))) : "");
   }
 
-  function setPart(key: keyof PaymentParts, value: string) {
-    setParts((current) => ({ ...current, [key]: numeric(value) }));
-  }
-
   async function submit() {
     if (!canSubmit || !simulator) return;
     const ok = await confirm({
@@ -126,7 +99,7 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
       tone: "default",
     });
     if (!ok) return;
-    addTime(simulator.id, selectedMinutes, selectedAmount, method, isMixed ? parts : undefined);
+    addTime(simulator.id, selectedMinutes, selectedAmount, "Postpaid");
     onOpenChange(false);
   }
 
@@ -152,7 +125,6 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
                 setSelectedPreset(preset);
                 setCustomMin("");
                 setCustomPrice("");
-                setParts({ ...emptyParts, card_amount: preset.price });
               }}
             >
               <span className="text-base font-bold">{preset.min} min</span>
@@ -188,27 +160,14 @@ export function AddTimeDialog({ open, onOpenChange, simulator }: { open: boolean
           </div>
           <div className="space-y-2">
             <Label>To'lov</Label>
-            <Select value={method} onValueChange={setMethod}>
-              <SelectTrigger className="h-10">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {simulatorPaymentMethods.map((item) => <SelectItem key={item.value} value={item.label}>{item.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <div className="flex h-10 items-center rounded-xl border border-slate-700 bg-slate-950/70 px-3 text-sm font-semibold text-slate-300">
+              Oxirida to'lov
+            </div>
           </div>
         </div>
 
-        {isMixed ? (
-          <div className="grid gap-3 rounded-2xl border border-slate-800 p-3 sm:grid-cols-2">
-            <div className="space-y-2"><Label>Naqd</Label><Input inputMode="numeric" min={0} type="number" value={parts.cash_amount} onChange={(e) => setPart("cash_amount", e.target.value)} /></div>
-            <div className="space-y-2"><Label>Karta</Label><Input inputMode="numeric" min={0} type="number" value={parts.card_amount} onChange={(e) => setPart("card_amount", e.target.value)} /></div>
-            <div className="text-sm text-slate-400 sm:col-span-2">Aralash jami: {money(mixedTotal)} {mixedTotal !== selectedAmount ? <span className="text-amber-300">- narxga teng emas</span> : <span className="text-emerald-300">- to&apos;g&apos;ri</span>}</div>
-          </div>
-        ) : null}
-
         <DialogFooter className="flex-col-reverse gap-3 sm:flex-row sm:items-center">
-          <div className="mr-auto rounded-xl bg-slate-950/70 px-3 py-2 text-sm font-semibold text-slate-300">{summary} · {selectedPreset.name || "Tarif"}</div>
+          <div className="mr-auto rounded-xl bg-slate-950/70 px-3 py-2 text-sm font-semibold text-slate-300">{summary} · oxirida to'lanadi</div>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Bekor qilish</Button>
           <Button onClick={submit} disabled={!canSubmit}>Vaqt qo'shish</Button>
         </DialogFooter>

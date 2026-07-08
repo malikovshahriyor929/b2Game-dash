@@ -10,6 +10,7 @@ export const startSessionSchema = z.object({
     phone: z.string().optional(),
     tariff_id: z.string().uuid().optional(),
     duration_minutes: z.coerce.number().int().positive(),
+    session_mode: z.enum(["regular", "vip"]).default("regular"),
     payment_mode: z.enum(["prepaid", "postpaid", "balance"]).default("prepaid"),
     paid_amount: amount.default(0),
     method: z.enum(["cash", "card", "qr", "balance", "mixed"]).default("cash"),

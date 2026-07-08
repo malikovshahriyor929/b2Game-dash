@@ -64,20 +64,25 @@ async function unlockRigMvpIfSupported(rigId: string, minutes?: number) {
   }
 }
 
-// VIP tariffs (type='vip') bill as open/hourly sessions: the timer counts up and the
-// final amount is elapsed time * hourly rate (no package discount), calculated at stop.
-// hourlyRate is normalized to a per-hour price, so a 60-min/100k VIP tariff = 100k/hour.
 function simulatorTariffZone(sim: { zone?: unknown; simulator_type?: unknown; name?: unknown }) {
   const text = `${sim.zone ?? ""} ${sim.simulator_type ?? ""} ${sim.name ?? ""}`.toLowerCase();
   return text.includes("vip") || text.includes("moza") ? "vip" : "main";
 }
 
+function isVipOnlyTariff(tariff: { type?: unknown; name?: unknown; simulator_zone?: unknown }) {
+  const type = String(tariff.type ?? "").toLowerCase();
+  const name = String(tariff.name ?? "").toLowerCase();
+  const zone = String(tariff.simulator_zone ?? "").toLowerCase();
+  return zone === "vip" || type === "vip" || name.includes("moza") || name.includes("vip");
+}
+
 async function resolveTariffBilling(
   tariffId: unknown,
   sim?: { branch_id?: unknown; zone?: unknown; simulator_type?: unknown; name?: unknown },
+  options: { vipMode?: boolean } = {},
 ): Promise<{ open: boolean; hourlyRate: number; price: number }> {
   if (!isUuid(tariffId)) return { open: false, hourlyRate: 0, price: 0 };
-  const tariff = await tariffsService.getAvailableById(String(tariffId)) as { branch_id: string | null; simulator_zone: string; type: string; price: unknown; duration_minutes: number } | null;
+  const tariff = await tariffsService.getAvailableById(String(tariffId)) as { branch_id: string | null; simulator_zone: string; type: string; name?: string; price: unknown; current_price?: unknown; duration_minutes: number } | null;
   if (!tariff) throw new ApiError(409, "Bu tarif hozir ishlamaydi. Joriy vaqtga mos tarifni tanlang.");
   if (sim) {
     if (tariff.branch_id && String(tariff.branch_id) !== String(sim.branch_id)) {
@@ -89,11 +94,17 @@ async function resolveTariffBilling(
       throw new ApiError(409, simZone === "vip" ? "VIP/Moza simulator uchun Moza tarifini tanlang." : "Oddiy Logitech simulator uchun Logitech tarifini tanlang.");
     }
   }
-  const open = String(tariff.type).toLowerCase() === "vip";
+  const simZone = sim ? simulatorTariffZone(sim) : String(tariff.simulator_zone ?? "").toLowerCase();
+  if (simZone !== "vip" && isVipOnlyTariff(tariff)) {
+    throw new ApiError(409, "Bu tarif ushbu simulyatorga mos emas.");
+  }
+  const type = String(tariff.type ?? "").toLowerCase();
+  if (options.vipMode && (type === "package" || type === "night")) {
+    throw new ApiError(409, "VIP rejim uchun 1 soatlik tarif kerak.");
+  }
+  const price = Number(tariff.current_price ?? tariff.price) || 0;
   const duration = Number(tariff.duration_minutes) || 60;
-  const price = Number(tariff.price) || 0;
-  const hourlyRate = open ? Math.round((price * 60) / duration) : 0;
-  return { open, hourlyRate, price };
+  return { open: Boolean(options.vipMode), hourlyRate: options.vipMode ? Math.round((price * 60) / duration) : 0, price };
 }
 
 const BONUS_PRODUCT_PATTERNS: Array<{ test: RegExp; like: string }> = [
@@ -237,14 +248,14 @@ export async function start(req: Request) {
   if (baseRole(req.user?.role) === "admin" && sim.branch_id !== (req.user?.branch_id ?? null)) throw new ApiError(403, "Branch scope violation");
   if (!["ready_to_play","reserved"].includes(sim.status)) throw new ApiError(409, `Simulator is ${sim.status}`);
   if (isUuid(req.body.tariff_id)) await assertTariffAvailableNow(req.body.tariff_id);
-  const billing = await resolveTariffBilling(req.body.tariff_id, sim);
+  const billing = await resolveTariffBilling(req.body.tariff_id, sim, { vipMode: req.body.session_mode === "vip" });
   const normalizedPaymentMode = paymentMode(req.body.payment_mode);
   const amount = billing.open || normalizedPaymentMode === "postpaid" ? 0 : (billing.price || Number(req.body.paid_amount ?? 0));
   const payment = paymentBreakdown(req.body, amount);
   // Open (VIP) sessions have no fixed duration — they count up and are billed at stop.
   const durationMinutes = billing.open ? 0 : Number(req.body.duration_minutes ?? 0);
   const remainingSeconds = billing.open ? 0 : durationMinutes * 60;
-  const sessionAmount = billing.open ? 0 : amount;
+  const sessionAmount = billing.open ? 0 : (billing.price || Number(req.body.paid_amount ?? 0));
   // Bron to'qnashuvi: bu PC sessiya vaqti oralig'ida bron qilingan bo'lsa rad etamiz.
   // Bajarilayotgan bronni (booking_id) hisobga olmaymiz. Ochiq (VIP) sessiya cheksiz — oralig'i 'infinity'.
   const upperExpr = billing.open ? "'infinity'::timestamptz" : "now() + make_interval(mins => $3::int)";
@@ -337,21 +348,26 @@ export async function finalizeSessionStop(
   session: { id: string; simulator_id: string; branch_id: string; debt_amount?: unknown; billing_mode?: unknown },
   options: { stoppedBy?: string | null; expired?: boolean } = {},
 ) {
-  let debtAmount = Number(session.debt_amount ?? 0);
   if (String(session.billing_mode) === "open") {
-    const billed = await prisma.$queryRawUnsafe<Array<{ debt_amount: unknown }>>(
+    await prisma.$executeRawUnsafe(
       `update sessions
        set duration_minutes = ceil(extract(epoch from (now() - started_at)) / 60.0)::int,
            session_amount = round(ceil(extract(epoch from (now() - started_at)) / 60.0) * hourly_rate / 60.0),
            total_amount = round(ceil(extract(epoch from (now() - started_at)) / 60.0) * hourly_rate / 60.0) + shop_amount + added_time_amount,
-           debt_amount = greatest(round(ceil(extract(epoch from (now() - started_at)) / 60.0) * hourly_rate / 60.0) + shop_amount + added_time_amount - paid_amount, 0),
            updated_at = now()
-       where id=$1::uuid
-       returning debt_amount`,
+       where id=$1::uuid`,
       session.id,
     );
-    debtAmount = Number(billed[0]?.debt_amount ?? 0);
   }
+  const billed = await prisma.$queryRawUnsafe<Array<{ debt_amount: unknown }>>(
+    `update sessions
+     set debt_amount = greatest(total_amount - paid_amount, 0),
+         updated_at = now()
+     where id=$1::uuid
+     returning debt_amount`,
+    session.id,
+  );
+  const debtAmount = Number(billed[0]?.debt_amount ?? 0);
   const nextStatus = debtAmount > 0 ? "unpaid" : "stopped";
   await prisma.$executeRawUnsafe(
     "update sessions set status=$1, ended_at=now(), stopped_by=$2::uuid where id=$3::uuid",
@@ -436,11 +452,7 @@ export async function addTime(req: Request) {
   const minutes = Number(req.body.minutes);
   const amount = Number(req.body.amount ?? 0);
   if (!Number.isFinite(minutes) || minutes <= 0) throw new ApiError(400, "minutes must be positive");
-  const payment = paymentBreakdown(req.body, amount);
-  // To'lov bo'ladigan bo'lsa, ochiq smena shart — sessiyani o'zgartirishdan oldin tekshiramiz.
-  const shiftId = await requireOpenShiftOwner(s.branch_id, req);
-  // "balance" usulida — o'zgartirishdan oldin balansdan ayiramiz (mablag' yetmasa to'xtaydi).
-  if (payment.balance > 0) await debitCustomerBalance(s.customer_id ?? null, s.branch_id, payment.balance);
+  await requireOpenShiftOwner(s.branch_id, req);
 
   await prisma.$executeRawUnsafe(
     `update sessions
@@ -453,7 +465,6 @@ export async function addTime(req: Request) {
          ) + $2,
          added_time_amount=added_time_amount+$3,
          total_amount=total_amount+$3,
-         paid_amount=paid_amount+$3,
          updated_at=now()
      where id=$4::uuid`,
     minutes,
@@ -465,23 +476,6 @@ export async function addTime(req: Request) {
   const updated = await getSessionScoped(req);
   const remainingSeconds = Number(updated.remaining_seconds ?? 0);
   await extendRigSessionTime(String(updated.simulator_id), minutes, remainingSeconds);
-
-  if (amount > 0) {
-    await prisma.$executeRawUnsafe(
-      "insert into payments(branch_id,shift_id,session_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,paid_by_admin_id) values($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6,$7,$8,$9,$10,$11::uuid)",
-      updated.branch_id,
-      shiftId,
-      updated.id,
-      updated.customer_id ?? null,
-      amount,
-      req.body.method ?? "cash",
-      payment.cash,
-      payment.card,
-      payment.qr,
-      payment.balance,
-      req.user!.user_id,
-    );
-  }
 
   await auditLog({
     actor: req.user,

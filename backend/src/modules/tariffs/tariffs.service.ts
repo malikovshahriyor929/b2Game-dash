@@ -74,8 +74,10 @@ export const tariffsService = {
            t.*,
            c.dow in (6,7) as is_weekend,
            t.available_from is not null and t.available_until is not null and t.available_from > t.available_until as crosses_midnight,
-           case
-             when t.available_from is null or t.available_until is null then
+          case
+            when lower(t.type) = 'package' then
+              cardinality(t.available_days) = 0 or c.dow = any(t.available_days)
+            when t.available_from is null or t.available_until is null then
                cardinality(t.available_days) = 0 or c.dow = any(t.available_days)
              when t.available_from <= t.available_until then
                (cardinality(t.available_days) = 0 or c.dow = any(t.available_days))
@@ -149,11 +151,22 @@ export const tariffsService = {
            end as prev_dow,
            (now() at time zone 'Asia/Tashkent')::time as local_time
        )
-       select t.*
-         from tariffs t cross join clock c
-        where t.id=$1::uuid
-          and t.is_active=true
-          and case
+       select
+         t.*,
+         case
+           when c.dow in (6,7) then coalesce(t.weekend_price, t.weekday_price, t.price)
+           else coalesce(t.weekday_price, t.weekend_price, t.price)
+         end as current_price,
+         case
+           when c.dow in (6,7) then coalesce(t.weekend_bonus, t.weekday_bonus)
+           else coalesce(t.weekday_bonus, t.weekend_bonus)
+         end as bonus
+       from tariffs t cross join clock c
+       where t.id=$1::uuid
+         and t.is_active=true
+         and case
+            when lower(t.type) = 'package' then
+              cardinality(t.available_days) = 0 or c.dow = any(t.available_days)
             when t.available_from is null or t.available_until is null then
               cardinality(t.available_days) = 0 or c.dow = any(t.available_days)
             when t.available_from <= t.available_until then
@@ -187,6 +200,8 @@ export async function assertTariffAvailableNow(tariffId: string) {
       where t.id=$1::uuid
         and t.is_active=true
         and case
+          when lower(t.type) = 'package' then
+            cardinality(t.available_days) = 0 or c.dow = any(t.available_days)
           when t.available_from is null or t.available_until is null then
             cardinality(t.available_days) = 0 or c.dow = any(t.available_days)
           when t.available_from <= t.available_until then
