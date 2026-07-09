@@ -12,6 +12,7 @@ simulatorsRoutes.patch("/:id/map-position", c.updateMapPosition);
 simulatorsRoutes.patch("/:id/status", requireRole(["super_admin"]), c.patchStatus);
 simulatorsRoutes.post("/:id/notify", requireRole(["super_admin"]), c.notify);
 simulatorsRoutes.post("/:id/lock", requireRole(["admin", "super_admin"]), c.lock);
+simulatorsRoutes.post("/:id/available", requireRole(["admin", "super_admin"]), c.available);
 simulatorsRoutes.post("/:id/unlock", requireRole(["admin", "super_admin"]), c.unlock);
 simulatorsRoutes.post("/:id/timed-unlock", requireRole(["admin", "super_admin"]), c.timedUnlock);
 simulatorsRoutes.post("/:id/reboot", requireRole(["super_admin"]), c.reboot);

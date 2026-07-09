@@ -119,6 +119,10 @@ export function unlockRig(rigId: string, minutes?: number) {
   return backendPost<unknown>(`/simulators/${encodeURIComponent(rigId)}/${minutes && minutes > 0 ? "timed-unlock" : "unlock"}`, minutes && minutes > 0 ? { minutes } : {});
 }
 
+export function availableRig(rigId: string) {
+  return backendPost<unknown>(`/simulators/${encodeURIComponent(rigId)}/available`, {});
+}
+
 export function pushRigUpdate(rigIds: string[]) {
   return backendPost<unknown>("/simulators/push-update", { simulator_ids: rigIds });
 }

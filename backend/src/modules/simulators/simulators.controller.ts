@@ -8,6 +8,7 @@ export const patchStatus = asyncHandler(async (req, res) => ok(res, await servic
 export const updateMapPosition = asyncHandler(async (req, res) => ok(res, await service.updateMapPosition(req)));
 export const notify = asyncHandler(async (req, res) => ok(res, await service.notify(req)));
 export const lock = asyncHandler(async (req, res) => ok(res, await service.lock(req)));
+export const available = asyncHandler(async (req, res) => ok(res, await service.available(req)));
 export const unlock = asyncHandler(async (req, res) => ok(res, await service.unlock(req)));
 export const timedUnlock = asyncHandler(async (req, res) => ok(res, await service.timedUnlock(req)));
 export const reboot = asyncHandler(async (req, res) => ok(res, await service.reboot(req)));

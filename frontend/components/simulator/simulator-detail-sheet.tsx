@@ -31,7 +31,7 @@ const MAINTENANCE_STATUS_LABELS: Record<string, string> = {
 };
 
 export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator; onAction: (action: "start" | "addTime" | "payment" | "stop") => void }) {
-  const { closeMaintenance, transferMaintenanceSession, repairRequests, allSimulators, toggleLock, notifyRig, pushRigUpdate, removeOfflineRig } = useDashboardStore();
+  const { closeMaintenance, transferMaintenanceSession, repairRequests, allSimulators, toggleLock, notifyRig, availableRig, pushRigUpdate, removeOfflineRig } = useDashboardStore();
   const confirm = useConfirm();
   const { data } = useSession();
 
@@ -151,6 +151,7 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
             <div className="text-xs font-semibold uppercase text-slate-500">Rig admin amallari</div>
             <div className="grid gap-2 sm:grid-cols-2">
               {simulator.rigId && simulator.rigOnline ? <Button variant="secondary" onClick={() => notifyRig(simulator.id, "Hello")}><FiClock /> Xabar berish</Button> : null}
+              {simulator.rigId && simulator.rigOnline ? <Button variant="success" onClick={() => availableRig(simulator.id)}><FiCheckCircle /> Bo'sh qilish</Button> : null}
               {simulator.rigId && simulator.rigOnline ? <Button variant="secondary" onClick={() => pushRigUpdate(simulator.id)}><FiTool /> Yangilanishni yuborish</Button> : null}
               {simulator.rigId && !simulator.rigOnline ? <Button variant="destructive" onClick={confirmRemoveOfflineRig}><FiXCircle /> Oflayn rigni o'chirish</Button> : null}
             </div>
