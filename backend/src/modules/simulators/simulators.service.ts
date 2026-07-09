@@ -7,6 +7,7 @@ import { broadcastDashboard } from "../../websocket/dashboardConnection.manager"
 import { isUuid } from "../../utils/ids";
 import { filterRigsForScope, resolveRigBranch } from "../../services/rigBranch.service";
 import {
+  availableRigMvp,
   getRigMvpRig,
   listRigMvpRigs,
   lockRigMvp,
@@ -418,7 +419,9 @@ export async function patchStatus(req: Request) {
   const nextStatus = String(req.body.status ?? "");
   if (nextStatus === "locked") {
     await lockRigMvp(rig.rig_id, req.body.message ?? "LOCKED - see staff");
-  } else if (["ready_to_play", "busy"].includes(nextStatus)) {
+  } else if (nextStatus === "ready_to_play") {
+    await availableRigMvp(rig.rig_id);
+  } else if (nextStatus === "busy") {
     await unlockRigMvp(rig.rig_id);
   } else if (nextStatus === "offline") {
     const branchId = (await prisma.$queryRawUnsafe<Array<{ branch_id: string | null }>>(
@@ -487,6 +490,7 @@ async function command(req: Request, action: string, work: (rig: RigMvpRig) => P
 
 export const notify = (req: Request) => command(req, "simulator_notified", (rig) => notifyRigMvp(rig.rig_id, req.body?.message ?? "Hello"));
 export const lock = (req: Request) => command(req, "simulator_locked", (rig) => lockRigMvp(rig.rig_id, req.body?.message ?? "LOCKED - see staff"));
+export const available = (req: Request) => command(req, "simulator_available", (rig) => availableRigMvp(rig.rig_id));
 export const unlock = (req: Request) => command(req, "simulator_unlocked", (rig) => unlockRigMvp(rig.rig_id));
 export const timedUnlock = (req: Request) => command(req, "simulator_unlocked", (rig) => unlockRigMvp(rig.rig_id, Number(req.body.minutes)));
 

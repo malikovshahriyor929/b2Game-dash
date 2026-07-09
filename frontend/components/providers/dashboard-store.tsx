@@ -13,6 +13,7 @@ import { backendDate, backendDateTime, backendTime, localDate, localDateTimeWith
 import { backendDelete, backendGet, backendPatch, backendPost, getBackendWsToken } from "@/server/api";
 import { confirmWithdrawalRequest, createWithdrawalRequest, fetchWithdrawalRequests, rejectWithdrawalRequest, WithdrawalRequest } from "@/lib/withdrawals-api";
 import {
+  availableRig as availableAdminRig,
   listRigs as fetchRigList,
   lockRig as lockAdminRig,
   mapBackendSimulatorRows,
@@ -106,6 +107,7 @@ type DashboardStore = {
   addCashTransaction: (type: "income" | "expense", amount: number, source: string, method: string, deductionType?: string) => void;
   refreshRigs: () => void;
   notifyRig: (id: string, message: string) => void;
+  availableRig: (id: string) => void;
   pushRigUpdate: (id: string) => void;
   removeOfflineRig: (id: string) => void;
 };
@@ -1051,7 +1053,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       if (!requireActiveShiftOwner()) return;
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator || (simulator.paymentStatus !== "paid" && !override)) return;
-      if (simulator.rigId) void lockAdminRig(simulator.rigId).then(refreshAfterAction).catch(() => undefined);
+      if (simulator.rigId) void availableAdminRig(simulator.rigId).then(refreshAfterAction).catch(() => undefined);
       if (simulator.currentSessionId) void backendPost<Record<string, unknown>>(`/sessions/${simulator.currentSessionId}/stop`).then(refreshAfterAction).catch(() => undefined);
       patchSimulator(id, { status: "ready_to_play", currentUser: undefined, phone: undefined, tariff: undefined, startedAt: undefined, remainingMinutes: 0, remainingSeconds: 0, paidAmount: 0, paymentStatus: "paid", orderItems: [] });
       appendLog(`stopped session on ${simulator.name}`, simulator.name);
@@ -1063,7 +1065,7 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       const isLocked = simulator.rigId ? Boolean(simulator.rigOnline && simulator.status === "ready_to_play") : simulator.status === "locked";
       const nextStatus = simulator.rigId ? (isLocked ? "busy" : "ready_to_play") : (isLocked ? "ready_to_play" : "locked");
       if (simulator.rigId) {
-        void (isLocked ? unlockAdminRig(simulator.rigId) : lockAdminRig(simulator.rigId)).then(refreshBackendData).catch(() => undefined);
+        void (isLocked ? unlockAdminRig(simulator.rigId) : availableAdminRig(simulator.rigId)).then(refreshBackendData).catch(() => undefined);
       } else {
         void backendPatch<Record<string, unknown>>(`/simulators/${simulator.id}/status`, { status: nextStatus }).then(refreshBackendData).catch(() => undefined);
       }
@@ -1608,6 +1610,11 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       const simulator = allSimulators.find((item) => item.id === id);
       if (!simulator?.rigId) return;
       void notifyAdminRig(simulator.rigId, message).catch(() => undefined);
+    },
+    availableRig(id) {
+      const simulator = allSimulators.find((item) => item.id === id);
+      if (!simulator?.rigId) return;
+      void availableAdminRig(simulator.rigId).then(refreshBackendData).catch(() => undefined);
     },
     pushRigUpdate(id) {
       const simulator = allSimulators.find((item) => item.id === id);

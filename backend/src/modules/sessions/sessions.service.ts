@@ -4,7 +4,7 @@ import { prisma } from "../../db/prisma";
 import { ApiError } from "../../utils/apiError";
 import { auditLog } from "../../services/auditLog.service";
 import { broadcastDashboard } from "../../websocket/dashboardConnection.manager";
-import { getRigMvpRig, lockRigMvp, sendRigMvpCommand, unlockRigMvp } from "../../services/rigMvp.service";
+import { availableRigMvp, getRigMvpRig, sendRigMvpCommand, unlockRigMvp } from "../../services/rigMvp.service";
 import { isUuid } from "../../utils/ids";
 import { requireOpenShiftOwner } from "../shifts/shift.guard";
 import { debitCustomerBalance } from "../customers/customers.service";
@@ -330,7 +330,7 @@ export async function start(req: Request) {
   broadcastDashboard("session_started", session, sim.branch_id);
   return session;
 }
-async function lockRigForSession(simulatorId: string, message = "Session ended") {
+async function markRigAvailableForSession(simulatorId: string) {
   const simRows = await prisma.$queryRawUnsafe<Array<{ ws_rig_id: string | null }>>(
     "select ws_rig_id from simulators where id=$1::uuid limit 1",
     simulatorId,
@@ -338,7 +338,7 @@ async function lockRigForSession(simulatorId: string, message = "Session ended")
   const rigId = simRows[0]?.ws_rig_id;
   if (!rigId) return;
   try {
-    await lockRigMvp(rigId, message);
+    await availableRigMvp(rigId);
   } catch {
     // Rig-MVP unreachable or rig offline — DB session still stops.
   }
@@ -392,7 +392,7 @@ export async function finalizeSessionStop(
      where s.id = $1::uuid and c.id = s.customer_id`,
     session.id,
   );
-  await lockRigForSession(String(session.simulator_id));
+  await markRigAvailableForSession(String(session.simulator_id));
   broadcastDashboard("session_stopped", { id: session.id, expired: Boolean(options.expired) }, session.branch_id);
 }
 

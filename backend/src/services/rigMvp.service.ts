@@ -122,6 +122,13 @@ export function unlockRigMvp(rigId: string, minutes?: number) {
   });
 }
 
+export function availableRigMvp(rigId: string) {
+  return rigMvpAction<{ ok: boolean }>(`/api/rigs/${encodeURIComponent(rigId)}/available`, {
+    method: "POST",
+    data: {},
+  });
+}
+
 export function sendRigMvpCommand(rigId: string, payload: Record<string, unknown>) {
   return rigMvpAction<{ ok: boolean }>(`/api/rigs/${encodeURIComponent(rigId)}/command`, {
     method: "POST",
