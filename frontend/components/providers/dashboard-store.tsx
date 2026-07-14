@@ -795,10 +795,9 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
 
         const wsBase = process.env.NEXT_PUBLIC_BACKEND_WS_URL ?? "ws://localhost:4000/ws/dashboard";
         const url = new URL(wsBase);
-        url.searchParams.set("token", token);
         url.searchParams.set("branch_id", apiBranchId);
 
-        socket = new WebSocket(url);
+        socket = new WebSocket(url, [`auth.${token}`]);
         socket.onmessage = (event) => {
           try {
             const message = JSON.parse(event.data);

@@ -38,8 +38,15 @@ export const customersService = {
     );
   },
 };
-export async function customerSessions(req: Request) { return prisma.$queryRawUnsafe("select * from sessions where customer_id=$1::uuid order by created_at desc", req.params.id); }
-export async function customerSales(req: Request) { return prisma.$queryRawUnsafe("select * from sales where customer_id=$1::uuid order by created_at desc", req.params.id); }
+export async function customerSessions(req: Request) {
+  await customersService.get(req, String(req.params.id));
+  return prisma.$queryRawUnsafe("select * from sessions where customer_id=$1::uuid order by created_at desc", req.params.id);
+}
+
+export async function customerSales(req: Request) {
+  await customersService.get(req, String(req.params.id));
+  return prisma.$queryRawUnsafe("select * from sales where customer_id=$1::uuid order by created_at desc", req.params.id);
+}
 
 export async function topUpBalance(req: Request) {
   const amount = Math.round(Number(req.body.amount));

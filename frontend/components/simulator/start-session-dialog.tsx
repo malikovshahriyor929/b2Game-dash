@@ -61,6 +61,11 @@ function numeric(value: string) {
   return Number.isFinite(next) ? next : 0;
 }
 
+function paymentModeLabel(value: "paid" | "unpaid", label?: string) {
+  if (label && !["Prepaid", "Postpaid"].includes(label)) return label;
+  return value === "paid" ? "Oldindan to'lov" : "Oxirida to'lov";
+}
+
 function matchesTariffZone(value: string | undefined, zone: "main" | "vip") {
   const normalized = String(value ?? "all").toLowerCase();
   return normalized === "all" || normalized === zone;
@@ -113,6 +118,14 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
   const [paymentParts, setPaymentParts] = useState<PaymentParts>(emptyParts);
   const selectedTariff = zoneTariffs.find((item) => item.id === tariffId) ?? zoneTariffs[0];
   const isVipMode = sessionMode === "vip";
+  const regularPaymentModes = useMemo(
+    () => startOptions.paymentModes.length ? startOptions.paymentModes : [{ label: "Prepaid", value: "paid" as const, enabled: true }, { label: "Postpaid", value: "unpaid" as const, enabled: true }],
+    [startOptions.paymentModes],
+  );
+  const paymentModeOptions = useMemo(
+    () => isVipMode ? [{ label: "Postpaid", value: "unpaid" as const, enabled: true }] : regularPaymentModes,
+    [isVipMode, regularPaymentModes],
+  );
   const sessionTariff = isVipMode ? vipBaseTariff : selectedTariff;
   const vipHourlyRate = sessionTariff ? Math.round((sessionTariff.price * 60) / (sessionTariff.durationMinutes || 60)) : 0;
   const selectedTariffLabel = isVipMode ? "VIP" : selectedTariff?.name ?? "";
@@ -132,8 +145,9 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
 
   const summary = useMemo(() => {
     if (isVipMode) return `VIP - ${money(vipHourlyRate)}/soat - to'xtatishda hisoblanadi`;
-    return `${duration} min - ${money(selectedTariff?.price ?? 0)}${selectedTariff?.bonus ? ` - bonus: ${selectedTariff.bonus}` : ""} - to'lov oxirida`;
-  }, [duration, isVipMode, selectedTariff?.bonus, selectedTariff?.price, vipHourlyRate]);
+    const paymentText = paymentStatus === "paid" ? "oldindan to'lov" : "to'lov oxirida";
+    return `${duration} min - ${money(selectedTariff?.price ?? 0)}${selectedTariff?.bonus ? ` - bonus: ${selectedTariff.bonus}` : ""} - ${paymentText}`;
+  }, [duration, isVipMode, paymentStatus, selectedTariff?.bonus, selectedTariff?.price, vipHourlyRate]);
 
   useEffect(() => {
     if (!open) return;
@@ -147,15 +161,26 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
     const first = matched ?? zoneTariffs.find((item) => item.isAvailable !== false) ?? zoneTariffs[0];
     setTariffId(first?.id ?? "");
     setDuration(String(first?.durationMinutes || 60));
-    setPaymentStatus("unpaid");
+    setPaymentStatus(regularPaymentModes.some((item) => item.value === "paid") ? "paid" : "unpaid");
     setPaymentMethod(simulatorPaymentMethods[0]?.label ?? "Karta");
     setPaymentParts({ ...emptyParts, card_amount: first?.price ?? 0 });
-  }, [open, simulatorPaymentMethods, simulator?.id, startOptions.paymentModes, zoneTariffs, prefill?.customerName, prefill?.phone, prefill?.tariffName]);
+  }, [open, regularPaymentModes, simulatorPaymentMethods, simulator?.id, zoneTariffs, prefill?.customerName, prefill?.phone, prefill?.tariffName]);
 
   useEffect(() => {
     if (!open || isMixedPayment) return;
     setPaymentParts({ ...emptyParts, card_amount: totalAmount > 0 ? totalAmount : 0 });
   }, [isMixedPayment, open, totalAmount]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (isVipMode) {
+      setPaymentStatus("unpaid");
+      return;
+    }
+    if (!paymentModeOptions.some((item) => item.value === paymentStatus)) {
+      setPaymentStatus(paymentModeOptions[0]?.value ?? "unpaid");
+    }
+  }, [isVipMode, open, paymentModeOptions, paymentStatus]);
 
   // Band PC ogohlantirishi (bloklamaydi — admin xohlasa almashtiradi).
   const simulatorBusy = Boolean(simulator && ["busy", "unpaid"].includes(simulator.status));
@@ -184,11 +209,6 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
 
   const requestedMinutes = isVipMode ? Infinity : Number(duration) || 0;
   const bookingBlocks = Boolean(nextBooking) && requestedMinutes > availableMinutes;
-
-  // Sessions start postpaid: fixed packages and open VIP are paid at stop.
-  useEffect(() => {
-    setPaymentStatus("unpaid");
-  }, [selectedTariff?.id]);
 
   function handleCustomerTypeChange(value: string) {
     const type = value as "Guest" | "Registered";
@@ -378,9 +398,18 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
 
           <div className="space-y-2">
             <Label>To'lov turi</Label>
-            <div className="flex h-10 items-center rounded-xl border border-slate-700 bg-slate-950/70 px-3 text-sm font-semibold text-slate-300">
-              Oxirida to'lov
-            </div>
+            {paymentModeOptions.length > 1 ? (
+              <Select value={paymentStatus} onValueChange={(value) => setPaymentStatus(value as "paid" | "unpaid")}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {paymentModeOptions.map((item) => <SelectItem key={item.value} value={item.value}>{paymentModeLabel(item.value, item.label)}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="flex h-10 items-center rounded-xl border border-slate-700 bg-slate-950/70 px-3 text-sm font-semibold text-slate-300">
+                {paymentModeLabel(paymentModeOptions[0]?.value ?? "unpaid", paymentModeOptions[0]?.label)}
+              </div>
+            )}
           </div>
 
           {totalAmount > 0 ? (
@@ -412,7 +441,9 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
           <div className="rounded-xl bg-slate-950/80 p-4">
             <Label>Umumiy summa</Label>
             <div className="mt-2 text-2xl font-black text-sky-200">{isVipMode ? `${money(vipHourlyRate)}/soat` : money(selectedTariff?.price ?? 0)}</div>
-            <div className="mt-1 text-xs font-semibold text-slate-400">Hozir olinmaydi, sessiya oxirida to'lanadi</div>
+            <div className="mt-1 text-xs font-semibold text-slate-400">
+              {paymentStatus === "paid" && !isVipMode ? "Hozir olinadi, sessiya oldindan to'lanadi" : "Hozir olinmaydi, sessiya oxirida to'lanadi"}
+            </div>
             {!isVipMode && selectedTariff?.bonus ? <div className="mt-1 text-xs font-semibold text-emerald-300">Bonus: {selectedTariff.bonus}</div> : null}
           </div>
         </div>

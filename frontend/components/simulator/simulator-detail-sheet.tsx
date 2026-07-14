@@ -74,8 +74,14 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
   const showRigActions = isSuperAdmin && Boolean(simulator.rigId);
   const showRepairActions = canCloseMaintenance;
   const transferTargets = repairRequest?.sessionId
-    ? allSimulators.filter((item) => item.branchId === simulator.branchId && item.id !== simulator.id && item.status === "ready_to_play")
+    ? allSimulators.filter((item) =>
+      item.branchId === simulator.branchId &&
+      item.id !== simulator.id &&
+      item.status === "ready_to_play" &&
+      item.zone === simulator.zone
+    )
     : [];
+  const canTransferToSelected = transferTargets.some((item) => item.id === transferTargetId);
 
   return (
     <>
@@ -168,7 +174,7 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
                     <SelectTrigger><SelectValue placeholder="Bo'sh simulyatorni tanlang" /></SelectTrigger>
                     <SelectContent>{transferTargets.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
                   </Select>
-                  <Button variant="secondary" disabled={!transferTargetId} onClick={() => transferMaintenanceSession(repairRequest.id, transferTargetId)}><FiPlay /> Sessiyani ko'chirish</Button>
+                  <Button variant="secondary" disabled={!canTransferToSelected} onClick={() => transferMaintenanceSession(repairRequest.id, transferTargetId)}><FiPlay /> Sessiyani ko'chirish</Button>
                 </div>
               ) : null}
             </div>

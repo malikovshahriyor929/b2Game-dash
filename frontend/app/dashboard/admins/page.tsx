@@ -338,7 +338,7 @@ export default function AdminsPage() {
               <Label>{editingId ? "Yangi parol (ixtiyoriy)" : "Parol"}</Label>
               <div className="relative">
                 <FiKey className="absolute left-3 top-3 text-slate-500" />
-                <Input className="pl-9" type="text" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} placeholder={editingId ? "O'zgartirmaslik uchun bo'sh" : "Kamida 6 ta belgi"} />
+                <Input className="pl-9" type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} placeholder={editingId ? "O'zgartirmaslik uchun bo'sh" : "Kamida 6 ta belgi"} />
               </div>
             </div>
             <div className="space-y-2">

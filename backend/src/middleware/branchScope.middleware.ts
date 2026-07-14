@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import { baseRole } from "../types/auth.types";
 import { ApiError } from "../utils/apiError";
+import { isUuid } from "../utils/ids";
 
 export function requireBranchScope(req: Request, _res: Response, next: NextFunction) {
   if (!req.user) return next(new ApiError(401, "Authentication required"));
@@ -13,6 +14,9 @@ export function requireBranchScope(req: Request, _res: Response, next: NextFunct
   }
 
   const requested = String(req.query.branch_id ?? req.body?.branch_id ?? "all");
+  if (requested && requested !== "all" && !isUuid(requested)) {
+    return next(new ApiError(400, "Invalid branch_id"));
+  }
   req.branchScope = {
     branchId: requested && requested !== "all" ? requested : null,
     allBranches: !requested || requested === "all",

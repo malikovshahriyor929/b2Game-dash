@@ -3,13 +3,16 @@ import { z } from "zod";
 
 dotenv.config();
 
+const DEFAULT_ACCESS_SECRET = "change_me_access";
+const DEFAULT_REFRESH_SECRET = "change_me_refresh";
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().default(4000),
   DATABASE_URL: z.string().default("postgres://postgres:postgres@localhost:5432/b2_game_club"),
   DATABASE_SSL: z.coerce.boolean().default(false),
-  JWT_ACCESS_SECRET: z.string().min(8).default("change_me_access"),
-  JWT_REFRESH_SECRET: z.string().min(8).default("change_me_refresh"),
+  JWT_ACCESS_SECRET: z.string().min(8).default(DEFAULT_ACCESS_SECRET),
+  JWT_REFRESH_SECRET: z.string().min(8).default(DEFAULT_REFRESH_SECRET),
   JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
   JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
   FRONTEND_URL: z.string().default("http://localhost:3000"),
@@ -22,6 +25,18 @@ const envSchema = z.object({
   RIG_MVP_SYNC_INTERVAL_MS: z.coerce.number().default(30000),
   RIG_MVP_DB_SYNC_INTERVAL_MS: z.coerce.number().default(60000),
   RIG_DEFAULT_BRANCH_CODE: z.string().default("MAIN"),
+}).superRefine((value, ctx) => {
+  if (value.NODE_ENV !== "production") return;
+
+  if (value.JWT_ACCESS_SECRET === DEFAULT_ACCESS_SECRET || value.JWT_ACCESS_SECRET.length < 32) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["JWT_ACCESS_SECRET"], message: "Production JWT_ACCESS_SECRET must be custom and at least 32 characters" });
+  }
+  if (value.JWT_REFRESH_SECRET === DEFAULT_REFRESH_SECRET || value.JWT_REFRESH_SECRET.length < 32) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["JWT_REFRESH_SECRET"], message: "Production JWT_REFRESH_SECRET must be custom and at least 32 characters" });
+  }
+  if (value.FRONTEND_URL === "*") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["FRONTEND_URL"], message: "Production FRONTEND_URL must list explicit origins" });
+  }
 });
 
 export const env = envSchema.parse(process.env);
