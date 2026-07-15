@@ -130,3 +130,22 @@ export function pushRigUpdate(rigIds: string[]) {
 export function removeRig(rigId: string) {
   return backendPatch<unknown>(`/simulators/${encodeURIComponent(rigId)}/status`, { status: "offline" });
 }
+
+export type TerminalCommandResult = {
+  ok: boolean;
+  rig_id: string;
+  command_id: string;
+  command: string;
+  return_code: number | null;
+  stdout: string;
+  stderr: string;
+  timed_out: boolean;
+  duration_ms: number;
+};
+
+export function sendTerminalCommand(rigId: string, command: string, timeoutSeconds: number) {
+  return backendPost<TerminalCommandResult>(`/simulators/${encodeURIComponent(rigId)}/terminal-command`, {
+    command,
+    timeout_seconds: timeoutSeconds,
+  });
+}

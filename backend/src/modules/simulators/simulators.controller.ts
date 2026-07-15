@@ -11,6 +11,7 @@ export const lock = asyncHandler(async (req, res) => ok(res, await service.lock(
 export const available = asyncHandler(async (req, res) => ok(res, await service.available(req)));
 export const unlock = asyncHandler(async (req, res) => ok(res, await service.unlock(req)));
 export const timedUnlock = asyncHandler(async (req, res) => ok(res, await service.timedUnlock(req)));
+export const terminalCommand = asyncHandler(async (req, res) => ok(res, await service.terminalCommand(req)));
 export const reboot = asyncHandler(async (req, res) => ok(res, await service.reboot(req)));
 export const requestStatus = asyncHandler(async (req, res) => ok(res, await service.requestStatus(req)));
 export const pushUpdate = asyncHandler(async (req, res) => ok(res, await service.pushUpdate(req)));

@@ -12,7 +12,12 @@ export function attachWebSocketServer(server: http.Server) {
   wss.on("connection", (ws, req) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     if (url.pathname === "/ws/dashboard") {
-      const user = verifyWsToken(url.searchParams.get("token"));
+      const protocolToken = String(req.headers["sec-websocket-protocol"] ?? "")
+        .split(",")
+        .map((item) => item.trim())
+        .find((item) => item.startsWith("auth."))
+        ?.slice(5);
+      const user = verifyWsToken(protocolToken ?? url.searchParams.get("token"));
       if (!user) return ws.close(1008, "Unauthorized");
       const branchId = url.searchParams.get("branch_id");
       addDashboard(ws, user, branchId, branchId === "all" || !branchId);

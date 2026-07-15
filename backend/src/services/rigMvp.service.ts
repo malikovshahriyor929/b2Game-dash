@@ -130,7 +130,16 @@ export function availableRigMvp(rigId: string) {
 }
 
 export function sendRigMvpCommand(rigId: string, payload: Record<string, unknown>) {
-  return rigMvpAction<{ ok: boolean }>(`/api/rigs/${encodeURIComponent(rigId)}/command`, {
+  return rigMvpAction<{
+    ok: boolean;
+    command_id: string;
+    command: string;
+    return_code: number | null;
+    stdout: string;
+    stderr: string;
+    timed_out: boolean;
+    duration_ms: number;
+  }>(`/api/rigs/${encodeURIComponent(rigId)}/command`, {
     method: "POST",
     data: payload,
   });

@@ -11,6 +11,19 @@ function branchId(req: Request) {
   const value = baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : req.body.branch_id ?? req.query.branch_id;
   return value === "all" ? null : value;
 }
+
+async function loadScopedSale(req: Request, id: string) {
+  const s = actorScope(req);
+  const sale = (await prisma.$queryRawUnsafe<any[]>(
+    "select * from sales where id=$1::uuid and ($2::uuid is null or branch_id=$2::uuid) and ($3::uuid is null or sold_by=$3::uuid) limit 1",
+    id,
+    s.branch,
+    s.actor,
+  ))[0];
+  if (!sale) throw new ApiError(404, "Sale not found");
+  return sale;
+}
+
 export async function products(req: Request) {
   return prisma.$queryRawUnsafe(
     "select p.*, i.stock_quantity, i.branch_id from products p join inventory i on i.product_id=p.id where ($1::uuid is null or i.branch_id=$1::uuid) and p.is_active=true order by p.name",
@@ -49,8 +62,7 @@ export async function createSale(req: Request) {
   }); broadcastDashboard("sale_created",sale,b); return sale;
 }
 export async function paySale(req: Request) {
-  const sale=(await prisma.$queryRawUnsafe<any[]>("select * from sales where id=$1::uuid",req.params.id))[0];
-  if(!sale) throw new ApiError(404,"Sale not found");
+  const sale=await loadScopedSale(req, String(req.params.id));
   if(sale.payment_status==="paid") throw new ApiError(409,"Sale already paid");
   const total=Number(req.body.cash_amount)+Number(req.body.card_amount)+Number(req.body.qr_amount)+Number(req.body.balance_amount);
   if(total!==Number(sale.total)) throw new ApiError(400,"Payment total must match sale total");
@@ -79,4 +91,13 @@ export async function paySale(req: Request) {
   await prisma.$executeRawUnsafe("update sales set payment_status='paid', payment_method=$1, paid_at=now() where id=$2::uuid",req.body.method,sale.id); const payment=(await prisma.$queryRawUnsafe<any[]>("insert into payments(branch_id,shift_id,sale_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,received_amount,change_amount,paid_by_admin_id) values($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6,$7,$8,$9,$10,$11,$12,$13::uuid) returning *",sale.branch_id,shiftId,sale.id,sale.customer_id,total,req.body.method,req.body.cash_amount,req.body.card_amount,req.body.qr_amount,req.body.balance_amount,receivedAmount,changeAmount,req.user!.user_id))[0]; await auditLog({actor:req.user,branch_id:sale.branch_id,action_type:"payment_created",entity_type:"sale",entity_id:sale.id,amount:total,details:{payment_id:payment.id,customer_id:sale.customer_id,customer_type:sale.customer_id?"registered":"guest",method:req.body.method,cash_amount:Number(req.body.cash_amount??0),card_amount:Number(req.body.card_amount??0),balance_amount:balanceAmount,received_amount:receivedAmount,change_amount:changeAmount,balance_before:customerBeforeBalance,balance_after:customerAfterBalance,items:items.map((item)=>({product_id:item.product_id,name:item.product_name,barcode:item.barcode,quantity:item.quantity,unit_price:Number(item.unit_price),total_price:Number(item.total_price)}))}}); broadcastDashboard("inventory_updated",{sale_id:sale.id,customer_id:sale.customer_id},sale.branch_id); return {paid:true};
 }
 export async function sales(req: Request) { const s = actorScope(req); return prisma.$queryRawUnsafe("select s.*, c.name customer_name, c.phone customer_phone, u.name sold_by_name from sales s left join customers c on c.id=s.customer_id left join users u on u.id=s.sold_by where ($1::uuid is null or s.branch_id=$1::uuid) and ($2::uuid is null or s.sold_by=$2::uuid) order by s.created_at desc", s.branch, s.actor); }
-export async function sale(req: Request) { return prisma.$queryRawUnsafe("select s.*, c.name customer_name, c.phone customer_phone from sales s left join customers c on c.id=s.customer_id where s.id=$1::uuid", req.params.id); }
+export async function sale(req: Request) {
+  const s = actorScope(req);
+  const rows = await prisma.$queryRawUnsafe(
+    "select s.*, c.name customer_name, c.phone customer_phone from sales s left join customers c on c.id=s.customer_id where s.id=$1::uuid and ($2::uuid is null or s.branch_id=$2::uuid) and ($3::uuid is null or s.sold_by=$3::uuid)",
+    req.params.id,
+    s.branch,
+    s.actor,
+  );
+  return rows;
+}

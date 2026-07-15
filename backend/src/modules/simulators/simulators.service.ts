@@ -15,6 +15,7 @@ import {
   pushRigMvpUpdate,
   removeRigMvp,
   RigMvpRig,
+  sendRigMvpCommand,
   unlockRigMvp,
 } from "../../services/rigMvp.service";
 import { requireOpenShiftOwner } from "../shifts/shift.guard";
@@ -493,6 +494,36 @@ export const lock = (req: Request) => command(req, "simulator_locked", (rig) => 
 export const available = (req: Request) => command(req, "simulator_available", (rig) => availableRigMvp(rig.rig_id));
 export const unlock = (req: Request) => command(req, "simulator_unlocked", (rig) => unlockRigMvp(rig.rig_id));
 export const timedUnlock = (req: Request) => command(req, "simulator_unlocked", (rig) => unlockRigMvp(rig.rig_id, Number(req.body.minutes)));
+
+export async function terminalCommand(req: Request) {
+  if (req.user?.role !== "dev_admin") throw new ApiError(403, "Dev admin access required");
+  const commandText = String(req.body?.command ?? "").trim();
+  if (!commandText) throw new ApiError(400, "command is required");
+  if (commandText.length > 4000) throw new ApiError(400, "command is too long");
+  const timeoutSeconds = Math.max(1, Math.min(Number(req.body?.timeout_seconds ?? 30) || 30, 120));
+  const rig = await getRigMvpRig(await rigIdFromParam(String(req.params.id)));
+  const currentRow = await rigToSimulatorRow(rig);
+  if (currentRow.branch_id !== (req.user.branch_id ?? null)) throw new ApiError(403, "Branch scope violation");
+  const result = await sendRigMvpCommand(rig.rig_id, {
+    command: commandText,
+    timeout_seconds: timeoutSeconds,
+  });
+  await auditLog({
+    actor: req.user,
+    branch_id: currentRow.branch_id,
+    action_type: "rig_terminal_command",
+    entity_type: "rig_mvp",
+    entity_id: null,
+    details: {
+      rig_id: rig.rig_id,
+      command: commandText.slice(0, 500),
+      timeout_seconds: timeoutSeconds,
+      return_code: result.return_code,
+      timed_out: result.timed_out,
+    },
+  });
+  return { ...result, rig_id: rig.rig_id };
+}
 
 export async function reboot(_req: Request) {
   throw new ApiError(501, "Rig-MVP agent does not support reboot yet");

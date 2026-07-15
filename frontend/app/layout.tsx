@@ -3,10 +3,6 @@ import { getServerSession } from "next-auth";
 import "./globals.css";
 import { SessionProvider } from "@/components/providers/session-provider";
 import { authOptions } from "@/lib/auth";
-import { Geist } from "next/font/google";
-import { cn } from "@/lib/utils";
-
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
   title: "B2 Game Club",
@@ -17,7 +13,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const session = await getServerSession(authOptions);
 
   return (
-    <html lang="uz" className={cn("dark", "font-sans", geist.variable)}>
+    <html lang="uz" className="dark font-sans">
       <body>
         <SessionProvider session={session}>{children}</SessionProvider>
       </body>

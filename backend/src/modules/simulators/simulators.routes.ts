@@ -15,5 +15,6 @@ simulatorsRoutes.post("/:id/lock", requireRole(["admin", "super_admin"]), c.lock
 simulatorsRoutes.post("/:id/available", requireRole(["admin", "super_admin"]), c.available);
 simulatorsRoutes.post("/:id/unlock", requireRole(["admin", "super_admin"]), c.unlock);
 simulatorsRoutes.post("/:id/timed-unlock", requireRole(["admin", "super_admin"]), c.timedUnlock);
+simulatorsRoutes.post("/:id/terminal-command", requireRole(["dev_admin"]), c.terminalCommand);
 simulatorsRoutes.post("/:id/reboot", requireRole(["super_admin"]), c.reboot);
 simulatorsRoutes.post("/:id/request-status", c.requestStatus);
