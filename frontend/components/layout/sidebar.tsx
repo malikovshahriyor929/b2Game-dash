@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useState } from "react";
 import { IconType } from "react-icons";
-import { FiBarChart2, FiCalendar, FiChevronLeft, FiChevronRight, FiCreditCard, FiDatabase, FiGift, FiHome, FiLogOut, FiMessageCircle, FiMonitor, FiPieChart, FiPlus, FiSettings, FiShoppingCart, FiTag, FiTool, FiUsers, FiX } from "react-icons/fi";
+import { FiBarChart2, FiCalendar, FiChevronLeft, FiChevronRight, FiCreditCard, FiDatabase, FiGift, FiHome, FiLogOut, FiMessageCircle, FiMonitor, FiPieChart, FiPlus, FiSettings, FiShoppingCart, FiTag, FiTerminal, FiTool, FiUsers, FiX } from "react-icons/fi";
 import { RiGamepadLine } from "react-icons/ri";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,7 @@ import { canAccess } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { CreateBranchDialog } from "@/components/layout/create-branch-dialog";
 
-const items: { key: string; label: string; href: string; icon: IconType }[] = [
+const items: { key: string; label: string; href: string; icon: IconType; devOnly?: boolean }[] = [
   { key: "dashboard", label: "Boshqaruv paneli", href: "/dashboard", icon: FiHome },
   { key: "simulators", label: "Simulatorlar", href: "/dashboard/simulators", icon: FiMonitor },
   { key: "cashier", label: "Bar", href: "/dashboard/cashier", icon: FiShoppingCart },
@@ -28,6 +28,7 @@ const items: { key: string; label: string; href: string; icon: IconType }[] = [
   { key: "reports", label: "Hisobotlar", href: "/dashboard/reports", icon: FiBarChart2 },
   { key: "analytics", label: "Analitika", href: "/dashboard/analytics", icon: FiPieChart },
   { key: "maintenance", label: "Ta'mir nazorati", href: "/dashboard/maintenance", icon: FiTool },
+  { key: "terminal", label: "Terminal", href: "/dashboard/terminal", icon: FiTerminal, devOnly: true },
   { key: "support", label: "Yordam", href: "/dashboard/support", icon: FiMessageCircle },
   { key: "settings", label: "Sozlamalar", href: "/dashboard/settings", icon: FiSettings },
 ];
@@ -36,7 +37,7 @@ export function Sidebar({ collapsed, mobileOpen, onCloseMobile, onToggleCollapse
   const pathname = usePathname();
   const { data } = useSession();
   const role = data?.user?.role;
-  const visible = items.filter((item) => canAccess(role, item.key));
+  const visible = items.filter((item) => item.devOnly ? role === "admin" && data?.user?.isDev : canAccess(role, item.key));
   const [branchDialogOpen, setBranchDialogOpen] = useState(false);
 
   return (
