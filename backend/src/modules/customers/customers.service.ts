@@ -6,6 +6,7 @@ import { auditLog } from "../../services/auditLog.service";
 import { broadcastDashboard } from "../../websocket/dashboardConnection.manager";
 import { requireOpenShiftOwner } from "../shifts/shift.guard";
 import { createGenericService } from "../_shared/generic.service";
+import { notifyCashboxWebhook, paymentCashboxParts } from "../../services/makeCashbox.service";
 
 const TOPUP_METHODS = ["cash", "card", "qr"] as const;
 const baseCustomersService = createGenericService({ table: "customers", entity: "customer", branchScoped: true, writableColumns: ["branch_id","name","phone","balance","total_spent","sessions_count","last_visit_at","status"] });
@@ -71,6 +72,12 @@ export async function topUpBalance(req: Request) {
   ))[0];
   await auditLog({ actor: req.user, branch_id: branchId, action_type: "customer_balance_topup", entity_type: "customer", entity_id: customer.id, amount, details: { method, payment_id: payment.id, balance_after: Number(updated.balance) } });
   broadcastDashboard("payment_created", payment, branchId);
+  notifyCashboxWebhook({
+    article: "Simracing — Касса",
+    actor: req.user,
+    comment: `Customer balance top-up ${customer.id}`,
+    parts: paymentCashboxParts({ cash_amount: cashAmount, card_amount: cardAmount, qr_amount: qrAmount }),
+  });
   return updated;
 }
 

@@ -4,6 +4,7 @@ import { prisma } from "../../db/prisma";
 import { ApiError } from "../../utils/apiError";
 import { auditLog } from "../../services/auditLog.service";
 import { broadcastDashboard } from "../../websocket/dashboardConnection.manager";
+import { notifyCashboxWebhook } from "../../services/makeCashbox.service";
 
 const WITHDRAW_RECIPIENT = "Owner";
 
@@ -241,11 +242,11 @@ export async function close(req: Request) {
   )[0];
 
   // Pul yechish jurnaliga yozuvlar (adminga ko'rinadigan ro'yxat).
-  const withdrawals: Array<{ source: string; amount: number }> = [
+  const withdrawals = [
     { source: "cash", amount: cashWithdrawn },
     { source: "card", amount: cardWithdrawn },
     { source: "bank", amount: bankWithdrawn },
-  ].filter((w) => w.amount > 0);
+  ].filter((w) => w.amount > 0) as Array<{ source: "cash" | "card" | "bank"; amount: number }>;
   for (const w of withdrawals) {
     await prisma.$executeRawUnsafe(
       "insert into shift_withdrawals(shift_id,branch_id,source,amount,recipient,note,withdrawn_by) values($1::uuid,$2::uuid,$3,$4,$5,$6,$7::uuid)",
@@ -257,6 +258,15 @@ export async function close(req: Request) {
       req.body.notes ?? null,
       req.user!.user_id,
     );
+    notifyCashboxWebhook({
+      article: "Выемка — Касса",
+      actor: req.user,
+      comment: req.body.notes ?? `Shift close withdrawal ${shift.id}`,
+      parts: [{
+        wallet: w.source === "cash" ? "Наличка" : w.source === "card" ? "Карта" : "Банк",
+        amount: w.amount,
+      }],
+    });
   }
 
   await auditLog({
@@ -426,6 +436,12 @@ export async function confirmWithdrawalRequest(req: Request) {
       row.note ?? "mid-shift cash withdrawal",
       req.user!.user_id,
     );
+    notifyCashboxWebhook({
+      article: "Выемка — Касса",
+      actor: req.user,
+      comment: row.note ?? (purpose === "admin_debt" ? "Admin qarzi" : purpose === "expense" ? "Rasxod" : "Owner uchun viemka"),
+      parts: [{ wallet: "Наличка", amount: Math.round(Number(row.amount)) }],
+    });
   }
   await auditLog({ actor: req.user, branch_id: row.branch_id, action_type: "withdrawal_confirmed", entity_type: "cash_withdrawal", entity_id: row.id, amount: Number(row.amount), details: { purpose, expense_id: expenseId } });
   broadcastDashboard("withdrawal_resolved", updated, row.branch_id);
