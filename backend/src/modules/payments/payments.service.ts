@@ -7,6 +7,7 @@ import { broadcastDashboard } from "../../websocket/dashboardConnection.manager"
 import { requireOpenShiftOwner } from "../shifts/shift.guard";
 import { debitCustomerBalance } from "../customers/customers.service";
 import { actorScope } from "../../utils/scope";
+import { notifyCashboxWebhook, paymentCashboxParts } from "../../services/makeCashbox.service";
 
 export async function list(req: Request) { const s = actorScope(req); return prisma.$queryRawUnsafe("select p.*, u.name as paid_by_admin_name from payments p left join users u on u.id = p.paid_by_admin_id where ($1::uuid is null or p.branch_id=$1::uuid) and ($2::uuid is null or p.paid_by_admin_id=$2::uuid) order by p.created_at desc", s.branch, s.actor); }
 export async function create(req: Request) {
@@ -34,6 +35,12 @@ export async function create(req: Request) {
   if (req.body.session_id) await prisma.$executeRawUnsafe("update sessions set paid_amount=paid_amount+$1, debt_amount=greatest(total_amount-paid_amount-$1,0), status=case when greatest(total_amount-paid_amount-$1,0)=0 and status='unpaid' then 'stopped' else status end where id=$2::uuid", total, req.body.session_id);
   await auditLog({ actor: req.user, branch_id: branchId, action_type: "payment_created", entity_type: "payment", entity_id: rows[0].id, session_id: req.body.session_id ?? null, amount: total, details: { method: req.body.method, cash_amount: Number(req.body.cash_amount ?? 0), card_amount: Number(req.body.card_amount ?? 0), balance_amount: Number(req.body.balance_amount ?? 0), received_amount: receivedAmount, change_amount: changeAmount } });
   broadcastDashboard("payment_created", rows[0], branchId);
+  notifyCashboxWebhook({
+    article: "Simracing — Касса",
+    actor: req.user,
+    comment: req.body.source_note ?? `Payment ${rows[0].id}`,
+    parts: paymentCashboxParts(req.body),
+  });
   return rows[0];
 }
 

@@ -9,6 +9,7 @@ import { isUuid } from "../../utils/ids";
 import { requireOpenShiftOwner } from "../shifts/shift.guard";
 import { debitCustomerBalance } from "../customers/customers.service";
 import { assertTariffAvailableNow, tariffsService } from "../tariffs/tariffs.service";
+import { notifyCashboxWebhook, paymentCashboxParts } from "../../services/makeCashbox.service";
 
 async function getSessionScoped(req: Request) {
   const rows = await prisma.$queryRawUnsafe<any[]>("select * from sessions where id=$1::uuid and ($2::uuid is null or branch_id=$2::uuid)", req.params.id, baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : null);
@@ -313,7 +314,15 @@ export async function start(req: Request) {
   } catch (error) {
     console.error("applyTariffBonusStock failed", error);
   }
-  if (amount > 0) await prisma.$executeRawUnsafe("insert into payments(branch_id,shift_id,session_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,paid_by_admin_id) values($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6,$7,$8,$9,$10,$11::uuid)", sim.branch_id, shiftId, session.id, req.body.customer_id ?? null, amount, req.body.method, payment.cash, payment.card, payment.qr, payment.balance, req.user!.user_id);
+  if (amount > 0) {
+    await prisma.$executeRawUnsafe("insert into payments(branch_id,shift_id,session_id,customer_id,amount,method,cash_amount,card_amount,qr_amount,balance_amount,paid_by_admin_id) values($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6,$7,$8,$9,$10,$11::uuid)", sim.branch_id, shiftId, session.id, req.body.customer_id ?? null, amount, req.body.method, payment.cash, payment.card, payment.qr, payment.balance, req.user!.user_id);
+    notifyCashboxWebhook({
+      article: "Simracing — Касса",
+      actor: req.user,
+      comment: `Session ${session.id}`,
+      parts: paymentCashboxParts({ cash_amount: payment.cash, card_amount: payment.card, qr_amount: payment.qr }),
+    });
+  }
   if (sim.ws_rig_id) {
     // Open sessions unlock the rig indefinitely (no duration cap); fixed sessions cap to duration.
     await unlockRigMvpIfSupported(sim.ws_rig_id, billing.open ? undefined : durationMinutes);

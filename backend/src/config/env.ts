@@ -25,6 +25,7 @@ const envSchema = z.object({
   RIG_MVP_SYNC_INTERVAL_MS: z.coerce.number().default(30000),
   RIG_MVP_DB_SYNC_INTERVAL_MS: z.coerce.number().default(60000),
   RIG_DEFAULT_BRANCH_CODE: z.string().default("MAIN"),
+  MAKE_CASHBOX_WEBHOOK_URL: z.string().url().or(z.literal("")).default(""),
 }).superRefine((value, ctx) => {
   if (value.NODE_ENV !== "production") return;
 

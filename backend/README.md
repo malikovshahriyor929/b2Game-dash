@@ -50,6 +50,7 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5432/b2_game_club
 JWT_ACCESS_SECRET=change_me_access
 JWT_REFRESH_SECRET=change_me_refresh
 FRONTEND_URL=http://localhost:3000
+MAKE_CASHBOX_WEBHOOK_URL=
 ```
 
 ## Test Users
