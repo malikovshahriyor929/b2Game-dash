@@ -13,6 +13,7 @@ import { useStartSessionOptions } from "@/lib/use-start-session-options";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { CustomerSelect, SelectedCustomer } from "@/components/shared/customer-select";
 import { useDashboardStore } from "@/components/providers/dashboard-store";
+import { cn } from "@/lib/utils";
 import { Simulator } from "@/types/simulator";
 
 function normalizeUzPhone(value: string) {
@@ -61,11 +62,6 @@ function numeric(value: string) {
   return Number.isFinite(next) ? next : 0;
 }
 
-function paymentModeLabel(value: "paid" | "unpaid", label?: string) {
-  if (label && !["Prepaid", "Postpaid"].includes(label)) return label;
-  return value === "paid" ? "Oldindan to'lov" : "Oxirida to'lov";
-}
-
 function matchesTariffZone(value: string | undefined, zone: "main" | "vip") {
   const normalized = String(value ?? "all").toLowerCase();
   return normalized === "all" || normalized === zone;
@@ -75,6 +71,56 @@ function isVipOnlyTariff(item: { name: string; type: string; simulatorZone: stri
   const type = item.type.toLowerCase();
   const name = item.name.toLowerCase();
   return item.simulatorZone === "vip" || type === "vip" || name.includes("moza") || name.includes("vip");
+}
+
+type ToggleOption<T extends string> = {
+  label: string;
+  value: T;
+  disabled?: boolean;
+};
+
+function SegmentedToggle<T extends string>({
+  value,
+  options,
+  onChange,
+  activeClassName,
+}: {
+  value: T;
+  options: [ToggleOption<T>, ToggleOption<T>];
+  onChange: (value: T) => void;
+  activeClassName?: string;
+}) {
+  const activeIndex = options.findIndex((item) => item.value === value);
+
+  return (
+    <div className="relative grid h-11 grid-cols-2 rounded-full border border-slate-700 bg-slate-950/80 p-1 shadow-inner shadow-black/30">
+      <div
+        className={cn(
+          "absolute top-1 h-[calc(100%-0.5rem)] w-[calc(50%-0.25rem)] rounded-full bg-sky-500 shadow-lg shadow-sky-950/40 transition-transform duration-300 ease-out",
+          activeIndex === 1 && "translate-x-full",
+          activeClassName,
+        )}
+      />
+      {options.map((item) => {
+        const active = item.value === value;
+        return (
+          <button
+            key={item.value}
+            type="button"
+            disabled={item.disabled}
+            onClick={() => onChange(item.value)}
+            className={cn(
+              "relative z-10 flex min-w-0 items-center justify-center rounded-full px-3 text-sm font-black transition duration-200",
+              active ? "text-slate-950" : "text-slate-400 hover:text-slate-100",
+              item.disabled && "cursor-not-allowed opacity-45 hover:text-slate-400",
+            )}
+          >
+            <span className="truncate">{item.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 export function StartSessionDialog({ open, onOpenChange, simulator, prefill, fulfillBookingId }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator; prefill?: { customerName?: string; phone?: string; tariffName?: string; prepayment?: number }; fulfillBookingId?: string }) {
@@ -126,6 +172,13 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
     () => isVipMode ? [{ label: "Postpaid", value: "unpaid" as const, enabled: true }] : regularPaymentModes,
     [isVipMode, regularPaymentModes],
   );
+  const paymentModeToggleOptions = useMemo<[ToggleOption<"paid" | "unpaid">, ToggleOption<"paid" | "unpaid">]>(() => {
+    const available = new Set(paymentModeOptions.map((item) => item.value));
+    return [
+      { label: "Oldindan", value: "paid", disabled: !available.has("paid") },
+      { label: "Oxirida", value: "unpaid", disabled: !available.has("unpaid") },
+    ];
+  }, [paymentModeOptions]);
   const sessionTariff = isVipMode ? vipBaseTariff : selectedTariff;
   const vipHourlyRate = sessionTariff ? Math.round((sessionTariff.price * 60) / (sessionTariff.durationMinutes || 60)) : 0;
   const selectedTariffLabel = isVipMode ? "VIP" : selectedTariff?.name ?? "";
@@ -341,13 +394,15 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
 
           <div className="space-y-2">
             <Label>Rejim</Label>
-            <Select value={sessionMode} onValueChange={(value) => setSessionMode(value as "regular" | "vip")}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="regular">Oddiy</SelectItem>
-                <SelectItem value="vip">VIP</SelectItem>
-              </SelectContent>
-            </Select>
+            <SegmentedToggle
+              value={sessionMode}
+              onChange={setSessionMode}
+              options={[
+                { label: "Oddiy tarif", value: "regular" },
+                { label: "VIP", value: "vip" },
+              ]}
+              activeClassName={isVipMode ? "bg-amber-400 shadow-amber-950/40" : undefined}
+            />
           </div>
 
           {!isVipMode ? (
@@ -398,18 +453,15 @@ export function StartSessionDialog({ open, onOpenChange, simulator, prefill, ful
 
           <div className="space-y-2">
             <Label>To'lov turi</Label>
-            {paymentModeOptions.length > 1 ? (
-              <Select value={paymentStatus} onValueChange={(value) => setPaymentStatus(value as "paid" | "unpaid")}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {paymentModeOptions.map((item) => <SelectItem key={item.value} value={item.value}>{paymentModeLabel(item.value, item.label)}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            ) : (
-              <div className="flex h-10 items-center rounded-xl border border-slate-700 bg-slate-950/70 px-3 text-sm font-semibold text-slate-300">
-                {paymentModeLabel(paymentModeOptions[0]?.value ?? "unpaid", paymentModeOptions[0]?.label)}
-              </div>
-            )}
+            <SegmentedToggle
+              value={paymentStatus}
+              onChange={setPaymentStatus}
+              options={paymentModeToggleOptions}
+              activeClassName={paymentStatus === "paid" ? "bg-emerald-400 shadow-emerald-950/40" : "bg-sky-400 shadow-sky-950/40"}
+            />
+            {isVipMode ? (
+              <p className="text-xs font-semibold text-slate-500">VIP sessiyada to'lov yakunda hisoblanadi.</p>
+            ) : null}
           </div>
 
           {totalAmount > 0 ? (

@@ -5,7 +5,7 @@ import { ApiError } from "../../utils/apiError";
 import { auditLog } from "../../services/auditLog.service";
 import { broadcastDashboard } from "../../websocket/dashboardConnection.manager";
 import { isUuid } from "../../utils/ids";
-import { sendRigMvpCommand, unlockRigMvp } from "../../services/rigMvp.service";
+import { availableRigMvp, sendRigMvpCommand, unlockRigMvp } from "../../services/rigMvp.service";
 
 const MAX_MAINTENANCE_CHARGE_MINUTES = 24 * 60;
 
@@ -22,6 +22,15 @@ async function sendRigCommandIfSupported(rigId: string, payload: Record<string, 
 async function unlockRigIfSupported(rigId: string, minutes?: number) {
   try {
     await unlockRigMvp(rigId, minutes);
+  } catch (error) {
+    if (error instanceof ApiError && error.statusCode === 404) return;
+    throw error;
+  }
+}
+
+async function availableRigIfSupported(rigId: string) {
+  try {
+    await availableRigMvp(rigId);
   } catch (error) {
     if (error instanceof ApiError && error.statusCode === 404) return;
     throw error;
@@ -50,7 +59,7 @@ const scopedBranch = (req: Request) =>
 
 export const list = (req: Request) =>
   prisma.$queryRawUnsafe(
-    `select rr.*, s.name simulator_name, b.name branch_name,
+    `select rr.*, s.name simulator_name, b.name branch_name, sess.status as session_status,
             u.name requested_by_name, rv.name reviewed_by_name
        from (
          select raw.id, raw.branch_id, raw.simulator_id, raw.session_id, raw.opened_during_session, raw.requested_by, raw.approved_by, raw.confirmed_by,
@@ -74,6 +83,7 @@ export const list = (req: Request) =>
        join branches b on b.id = rr.branch_id
        left join users u on u.id = rr.requested_by
        left join users rv on rv.id = rr.reviewed_by
+       left join sessions sess on sess.id = rr.session_id
       where ($1::uuid is null or rr.branch_id = $1::uuid)
       order by rr.created_at desc`,
     scopedBranch(req),
@@ -222,7 +232,19 @@ export async function createFromActiveSession(req: Request) {
   ))[0];
   await prisma.$executeRawUnsafe("update simulators set status='repair_requested', current_session_id=null where id=$1::uuid", sim.id);
   // Maintenance is not a lock: technician must be able to use the workstation.
-  if (sim.ws_rig_id) await unlockRigIfSupported(sim.ws_rig_id);
+  if (sim.ws_rig_id) {
+    try {
+      await sendRigCommandIfSupported(sim.ws_rig_id, {
+        type: "pause_session",
+        session_id: session.id,
+        remaining_seconds: Number(paused.remaining_seconds ?? 0),
+        remaining_minutes: Math.max(0, Math.ceil(Number(paused.remaining_seconds ?? 0) / 60)),
+      });
+    } catch {
+      // Older rig agents may not support pause_session; DB remains authoritative.
+    }
+    await unlockRigIfSupported(sim.ws_rig_id);
+  }
   await auditLog({
     actor: req.user,
     branch_id: sim.branch_id,
@@ -261,7 +283,16 @@ async function resumeInterruptedSession(repair: any, simulatorId: string) {
   if (target.ws_rig_id) {
     const minutes = String(session.billing_mode) === "open" ? undefined : Math.max(1, Math.ceil(remainingSeconds / 60));
     await unlockRigIfSupported(target.ws_rig_id, minutes);
-    await sendRigCommandIfSupported(target.ws_rig_id, { type: "start_session", session_id: session.id, customer_name: session.customer_name ?? "Guest", phone: session.phone ?? null, duration_minutes: minutes ?? 0, tariff_id: session.tariff_id ?? null });
+    await sendRigCommandIfSupported(target.ws_rig_id, {
+      type: "start_session",
+      session_id: session.id,
+      customer_name: session.customer_name ?? "Guest",
+      phone: session.phone ?? null,
+      duration_minutes: minutes ?? 0,
+      duration_seconds: String(session.billing_mode) === "open" ? undefined : remainingSeconds,
+      remaining_seconds: String(session.billing_mode) === "open" ? undefined : remainingSeconds,
+      tariff_id: session.tariff_id ?? null,
+    });
   }
   return { session, target, remainingSeconds };
 }
@@ -287,7 +318,11 @@ export async function close(req: Request) {
     req.body?.admin_note ?? null, req.body?.note ?? null, rr.id,
   ))[0];
   const resumed = await resumeInterruptedSession(rr, rr.simulator_id);
-  if (!resumed) await prisma.$executeRawUnsafe("update simulators set status='ready_to_play' where id=$1::uuid", rr.simulator_id);
+  if (!resumed) {
+    const simRows = await prisma.$queryRawUnsafe<Array<{ ws_rig_id: string | null }>>("select ws_rig_id from simulators where id=$1::uuid limit 1", rr.simulator_id);
+    await prisma.$executeRawUnsafe("update simulators set status='ready_to_play', current_session_id=null where id=$1::uuid", rr.simulator_id);
+    if (simRows[0]?.ws_rig_id) await availableRigIfSupported(simRows[0].ws_rig_id);
+  }
   await auditLog({ actor: req.user, branch_id: rr.branch_id, action_type: "maintenance_closed", entity_type: "repair_request", entity_id: rr.id, simulator_id: rr.simulator_id, amount: chargeAmount });
   broadcastDashboard("maintenance_closed", { ...row, resumed_session_id: resumed?.session.id ?? null }, rr.branch_id);
   return row;

@@ -1,5 +1,5 @@
 import { backendGet, backendPatch, backendPost } from "@/server/api";
-import { SimulatorMapPosition } from "@/types/simulator";
+import { BillingSegment, SimulatorMapPosition } from "@/types/simulator";
 
 export type RigRecord = {
   rig_id: string;
@@ -37,6 +37,7 @@ export type RigRecord = {
   active_hourly_rate?: number | string | null;
   active_elapsed_seconds?: number | string | null;
   active_accrued_amount?: number | string | null;
+  active_billing_segments?: BillingSegment[] | null;
   active_tariff_name?: string | null;
   map_position?: SimulatorMapPosition | null;
   first_seen: string | null;
@@ -52,6 +53,25 @@ function mapPosition(value: unknown): SimulatorMapPosition | null {
   const rowSpan = Number(item.rowSpan ?? 1);
   if (![col, row, colSpan, rowSpan].every(Number.isFinite)) return null;
   return { floor: item.floor == null ? undefined : String(item.floor), col, row, colSpan, rowSpan };
+}
+
+function mapBillingSegments(value: unknown): BillingSegment[] | undefined {
+  let rows: unknown;
+  try {
+    rows = typeof value === "string" ? JSON.parse(value) : value;
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(rows)) return undefined;
+  return rows.map((item) => ({
+    from: String(item.from ?? ""),
+    until: String(item.until ?? ""),
+    tariffName: String(item.tariffName ?? "VIP"),
+    label: String(item.label ?? item.tariffName ?? "VIP"),
+    minutes: Number(item.minutes ?? 0),
+    hourlyPrice: Number(item.hourlyPrice ?? 0),
+    amount: Number(item.amount ?? 0),
+  })).filter((item) => item.minutes > 0);
 }
 
 export function mapBackendSimulatorRows(rows: Array<Record<string, any>>): RigRecord[] {
@@ -91,6 +111,7 @@ export function mapBackendSimulatorRows(rows: Array<Record<string, any>>): RigRe
     active_hourly_rate: item.active_hourly_rate ?? null,
     active_elapsed_seconds: item.active_elapsed_seconds ?? null,
     active_accrued_amount: item.active_accrued_amount ?? null,
+    active_billing_segments: mapBillingSegments(item.active_billing_segments),
     active_tariff_name: item.active_tariff_name ?? null,
     map_position: mapPosition(item.map_position),
     first_seen: item.first_seen ?? null,

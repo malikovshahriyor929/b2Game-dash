@@ -23,6 +23,10 @@ function simulatorKind(simulator: Simulator) {
   return simulator.zone === "Standard" ? "Logitech (Main)" : "Moza (Premium)";
 }
 
+function sessionTariffLabel(simulator: Simulator) {
+  return simulator.billingMode === "open" ? "VIP" : simulator.tariff ?? "Tanlanmagan";
+}
+
 const MAINTENANCE_STATUS_LABELS: Record<string, string> = {
   open: "Ta'mirda (ochiq)",
   pending_review: "Tekshiruv kutilmoqda",
@@ -94,7 +98,7 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
         {hasSessionDetails || repairRequest ? (
           <div className="grid gap-3 sm:grid-cols-2">
             {hasSessionDetails ? <Field label="Joriy foydalanuvchi" value={simulator.currentUser ?? "Sessiya yo'q"} /> : null}
-            {hasSessionDetails ? <Field label="Tarif" value={simulator.tariff ?? "Tanlanmagan"} /> : null}
+            {hasSessionDetails ? <Field label="Tarif" value={sessionTariffLabel(simulator)} /> : null}
             {hasSessionDetails ? <Field label="Boshlangan" value={simulator.startedAt ?? "-"} /> : null}
             {hasSessionDetails ? <Field label={simulator.billingMode === "open" ? "O'tgan vaqt" : "Qolgan"} value={seconds(simulator.billingMode === "open" ? (simulator.elapsedSeconds ?? simulator.remainingSeconds ?? 0) : (simulator.remainingSeconds ?? simulator.remainingMinutes * 60))} /> : null}
             {hasSessionDetails ? <Field label="To'langan" value={money(simulator.paidAmount)} /> : null}
@@ -168,7 +172,7 @@ export function SimulatorDetailSheet({ open, onOpenChange, simulator, onAction }
             <div className="text-xs font-semibold uppercase text-slate-500">Ta'mir jarayoni</div>
             <div className="grid gap-2 sm:grid-cols-2">
               {canCloseMaintenance ? <Button variant="success" onClick={() => repairRequest?.openedDuringSession ? setCloseMaintenanceOpen(true) : closeMaintenance(simulator.id)}><FiCheckCircle /> Maintenance yopish</Button> : null}
-              {repairRequest?.sessionId ? (
+              {repairRequest?.sessionId && repairRequest.sessionStatus === "paused" ? (
                 <div className="flex gap-2 sm:col-span-2">
                   <Select value={transferTargetId} onValueChange={setTransferTargetId}>
                     <SelectTrigger><SelectValue placeholder="Bo'sh simulyatorni tanlang" /></SelectTrigger>

@@ -10,6 +10,7 @@ import { requireOpenShiftOwner } from "../shifts/shift.guard";
 import { debitCustomerBalance } from "../customers/customers.service";
 import { assertTariffAvailableNow, tariffsService } from "../tariffs/tariffs.service";
 import { notifyCashboxWebhook, paymentCashboxParts } from "../../services/makeCashbox.service";
+import { openSessionAmountSql } from "../../utils/openSessionBilling";
 
 async function getSessionScoped(req: Request) {
   const rows = await prisma.$queryRawUnsafe<any[]>("select * from sessions where id=$1::uuid and ($2::uuid is null or branch_id=$2::uuid)", req.params.id, baseRole(req.user?.role) === "admin" ? (req.user?.branch_id ?? null) : null);
@@ -238,6 +239,8 @@ export async function start(req: Request) {
       customer_name: req.body.customer_name ?? "Guest",
       phone: req.body.phone ?? null,
       duration_minutes: durationMinutes,
+      duration_seconds: durationMinutes * 60,
+      remaining_seconds: durationMinutes * 60,
     });
     await auditLog({ actor: req.user, branch_id: branchId, action_type: "start_session", entity_type: "rig_mvp", details: { rig_id: rig.rig_id, duration_minutes: session.duration_minutes } });
     broadcastDashboard("session_started", session, branchId);
@@ -332,6 +335,8 @@ export async function start(req: Request) {
       customer_name: req.body.customer_name ?? "Guest",
       phone: req.body.phone ?? null,
       duration_minutes: durationMinutes,
+      duration_seconds: billing.open ? undefined : durationMinutes * 60,
+      remaining_seconds: billing.open ? undefined : durationMinutes * 60,
       tariff_id: req.body.tariff_id ?? null,
     });
   }
@@ -358,11 +363,12 @@ export async function finalizeSessionStop(
   options: { stoppedBy?: string | null; expired?: boolean } = {},
 ) {
   if (String(session.billing_mode) === "open") {
+    const openAmountSql = openSessionAmountSql("sessions");
     await prisma.$executeRawUnsafe(
       `update sessions
        set duration_minutes = ceil(extract(epoch from (now() - started_at)) / 60.0)::int,
-           session_amount = round(ceil(extract(epoch from (now() - started_at)) / 60.0) * hourly_rate / 60.0),
-           total_amount = round(ceil(extract(epoch from (now() - started_at)) / 60.0) * hourly_rate / 60.0) + shop_amount + added_time_amount,
+           session_amount = ${openAmountSql},
+           total_amount = ${openAmountSql} + shop_amount + added_time_amount,
            updated_at = now()
        where id=$1::uuid`,
       session.id,
@@ -453,6 +459,7 @@ async function extendRigSessionTime(simulatorId: string, addedMinutes: number, r
     type: "add_time",
     minutes: addedMinutes,
     remaining_minutes: remainingMinutes,
+    remaining_seconds: remainingSeconds,
   });
 }
 

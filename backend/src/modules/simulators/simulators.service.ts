@@ -19,6 +19,7 @@ import {
   unlockRigMvp,
 } from "../../services/rigMvp.service";
 import { requireOpenShiftOwner } from "../shifts/shift.guard";
+import { openSessionAmountSql, openSessionSegmentsSql } from "../../utils/openSessionBilling";
 
 function zoneFromRig(rig: RigMvpRig) {
   const text = `${rig.label} ${rig.hostname} ${rig.rig_id}`.toLowerCase();
@@ -301,7 +302,8 @@ const activeSessionSelect = `
   sess.billing_mode as active_billing_mode,
   sess.hourly_rate as active_hourly_rate,
   case when sess.billing_mode = 'open' then extract(epoch from (now() - sess.started_at))::int else null end as active_elapsed_seconds,
-  case when sess.billing_mode = 'open' then round(ceil(extract(epoch from (now() - sess.started_at)) / 60.0) * sess.hourly_rate / 60.0) else null end as active_accrued_amount,
+  case when sess.billing_mode = 'open' then ${openSessionAmountSql("sess")} else null end as active_accrued_amount,
+  case when sess.billing_mode = 'open' then ${openSessionSegmentsSql("sess")} else null end as active_billing_segments,
   t.name as active_tariff_name`;
 
 async function enrichSimulatorWithActiveSession(row: Record<string, any>) {
