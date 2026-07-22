@@ -47,7 +47,7 @@ export function openSessionAmountSql(sessionAlias = "sess", endExpression = "now
       where cardinality(t.available_days) = 0
          or extract(isodow from d.day_start)::int = any(t.available_days)
     ),
-    overlaps as (
+    overlap_windows as (
       select
         greatest(w.window_start, b.start_local) as overlap_start,
         least(w.window_end, b.end_local) as overlap_end,
@@ -61,7 +61,7 @@ export function openSessionAmountSql(sessionAlias = "sess", endExpression = "now
         and w.window_start < b.end_local
     )
     select round(sum(ceil(extract(epoch from (overlap_end - overlap_start)) / 60.0) * hourly_price / 60.0))
-    from overlaps
+    from overlap_windows
     where overlap_end > overlap_start
   ), round(ceil(extract(epoch from (${endExpression} - ${sessionAlias}.started_at)) / 60.0) * ${sessionAlias}.hourly_rate / 60.0))`;
 }
@@ -115,7 +115,7 @@ export function openSessionSegmentsSql(sessionAlias = "sess", endExpression = "n
       where cardinality(t.available_days) = 0
          or extract(isodow from d.day_start)::int = any(t.available_days)
     ),
-    overlaps as (
+    overlap_windows as (
       select
         greatest(w.window_start, b.start_local) as overlap_start,
         least(w.window_end, b.end_local) as overlap_end,
@@ -139,7 +139,7 @@ export function openSessionSegmentsSql(sessionAlias = "sess", endExpression = "n
         ceil(extract(epoch from (overlap_end - overlap_start)) / 60.0)::int as minutes,
         hourly_price,
         round(ceil(extract(epoch from (overlap_end - overlap_start)) / 60.0) * hourly_price / 60.0) as amount
-      from overlaps
+      from overlap_windows
       where overlap_end > overlap_start
     )
     select jsonb_agg(jsonb_build_object(
