@@ -283,7 +283,7 @@ function rigsToSimulators(rigs: RigRecord[], branchList: Branch[]) {
       ipAddress: rig.hostname,
       currentUser: hasSessionTimer ? rig.active_customer_name || "Faol rig" : undefined,
       phone: rig.active_phone ?? undefined,
-      tariff: rig.active_tariff_name || "Rig Admin",
+      tariff: isOpen ? "VIP" : (rig.active_tariff_name || "Rig Admin"),
       startedAt: timestampTime(rig.active_started_at),
       remainingMinutes: Math.ceil(remainingSeconds / 60),
       remainingSeconds,
@@ -291,6 +291,7 @@ function rigsToSimulators(rigs: RigRecord[], branchList: Branch[]) {
       hourlyRate: numberValue(rig.active_hourly_rate),
       elapsedSeconds: isOpen ? elapsedSeconds : undefined,
       accruedAmount: isOpen ? numberValue(rig.active_accrued_amount) : undefined,
+      billingSegments: isOpen ? rig.active_billing_segments ?? undefined : undefined,
       sessionAmount: numberValue(rig.active_session_amount),
       addedTimeAmount: numberValue(rig.active_added_time_amount),
       shopAmount: numberValue(rig.active_shop_amount),
@@ -400,6 +401,7 @@ function mapRepair(row: Record<string, unknown>): RepairRequest {
     id: String(row.id),
     simulatorId: String(row.simulator_id ?? ""),
     sessionId: row.session_id ? String(row.session_id) : undefined,
+    sessionStatus: row.session_status ? String(row.session_status) as RepairRequest["sessionStatus"] : undefined,
     openedDuringSession: Boolean(row.opened_during_session),
     simulatorName: String(row.simulator_name ?? row.simulator_id ?? ""),
     branchId: String(row.branch_id ?? ""),
@@ -578,13 +580,10 @@ export function DashboardStoreProvider({ children }: { children: React.ReactNode
       const expiringIds: string[] = [];
       setAllSimulators((items) => items.map((item) => {
         if (!["busy", "unpaid"].includes(item.status)) return item;
-        // Open (VIP) sessions count up and never auto-expire; the accrued amount grows live.
+        // Open (VIP) sessions count up and never auto-expire; backend refresh carries segmented billing.
         if (item.billingMode === "open") {
           const elapsedSeconds = (item.elapsedSeconds ?? item.remainingSeconds ?? 0) + 1;
-          const accruedAmount = item.hourlyRate
-            ? Math.round((Math.ceil(elapsedSeconds / 60) * item.hourlyRate) / 60)
-            : item.accruedAmount;
-          return { ...item, elapsedSeconds, remainingSeconds: elapsedSeconds, remainingMinutes: Math.ceil(elapsedSeconds / 60), accruedAmount };
+          return { ...item, elapsedSeconds, remainingSeconds: elapsedSeconds, remainingMinutes: Math.ceil(elapsedSeconds / 60) };
         }
         if (!item.remainingSeconds) return item;
         if (item.remainingSeconds <= 1) {

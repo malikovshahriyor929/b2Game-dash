@@ -23,6 +23,19 @@ function numeric(value: string) {
   return Number.isFinite(next) ? next : 0;
 }
 
+function sessionTariffLabel(simulator?: Simulator) {
+  if (!simulator) return "Qo'lda to'lov";
+  return simulator.billingMode === "open" ? "VIP" : simulator.tariff ?? "Qo'lda to'lov";
+}
+
+function minutesLabel(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours && mins) return `${hours} soat ${mins} daqiqa`;
+  if (hours) return `${hours} soat`;
+  return `${mins} daqiqa`;
+}
+
 export function PaymentDialog({ open, onOpenChange, simulator }: { open: boolean; onOpenChange: (open: boolean) => void; simulator?: Simulator }) {
   const { pay } = useDashboardStore();
   const paymentMethods = usePaymentMethods(simulator?.branchId, open);
@@ -32,6 +45,7 @@ export function PaymentDialog({ open, onOpenChange, simulator }: { open: boolean
   const openTotal = (simulator?.accruedAmount ?? 0) + (simulator?.addedTimeAmount ?? 0) + (simulator?.shopAmount ?? 0);
   const fixedTotal = simulator?.totalAmount ?? simulator?.sessionAmount ?? 0;
   const due = Math.max((simulator?.billingMode === "open" ? openTotal : fixedTotal) - (simulator?.paidAmount ?? 0), 0);
+  const billingSegments = simulator?.billingMode === "open" ? simulator.billingSegments ?? [] : [];
   const mixedTotal = useMemo(() => parts.cash_amount + parts.card_amount, [parts]);
   const amount = method === "Aralash" ? mixedTotal : due;
   const canSubmit = Boolean(simulator) && amount > 0 && Number.isFinite(amount);
@@ -60,7 +74,7 @@ export function PaymentDialog({ open, onOpenChange, simulator }: { open: boolean
           <DialogDescription>{simulator?.name} - {simulator?.currentUser ?? "Mehmon"} - to&apos;lov summasi {money(due)}</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-xl bg-slate-950 p-3"><Label>Tarif / paket</Label><div className="mt-2 font-semibold">{simulator?.tariff ?? "Qo'lda to'lov"}</div></div>
+          <div className="rounded-xl bg-slate-950 p-3"><Label>Tarif / paket</Label><div className="mt-2 font-semibold">{sessionTariffLabel(simulator)}</div></div>
           <div className="rounded-xl bg-slate-950 p-3"><Label>To&apos;lov summasi</Label><div className="mt-2 text-xl font-black text-sky-200">{money(due)}</div></div>
           <div className="space-y-2 sm:col-span-2">
             <Label>To&apos;lov usuli</Label>
@@ -70,6 +84,28 @@ export function PaymentDialog({ open, onOpenChange, simulator }: { open: boolean
             </Select>
           </div>
         </div>
+        {billingSegments.length ? (
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+            <Label>Tarif bo&apos;yicha hisob</Label>
+            <div className="mt-3 space-y-2">
+              {billingSegments.map((segment, index) => (
+                <div key={`${segment.from}-${segment.until}-${index}`} className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-black text-white">{segment.from} - {segment.until}</div>
+                      <div className="mt-1 text-xs font-semibold text-slate-400">{segment.label}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-black text-sky-200">{money(segment.amount)}</div>
+                      <div className="mt-1 text-xs font-semibold text-slate-500">{money(segment.hourlyPrice)}/soat</div>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs font-semibold text-slate-500">{minutesLabel(segment.minutes)} hisoblandi</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
         {method === "Aralash" ? (
           <div className="grid gap-3 rounded-2xl border border-slate-800 p-3 sm:grid-cols-2">
             <div className="space-y-2"><Label>Naqd</Label><Input inputMode="numeric" min={0} type="number" value={parts.cash_amount} onChange={(e) => setPart("cash_amount", e.target.value)} /></div>

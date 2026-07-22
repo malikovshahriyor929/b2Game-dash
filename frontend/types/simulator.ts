@@ -14,10 +14,21 @@ export type SimulatorMapPosition = {
   rowSpan?: number;
 };
 
+export type BillingSegment = {
+  from: string;
+  until: string;
+  tariffName: string;
+  label: string;
+  minutes: number;
+  hourlyPrice: number;
+  amount: number;
+};
+
 export type RepairRequest = {
   id: string;
   simulatorId: string;
   sessionId?: string;
+  sessionStatus?: "active" | "paused" | "stopped" | "unpaid" | "cancelled";
   openedDuringSession?: boolean;
   simulatorName: string;
   branchId: string;
@@ -67,6 +78,7 @@ export type Simulator = {
   hourlyRate?: number;
   elapsedSeconds?: number;
   accruedAmount?: number;
+  billingSegments?: BillingSegment[];
   sessionAmount?: number;
   addedTimeAmount?: number;
   shopAmount?: number;
